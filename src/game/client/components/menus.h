@@ -567,6 +567,7 @@ protected:
 	// found in menus_settings_assets.cpp
 	void RenderSettingsAssets(CUIRect MainView);
 	void RenderSettingsVisuals(CUIRect MainView);
+	void RenderSettingsProfiles(CUIRect MainView);
 
 	// found in menus_settings_appearance.cpp
 	void RenderSettingsAppearance(CUIRect MainView);
@@ -718,6 +719,7 @@ public:
 		SETTINGS_DDNET,
 		SETTINGS_ASSETS,
 		SETTINGS_VISUALS,
+		SETTINGS_PROFILES,
 		SETTINGS_CREDITS,
 
 		SETTINGS_LENGTH,

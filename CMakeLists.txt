@@ -2062,8 +2062,9 @@ set(EXPECTED_DATA
   themes/winter_day.map
   themes/winter_night.map
   touch_controls.json
+  visuals/glow.png
   visuals/halo.png
-  visuals/horn.png
+  visuals/horns.png
   visuals/winter_hat.png
   wordlist.txt
   # tidy-alphabetical-end
@@ -2720,6 +2721,7 @@ if(CLIENT)
     components/menus_settings_graphics.cpp
     components/menus_settings_language.cpp
     components/menus_settings_player.cpp
+    components/menus_settings_profiles.cpp
     components/menus_settings_sound.cpp
     components/menus_settings_tee.cpp
     components/menus_settings_tee7.cpp

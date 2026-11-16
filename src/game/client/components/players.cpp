@@ -863,15 +863,21 @@ void CPlayers::RenderPlayer(
 		RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, ShadowPosition, g_Config.m_ClUnpredictedShadowAlpha / 100.f); // render ghost
 	}
 
-	RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, Position, Alpha);
-
 	float TeeAnimScale, TeeBaseSize;
 	CRenderTools::GetRenderTeeAnimScaleAndBaseSize(&RenderInfo, TeeAnimScale, TeeBaseSize);
 	vec2 BodyPos = Position + vec2(State.GetBody()->m_X, State.GetBody()->m_Y) * TeeAnimScale;
 	if(Local)
 	{
-		// hat, halo and horns are only shown on your own tee
-		GameClient()->m_Visuals.RenderTeeAccessories(BodyPos, TeeBaseSize, Alpha);
+		// the demon horns are only shown on your own tee and have to be behind it
+		GameClient()->m_Visuals.RenderBehindTee(BodyPos, TeeBaseSize, Alpha);
+	}
+
+	RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, Position, Alpha);
+
+	if(Local)
+	{
+		// hat and halo are only shown on your own tee
+		GameClient()->m_Visuals.RenderTeeAccessories(BodyPos, TeeBaseSize, Alpha, Direction, Vel);
 	}
 	if(RenderInfo.m_TeeRenderFlags & TEE_EFFECT_FROZEN)
 	{
