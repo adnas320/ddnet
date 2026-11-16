@@ -27,6 +27,8 @@
 #include <game/gamecore.h>
 #include <game/mapitems.h>
 
+#include <cmath>
+
 static float CalculateHandAngle(vec2 Dir, float AngleOffset)
 {
 	const float Angle = angle(Dir);
@@ -562,6 +564,62 @@ void CPlayers::RenderHook(
 	RenderHand(&RenderInfo, Position, normalize(HookPos - Pos), -pi / 2, vec2(20, 0), Alpha);
 }
 
+// Draws a simple winter (Santa style) hat on top of a tee, using plain shapes.
+// All coordinates are relative to the tee body and are expressed in units of the tee size.
+static void RenderWinterHat(IGraphics *pGraphics, vec2 BodyPos, float Size, vec2 Direction, float BodyAngle, float Alpha)
+{
+	// the tip of the hat flops to the side opposite of the looking direction
+	const float Lean = -Direction.x * 0.12f;
+	const float SinAngle = std::sin(BodyAngle);
+	const float CosAngle = std::cos(BodyAngle);
+	const vec2 TipPos = vec2(Lean * 1.5f + 0.10f, -0.98f);
+
+	pGraphics->TextureClear();
+	pGraphics->QuadsBegin();
+
+	for(int Pass = 0; Pass < 2; Pass++)
+	{
+		// first pass draws a slightly bigger, darker outline, second pass the filling
+		const bool Outline = Pass == 0;
+		const float Scale = Outline ? 1.10f : 1.0f;
+
+		const auto ToWorld = [&](float x, float y) {
+			const float CenterY = -0.62f;
+			y = CenterY + (y - CenterY) * Scale;
+			x *= Scale;
+			return vec2(BodyPos.x + (x * CosAngle - y * SinAngle) * Size, BodyPos.y + (x * SinAngle + y * CosAngle) * Size);
+		};
+
+		// red cap, made of two parts: the base and the tip
+		if(Outline)
+			pGraphics->SetColor(0.45f, 0.04f, 0.06f, Alpha);
+		else
+			pGraphics->SetColor(0.84f, 0.08f, 0.11f, Alpha);
+		const IGraphics::CFreeformItem aCap[2] = {
+			IGraphics::CFreeformItem(ToWorld(-0.27f + Lean * 0.5f, -0.74f), ToWorld(0.27f + Lean * 0.5f, -0.74f), ToWorld(-0.36f, -0.42f), ToWorld(0.36f, -0.42f)),
+			IGraphics::CFreeformItem(ToWorld(TipPos.x - 0.06f, TipPos.y), ToWorld(TipPos.x + 0.06f, TipPos.y), ToWorld(-0.27f + Lean * 0.5f, -0.74f), ToWorld(0.27f + Lean * 0.5f, -0.74f))};
+		pGraphics->QuadsDrawFreeform(aCap, 2);
+
+		// white fur band and pompom
+		if(Outline)
+			pGraphics->SetColor(0.55f, 0.60f, 0.70f, Alpha);
+		else
+			pGraphics->SetColor(0.97f, 0.97f, 1.0f, Alpha);
+		const IGraphics::CFreeformItem Band(ToWorld(-0.40f, -0.475f), ToWorld(0.40f, -0.475f), ToWorld(-0.40f, -0.325f), ToWorld(0.40f, -0.325f));
+		pGraphics->QuadsDrawFreeform(&Band, 1);
+		const float EndRadius = 0.075f * Scale * Size;
+		const vec2 BandLeft = ToWorld(-0.40f, -0.40f);
+		const vec2 BandRight = ToWorld(0.40f, -0.40f);
+		pGraphics->DrawCircle(BandLeft.x, BandLeft.y, EndRadius, 12);
+		pGraphics->DrawCircle(BandRight.x, BandRight.y, EndRadius, 12);
+		const vec2 Pompom = ToWorld(TipPos.x, TipPos.y);
+		pGraphics->DrawCircle(Pompom.x, Pompom.y, 0.11f * Scale * Size, 16);
+	}
+
+	pGraphics->QuadsEnd();
+	pGraphics->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
 void CPlayers::RenderPlayer(
 	const CScreenRect &ScreenRect,
 	const CNetObj_Character *pPrevChar,
@@ -868,6 +926,11 @@ void CPlayers::RenderPlayer(
 	float TeeAnimScale, TeeBaseSize;
 	CRenderTools::GetRenderTeeAnimScaleAndBaseSize(&RenderInfo, TeeAnimScale, TeeBaseSize);
 	vec2 BodyPos = Position + vec2(State.GetBody()->m_X, State.GetBody()->m_Y) * TeeAnimScale;
+	if(Local && g_Config.m_ClVisualsWinterHat)
+	{
+		// the winter hat is only shown on your own tee
+		RenderWinterHat(Graphics(), BodyPos, TeeBaseSize, Direction, State.GetBody()->m_Angle * pi * 2.0f, Alpha);
+	}
 	if(RenderInfo.m_TeeRenderFlags & TEE_EFFECT_FROZEN)
 	{
 		GameClient()->m_Effects.FreezingFlakes(BodyPos, vec2(32, 32), Alpha);

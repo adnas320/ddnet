@@ -149,6 +149,7 @@ void CGameClient::OnConsoleInit()
 					      &m_Particles.m_RenderGeneral,
 					      &m_FreezeBars,
 					      &m_DamageInd,
+					      &m_Snowfall, // falling snow, drawn below the hud
 					      &m_Hud,
 					      &m_Spectator,
 					      &m_Emoticon,

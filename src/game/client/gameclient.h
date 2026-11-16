@@ -63,6 +63,7 @@
 #include "components/scoreboard.h"
 #include "components/skins.h"
 #include "components/skins7.h"
+#include "components/snowfall.h"
 #include "components/sounds.h"
 #include "components/spectator.h"
 #include "components/statboard.h"
@@ -175,6 +176,7 @@ public:
 	CSounds m_Sounds;
 	CEmoticon m_Emoticon;
 	CDamageInd m_DamageInd;
+	CSnowfall m_Snowfall;
 	CTouchControls m_TouchControls;
 	CVoting m_Voting;
 	CSpectator m_Spectator;

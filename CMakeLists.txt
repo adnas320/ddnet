@@ -2739,6 +2739,8 @@ if(CLIENT)
     components/skins.h
     components/skins7.cpp
     components/skins7.h
+    components/snowfall.cpp
+    components/snowfall.h
     components/sounds.cpp
     components/sounds.h
     components/spectator.cpp
