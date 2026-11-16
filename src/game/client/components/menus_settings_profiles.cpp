@@ -164,7 +164,7 @@ void SaveProfiles(IStorage *pStorage)
 			   std::to_string(Profile.m_ColorBody) + "\t" + std::to_string(Profile.m_ColorFeet) + "\t" +
 			   std::to_string(Profile.m_Emote) + "\t" + std::to_string(Profile.m_Parts) + "\n";
 	}
-	IOHANDLE File = pStorage->OpenFile(PROFILES_FILE, IOHANDLE_WRITE, IStorage::TYPE_SAVE);
+	IOHANDLE File = pStorage->OpenFile(PROFILES_FILE, IOFLAG_WRITE, IStorage::TYPE_SAVE);
 	if(!File)
 		return;
 	io_write(File, Content.data(), Content.size());
@@ -174,7 +174,7 @@ void SaveProfiles(IStorage *pStorage)
 void LoadProfiles(IStorage *pStorage)
 {
 	gs_vProfiles.clear();
-	IOHANDLE File = pStorage->OpenFile(PROFILES_FILE, IOHANDLE_READ, IStorage::TYPE_SAVE);
+	IOHANDLE File = pStorage->OpenFile(PROFILES_FILE, IOFLAG_READ, IStorage::TYPE_SAVE);
 	if(!File)
 		return;
 	char *pContent = io_read_all_str(File);
