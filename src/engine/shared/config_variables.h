@@ -807,3 +807,8 @@ MACRO_CONFIG_INT(ClVideoRecorderFPS, cl_video_recorder_fps, 60, 1, 1000, CFGFLAG
 
 MACRO_CONFIG_INT(ClVisualsWinterHat, cl_visuals_winter_hat, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show a winter hat on your own tee")
 MACRO_CONFIG_INT(ClVisualsSnow, cl_visuals_snow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show falling snowflakes")
+MACRO_CONFIG_INT(ClVisualsSnowWeapons, cl_visuals_snow_weapons, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Scatter snowflakes when lasers, shotgun and grenades hit something")
+MACRO_CONFIG_INT(ClVisualsHalo, cl_visuals_halo, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show a halo above your own tee")
+MACRO_CONFIG_INT(ClVisualsHaloRainbow, cl_visuals_halo_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Let the halo cycle through rainbow colors")
+MACRO_CONFIG_INT(ClVisualsHorns, cl_visuals_horns, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show demon horns on your own tee")
+MACRO_CONFIG_INT(ClVisualsHornsRainbow, cl_visuals_horns_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Let the demon horns cycle through rainbow colors")

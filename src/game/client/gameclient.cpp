@@ -149,7 +149,7 @@ void CGameClient::OnConsoleInit()
 					      &m_Particles.m_RenderGeneral,
 					      &m_FreezeBars,
 					      &m_DamageInd,
-					      &m_Snowfall, // falling snow, drawn below the hud
+					      &m_Visuals, // falling snow and weapon snow bursts, drawn below the hud
 					      &m_Hud,
 					      &m_Spectator,
 					      &m_Emoticon,
@@ -1479,6 +1479,7 @@ void CGameClient::ProcessEvents()
 			if(!m_PredictedWorld.CheckPredictedEventHandled(CGameWorld::CPredictedEvent(Item.m_Type, ExplosionPos, -1, Client()->GameTick(g_Config.m_ClDummy))))
 			{
 				m_Effects.Explosion(ExplosionPos, Alpha);
+				m_Visuals.OnExplosion(ExplosionPos);
 			}
 		}
 		else if(Item.m_Type == NETEVENTTYPE_HAMMERHIT)
@@ -3883,6 +3884,7 @@ void CGameClient::HandlePredictedEvents(const int Tick)
 			else if(EventsIterator->m_EventId == NETEVENTTYPE_EXPLOSION)
 			{
 				m_Effects.Explosion(EventsIterator->m_Pos, Alpha);
+				m_Visuals.OnExplosion(EventsIterator->m_Pos);
 			}
 			else if(EventsIterator->m_EventId == NETEVENTTYPE_HAMMERHIT)
 			{

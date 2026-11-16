@@ -262,6 +262,8 @@ void CItems::RenderFlag(const CNetObj_Flag *pPrev, const CNetObj_Flag *pCurrent,
 void CItems::RenderLaser(const CLaserData *pCurrent, bool IsPredicted)
 {
 	int Type = std::clamp(pCurrent->m_Type, -1, NUM_LASERTYPES - 1);
+	if(Type == LASERTYPE_RIFLE || Type == LASERTYPE_SHOTGUN)
+		GameClient()->m_Visuals.OnLaserRendered(pCurrent->m_From, pCurrent->m_To, pCurrent->m_StartTick, Type == LASERTYPE_SHOTGUN);
 	int ColorIn, ColorOut;
 	switch(Type)
 	{

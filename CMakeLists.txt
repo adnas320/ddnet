@@ -2062,6 +2062,9 @@ set(EXPECTED_DATA
   themes/winter_day.map
   themes/winter_night.map
   touch_controls.json
+  visuals/halo.png
+  visuals/horn.png
+  visuals/winter_hat.png
   wordlist.txt
   # tidy-alphabetical-end
 )
@@ -2739,8 +2742,6 @@ if(CLIENT)
     components/skins.h
     components/skins7.cpp
     components/skins7.h
-    components/snowfall.cpp
-    components/snowfall.h
     components/sounds.cpp
     components/sounds.h
     components/spectator.cpp
@@ -2749,6 +2750,8 @@ if(CLIENT)
     components/statboard.h
     components/touch_controls.cpp
     components/touch_controls.h
+    components/visuals.cpp
+    components/visuals.h
     components/voting.cpp
     components/voting.h
     gameclient.cpp
