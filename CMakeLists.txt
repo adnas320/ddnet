@@ -2713,6 +2713,7 @@ if(CLIENT)
     components/menus_settings_controls.h
     components/menus_settings_credits.cpp
     components/menus_settings_ddnet.cpp
+    components/menus_settings_visuals.cpp
     components/menus_settings_general.cpp
     components/menus_settings_graphics.cpp
     components/menus_settings_language.cpp
