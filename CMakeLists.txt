@@ -2064,7 +2064,6 @@ set(EXPECTED_DATA
   touch_controls.json
   visuals/glow.png
   visuals/halo.png
-  visuals/horns.png
   visuals/winter_hat.png
   wordlist.txt
   # tidy-alphabetical-end

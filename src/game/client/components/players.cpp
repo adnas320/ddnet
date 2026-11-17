@@ -868,7 +868,7 @@ void CPlayers::RenderPlayer(
 	vec2 BodyPos = Position + vec2(State.GetBody()->m_X, State.GetBody()->m_Y) * TeeAnimScale;
 	if(Local)
 	{
-		// the demon horns are only shown on your own tee and have to be behind it
+		// the aura is only shown on your own tee and has to be behind it
 		GameClient()->m_Visuals.RenderBehindTee(BodyPos, TeeBaseSize, Alpha);
 	}
 
@@ -876,8 +876,8 @@ void CPlayers::RenderPlayer(
 
 	if(Local)
 	{
-		// hat and halo are only shown on your own tee
-		GameClient()->m_Visuals.RenderTeeAccessories(BodyPos, TeeBaseSize, Alpha, Direction, Vel);
+		// hat, halo and effects are only shown on your own tee
+		GameClient()->m_Visuals.RenderTeeAccessories(Position, BodyPos, TeeBaseSize, Alpha, Direction, Vel, InAir);
 	}
 	if(RenderInfo.m_TeeRenderFlags & TEE_EFFECT_FROZEN)
 	{

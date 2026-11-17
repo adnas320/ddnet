@@ -46,13 +46,20 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 			Value ^= 1;
 	};
 
-	CUIRect Card = BeginCard(Left, "New Year", 3);
+	CUIRect Card = BeginCard(Left, "New Year", 6);
 	DoToggle(Card, g_Config.m_ClVisualsWinterHat, "Winter hat on your own tee");
 	DoToggle(Card, g_Config.m_ClVisualsSnow, "Falling snow");
-	DoToggle(Card, g_Config.m_ClVisualsSnowWeapons, "Snow and flash on weapon hits", true);
+	DoToggle(Card, g_Config.m_ClVisualsSnowWeapons, "Snow and flash on weapon hits");
+	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Snow when you land on the ground");
+	DoToggle(Card, g_Config.m_ClVisualsFrost, "Frost on the screen edges");
+	DoToggle(Card, g_Config.m_ClVisualsGarland, "Blinking garland", true);
 
-	Card = BeginCard(Right, "Spirits", 3);
+	Card = BeginCard(Right, "Spirits", 2);
 	DoToggle(Card, g_Config.m_ClVisualsHalo, "Halo above your own tee");
-	DoToggle(Card, g_Config.m_ClVisualsHaloRainbow, "Rainbow halo");
-	DoToggle(Card, g_Config.m_ClVisualsHorns, "Demon horns on your own tee", true);
+	DoToggle(Card, g_Config.m_ClVisualsHaloRainbow, "Rainbow halo", true);
+
+	Card = BeginCard(Right, "Effects", 3);
+	DoToggle(Card, g_Config.m_ClVisualsAura, "Glowing aura around your tee");
+	DoToggle(Card, g_Config.m_ClVisualsTrail, "Rainbow sparkle trail");
+	DoToggle(Card, g_Config.m_ClVisualsJumpRings, "Rings when you jump", true);
 }
