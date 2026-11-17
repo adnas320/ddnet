@@ -869,7 +869,7 @@ void CPlayers::RenderPlayer(
 	if(Local)
 	{
 		// the aura is only shown on your own tee and has to be behind it
-		GameClient()->m_Visuals.RenderBehindTee(BodyPos, TeeBaseSize, Alpha);
+		GameClient()->m_Visuals.RenderBehindTee(BodyPos, TeeBaseSize, Alpha, RenderInfo.m_ColorBody);
 	}
 
 	RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, Position, Alpha);
@@ -877,7 +877,7 @@ void CPlayers::RenderPlayer(
 	if(Local)
 	{
 		// hat, halo and effects are only shown on your own tee
-		GameClient()->m_Visuals.RenderTeeAccessories(Position, BodyPos, TeeBaseSize, Alpha, Direction, Vel, InAir);
+		GameClient()->m_Visuals.RenderTeeAccessories(Position, BodyPos, TeeBaseSize, Alpha, Direction, Vel, InAir, Player.m_Jumped, RenderInfo.m_ColorBody);
 	}
 	if(RenderInfo.m_TeeRenderFlags & TEE_EFFECT_FROZEN)
 	{

@@ -53,6 +53,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Localize("Assets"),
 		Localize("Visuals"),
 		Localize("Profiles"),
+		Localize("Combat"),
 		Localize("Credits")};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
@@ -126,6 +127,11 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_PROFILES);
 		RenderSettingsProfiles(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_COMBAT)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_COMBAT);
+		RenderSettingsCombat(MainView);
 	}
 	else if(g_Config.m_UiSettingsPage == SETTINGS_CREDITS)
 	{

@@ -46,6 +46,7 @@ void CProofMode::InitMenuBackgroundPositionNames()
 	m_vpMenuBackgroundPositionNames[CMenuBackground::POS_SETTINGS_ASSETS] = "settings(assets)";
 	m_vpMenuBackgroundPositionNames[CMenuBackground::POS_SETTINGS_VISUALS] = "settings(visuals)";
 	m_vpMenuBackgroundPositionNames[CMenuBackground::POS_SETTINGS_PROFILES] = "settings(profiles)";
+	m_vpMenuBackgroundPositionNames[CMenuBackground::POS_SETTINGS_COMBAT] = "settings(combat)";
 	m_vpMenuBackgroundPositionNames[CMenuBackground::POS_SETTINGS_CREDITS] = "settings(credits)";
 	m_vpMenuBackgroundPositionNames[CMenuBackground::POS_BROWSER_CUSTOM0] = "custom(1)";
 	m_vpMenuBackgroundPositionNames[CMenuBackground::POS_BROWSER_CUSTOM1] = "custom(2)";

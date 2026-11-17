@@ -19,7 +19,9 @@ class CVisuals : public CComponent
 		NUM_FLAKES = 60, // per tile of the snow field
 		MAX_BURST_FLAKES = 600,
 		MAX_SPARKLES = 300,
+		MAX_STREAKS = 80,
 		MAX_RINGS = 8,
+		NUM_FIREFLIES = 14, // per tile of the firefly field
 		NUM_RECENT_LASERS = 32,
 	};
 
@@ -67,7 +69,32 @@ class CVisuals : public CComponent
 		float m_Life;
 		float m_MaxLife;
 		float m_Size;
+		float m_Grow; // size change over the lifetime: -0.6 shrinks, 1.0 grows
+		float m_AlphaScale;
 		ColorRGBA m_Color;
+	};
+
+	// thin line in the air that stays behind a fast tee
+	struct CStreak
+	{
+		vec2 m_Pos;
+		vec2 m_Dir;
+		float m_Length;
+		float m_Life;
+		float m_MaxLife;
+		ColorRGBA m_Color;
+	};
+
+	// glowing dot of the firefly field, same tiling idea as the snow
+	struct CFirefly
+	{
+		vec2 m_Base;
+		vec2 m_Amp;
+		vec2 m_Freq;
+		vec2 m_Phase;
+		float m_Size;
+		float m_TwinkleFreq;
+		float m_TwinklePhase;
 	};
 
 	// expanding ring at the feet of the tee
@@ -77,6 +104,7 @@ class CVisuals : public CComponent
 		float m_Life;
 		float m_MaxLife;
 		float m_MaxRadius;
+		ColorRGBA m_Color;
 	};
 
 	struct CRecentLaser
@@ -90,10 +118,12 @@ class CVisuals : public CComponent
 	IGraphics::CTextureHandle m_GlowTexture;
 
 	CFlake m_aFlakes[NUM_FLAKES];
+	CFirefly m_aFireflies[NUM_FIREFLIES];
 	bool m_FlakesInitialized = false;
 	std::vector<CBurstFlake> m_vBurstFlakes;
 	std::vector<CFlash> m_vFlashes;
 	std::vector<CSparkle> m_vSparkles;
+	std::vector<CStreak> m_vStreaks;
 	std::vector<CRing> m_vRings;
 	CRecentLaser m_aRecentLasers[NUM_RECENT_LASERS];
 	int m_NextRecentLaser = 0;
@@ -113,17 +143,19 @@ class CVisuals : public CComponent
 	bool m_WasInAir = false;
 	float m_FallSpeed = 0.0f;
 	float m_TrailAccumulator = 0.0f;
-	vec2 m_LastTeeVel = vec2(0.0f, 0.0f);
-	double m_LastTeeTime = 0.0;
+	int m_LastJumped = 0;
+	bool m_JumpedInitialized = false;
+	float m_DustAccumulator = 0.0f;
+	float m_StreakAccumulator = 0.0f;
 
 	void InitFlakes();
 	void SpawnBurst(vec2 Pos, vec2 Dir, float Spread, int Num, float MinSpeed, float MaxSpeed);
 	void SpawnFlash(vec2 Pos, float Size, float Life);
-	void SpawnRing(vec2 Pos, float MaxRadius);
+	void SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color);
 	void DrawSprite(IGraphics::CTextureHandle Texture, vec2 Center, float Width, float Height, float Rotation, bool Flip, ColorRGBA Color) const;
 	void DrawFlake(vec2 Center, float Size, float Angle) const;
-	void DrawFrost(const CScreenRect &View) const;
-	void DrawGarland(const CScreenRect &View) const;
+	void DrawOrbs(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA Color, bool Front) const;
+	void RenderGunPredict(const CScreenRect &View) const;
 	void UpdateHat(vec2 LookDir, vec2 Vel, float DeltaTime);
 	ColorRGBA Rainbow(float Offset) const;
 
@@ -135,11 +167,12 @@ public:
 
 	// Only called for the own tee. Position is the tee position, BodyPos the center of the tee body.
 	// Called every frame (also when all effects are off) so that the state stays in sync.
-	// The aura is drawn behind the tee, so this has to be called before the tee is rendered.
-	void RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha) const;
+	// Aura, sparkle trail, speed lines and back orbs are drawn behind the tee,
+	// so this has to be called before the tee is rendered. TeeColor is the body color of the skin.
+	void RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA TeeColor);
 	// Hat, halo and effect spawning, drawn on top of the tee. LookDir is the aim direction,
 	// Vel the velocity of the tee in units per tick.
-	void RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, float Alpha, vec2 LookDir, vec2 Vel, bool InAir);
+	void RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, float Alpha, vec2 LookDir, vec2 Vel, bool InAir, int Jumped, ColorRGBA TeeColor);
 
 	// weapon hooks
 	void OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun);

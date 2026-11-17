@@ -680,6 +680,17 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 				Data.m_Color = GameClient()->GetDDTeamColor(Team, 0.75f);
 		}
 	}
+	if(pPlayerInfo->m_Local && g_Config.m_ClVisualsNameShimmer)
+	{
+		// the name shimmers in the colors of the own skin
+		const auto &LocalInfo = ClientData.m_RenderInfo;
+		ColorHSLA Base = LocalInfo.m_CustomColoredSkin ? color_cast<ColorHSLA>(LocalInfo.m_ColorBody) : ColorHSLA(0.12f, 0.8f, 0.6f);
+		const float Phase = Client()->LocalTime() * 1.5f;
+		const float Hue = std::fmod(Base.h + 0.05f * std::sin(Phase) + 1.0f, 1.0f);
+		const float Saturation = std::max(Base.s, 0.6f);
+		const float Lightness = 0.72f + 0.16f * std::sin(Phase * 1.3f + 1.0f);
+		Data.m_Color = color_cast<ColorRGBA>(ColorHSLA(Hue, Saturation, Lightness));
+	}
 	Data.m_Color.a = Alpha;
 
 	int ShowDirectionConfig = g_Config.m_ClShowDirection;

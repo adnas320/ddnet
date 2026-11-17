@@ -31,6 +31,15 @@ constexpr float HALO_Y_WITH_HAT = -0.96f;
 constexpr float SNOW_TILE_WIDTH = 1400.0f;
 constexpr float SNOW_TILE_HEIGHT = 900.0f;
 
+constexpr float FIREFLY_TILE_WIDTH = 1100.0f;
+constexpr float FIREFLY_TILE_HEIGHT = 800.0f;
+
+// mixes a color with white
+ColorRGBA Lighten(ColorRGBA Color, float Amount)
+{
+	return ColorRGBA(Color.r + (1.0f - Color.r) * Amount, Color.g + (1.0f - Color.g) * Amount, Color.b + (1.0f - Color.b) * Amount, Color.a);
+}
+
 } // namespace
 
 void CVisuals::OnInit()
@@ -46,6 +55,8 @@ void CVisuals::OnReset()
 	m_vFlashes.clear();
 	m_vSparkles.clear();
 	m_vRings.clear();
+	m_vStreaks.clear();
+	m_JumpedInitialized = false;
 	m_FlakesInitialized = false;
 	m_HatInitialized = false;
 	m_WasInAir = false;
@@ -77,16 +88,94 @@ void CVisuals::DrawSprite(IGraphics::CTextureHandle Texture, vec2 Center, float 
 	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
-void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha) const
+void CVisuals::DrawOrbs(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA Color, bool Front) const
 {
-	if(!g_Config.m_ClVisualsAura)
+	if(!g_Config.m_ClVisualsOrbs)
 		return;
-	// soft icy glow around the tee that slowly pulses
 	const float Time = Client()->LocalTime();
-	const float Pulse = 0.85f + 0.15f * std::sin(Time * 2.2f);
+	const ColorRGBA Light = Lighten(Color, 0.4f);
 	Graphics()->BlendAdditive();
-	DrawSprite(m_GlowTexture, BodyPos, 2.8f * TeeSize * Pulse, 2.8f * TeeSize * Pulse, 0.0f, false, ColorRGBA(0.45f, 0.75f, 1.0f, 0.55f * Alpha));
+	for(int i = 0; i < 3; i++)
+	{
+		const float Angle = Time * 2.2f + i * 2.0f * pi / 3.0f;
+		const float Depth = std::sin(Angle); // positive: in front of the tee
+		if((Depth >= 0.0f) != Front)
+			continue;
+		const vec2 Pos = BodyPos + vec2(std::cos(Angle) * 0.95f, Depth * 0.38f - 0.1f) * TeeSize;
+		const float Scale = 0.85f + 0.2f * Depth;
+		DrawSprite(m_GlowTexture, Pos, 0.4f * TeeSize * Scale, 0.4f * TeeSize * Scale, 0.0f, false, ColorRGBA(Light.r, Light.g, Light.b, 0.9f * Alpha));
+		DrawSprite(m_GlowTexture, Pos, 0.14f * TeeSize * Scale, 0.14f * TeeSize * Scale, 0.0f, false, ColorRGBA(1.0f, 1.0f, 1.0f, Alpha));
+	}
 	Graphics()->BlendNormal();
+}
+
+void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA TeeColor)
+{
+	const float Time = Client()->LocalTime();
+	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.05f);
+	const ColorRGBA Light = Lighten(TeeColor, 0.3f);
+
+	// speed lines stay in the air where the tee flew by
+	if(!m_vStreaks.empty())
+	{
+		Graphics()->TextureClear();
+		Graphics()->BlendAdditive();
+		Graphics()->QuadsBegin();
+		for(size_t i = 0; i < m_vStreaks.size();)
+		{
+			CStreak &Streak = m_vStreaks[i];
+			Streak.m_Life -= DeltaTime;
+			if(Streak.m_Life <= 0.0f)
+			{
+				Streak = m_vStreaks.back();
+				m_vStreaks.pop_back();
+				continue;
+			}
+			const float Remaining = std::clamp(Streak.m_Life / Streak.m_MaxLife, 0.0f, 1.0f);
+			const vec2 Perp(-Streak.m_Dir.y, Streak.m_Dir.x);
+			const vec2 Head = Streak.m_Pos;
+			const vec2 Tail = Streak.m_Pos - Streak.m_Dir * Streak.m_Length;
+			Graphics()->SetColor(Streak.m_Color.r, Streak.m_Color.g, Streak.m_Color.b, Remaining * 0.6f);
+			const IGraphics::CFreeformItem Item(Head - Perp * 0.9f, Head + Perp * 0.9f, Tail - Perp * 0.2f, Tail + Perp * 0.2f);
+			Graphics()->QuadsDrawFreeform(&Item, 1);
+			i++;
+		}
+		Graphics()->QuadsEnd();
+		Graphics()->BlendNormal();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	Graphics()->BlendAdditive();
+
+	// soft glow around the tee in the color of its skin that slowly pulses
+	if(g_Config.m_ClVisualsAura)
+	{
+		const float Pulse = 0.85f + 0.15f * std::sin(Time * 2.2f);
+		DrawSprite(m_GlowTexture, BodyPos, 2.8f * TeeSize * Pulse, 2.8f * TeeSize * Pulse, 0.0f, false, ColorRGBA(Light.r, Light.g, Light.b, 0.6f * Alpha));
+	}
+
+	// sparkle trail and dust puffs, drawn behind the tee
+	for(size_t i = 0; i < m_vSparkles.size();)
+	{
+		CSparkle &Sparkle = m_vSparkles[i];
+		Sparkle.m_Life -= DeltaTime;
+		if(Sparkle.m_Life <= 0.0f)
+		{
+			Sparkle = m_vSparkles.back();
+			m_vSparkles.pop_back();
+			continue;
+		}
+		Sparkle.m_Pos += Sparkle.m_Vel * DeltaTime;
+		const float Remaining = std::clamp(Sparkle.m_Life / Sparkle.m_MaxLife, 0.0f, 1.0f);
+		ColorRGBA Color = Sparkle.m_Color;
+		Color.a = Remaining * Sparkle.m_AlphaScale;
+		const float Size = Sparkle.m_Size * std::max(0.2f, 1.0f + Sparkle.m_Grow * (1.0f - Remaining));
+		DrawSprite(m_GlowTexture, Sparkle.m_Pos, Size, Size, 0.0f, false, Color);
+		i++;
+	}
+	Graphics()->BlendNormal();
+
+	DrawOrbs(BodyPos, TeeSize, Alpha, TeeColor, false);
 }
 
 void CVisuals::UpdateHat(vec2 LookDir, vec2 Vel, float DeltaTime)
@@ -135,33 +224,33 @@ void CVisuals::UpdateHat(vec2 LookDir, vec2 Vel, float DeltaTime)
 	m_HatBob = std::clamp(m_HatBob, -0.08f, 0.08f);
 }
 
-void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, float Alpha, vec2 LookDir, vec2 Vel, bool InAir)
+void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, float Alpha, vec2 LookDir, vec2 Vel, bool InAir, int Jumped, ColorRGBA TeeColor)
 {
 	const float Time = Client()->LocalTime();
 	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.05f);
 	const vec2 Feet = Position + vec2(0.0f, 14.0f);
+	const ColorRGBA Light = Lighten(TeeColor, 0.4f);
+	const ColorRGBA RingColor = Lighten(TeeColor, 0.5f);
 
-	// landing: snow flies up from the ground
+	// landing: snow flies up from the ground and a shockwave ring spreads
 	if(InAir)
 		m_FallSpeed = m_WasInAir ? std::max(m_FallSpeed, Vel.y) : 0.0f;
 	else if(m_WasInAir)
 	{
+		const float Strength = std::clamp(m_FallSpeed / 14.0f, 0.3f, 1.4f);
 		if(g_Config.m_ClVisualsSnowLanding && m_FallSpeed > 3.5f)
-		{
-			const float Strength = std::clamp(m_FallSpeed / 14.0f, 0.3f, 1.4f);
 			SpawnBurst(Feet, vec2(0.0f, -1.0f), 1.3f, (int)(6 + 14 * Strength), 40.0f + 40.0f * Strength, 90.0f + 90.0f * Strength);
-		}
+		if(g_Config.m_ClVisualsLandRing && m_FallSpeed > 5.0f)
+			SpawnRing(Feet, 30.0f + 50.0f * Strength, RingColor);
 		m_FallSpeed = 0.0f;
 	}
-
-	// jump rings: a sudden strong upward push (jump or air jump)
-	if(g_Config.m_ClVisualsJumpRings && Vel.y < -9.0f && Vel.y - m_LastTeeVel.y < -2.5f && Time - m_LastTeeTime > 0.25)
-	{
-		SpawnRing(Feet, 40.0f);
-		m_LastTeeTime = Time;
-	}
-	m_LastTeeVel = Vel;
 	m_WasInAir = InAir;
+
+	// jump rings: exactly when the game says that a jump happened, no cooldown
+	if(m_JumpedInitialized && g_Config.m_ClVisualsJumpRings && (Jumped & ~m_LastJumped) != 0)
+		SpawnRing(Feet, 40.0f, RingColor);
+	m_LastJumped = Jumped;
+	m_JumpedInitialized = true;
 
 	// sparkle trail
 	if(g_Config.m_ClVisualsTrail)
@@ -178,12 +267,65 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 			Sparkle.m_MaxLife = random_float(0.5f, 0.9f);
 			Sparkle.m_Life = Sparkle.m_MaxLife;
 			Sparkle.m_Size = random_float(0.22f, 0.42f) * TeeSize;
+			Sparkle.m_Grow = -0.6f;
+			Sparkle.m_AlphaScale = 0.8f;
 			Sparkle.m_Color = Rainbow(random_float(0.0f, 0.12f));
 			m_vSparkles.push_back(Sparkle);
 		}
 	}
 	else
 		m_TrailAccumulator = 0.0f;
+
+	// dust puffs while running on the ground
+	if(g_Config.m_ClVisualsDust && !InAir && std::abs(Vel.x) > 3.0f)
+	{
+		m_DustAccumulator += DeltaTime * 28.0f;
+		while(m_DustAccumulator >= 1.0f)
+		{
+			m_DustAccumulator -= 1.0f;
+			if(m_vSparkles.size() >= MAX_SPARKLES)
+				break;
+			CSparkle Puff;
+			Puff.m_Pos = Feet + vec2(random_float(-0.2f, 0.2f) * TeeSize, random_float(-2.0f, 2.0f));
+			Puff.m_Vel = vec2(-(Vel.x > 0.0f ? 1.0f : -1.0f) * random_float(5.0f, 25.0f), random_float(-18.0f, -4.0f));
+			Puff.m_MaxLife = random_float(0.4f, 0.7f);
+			Puff.m_Life = Puff.m_MaxLife;
+			Puff.m_Size = random_float(0.25f, 0.45f) * TeeSize;
+			Puff.m_Grow = 1.0f;
+			Puff.m_AlphaScale = 0.35f;
+			Puff.m_Color = Lighten(TeeColor, 0.75f);
+			m_vSparkles.push_back(Puff);
+		}
+	}
+	else
+		m_DustAccumulator = 0.0f;
+
+	// speed lines when moving fast
+	const float Speed = length(Vel);
+	if(g_Config.m_ClVisualsSpeedLines && Speed > 6.0f)
+	{
+		m_StreakAccumulator += DeltaTime * 45.0f;
+		while(m_StreakAccumulator >= 1.0f)
+		{
+			m_StreakAccumulator -= 1.0f;
+			if(m_vStreaks.size() >= MAX_STREAKS)
+				break;
+			const vec2 Dir = Vel / Speed;
+			const vec2 Perp(-Dir.y, Dir.x);
+			CStreak Streak;
+			Streak.m_Pos = BodyPos + Perp * random_float(-0.7f, 0.7f) * TeeSize + Dir * random_float(-0.3f, 0.3f) * TeeSize;
+			Streak.m_Dir = Dir;
+			Streak.m_Length = random_float(1.0f, 2.2f) * TeeSize;
+			Streak.m_MaxLife = random_float(0.25f, 0.4f);
+			Streak.m_Life = Streak.m_MaxLife;
+			Streak.m_Color = Light;
+			m_vStreaks.push_back(Streak);
+		}
+	}
+	else
+		m_StreakAccumulator = 0.0f;
+
+	DrawOrbs(BodyPos, TeeSize, Alpha, TeeColor, true);
 
 	const bool Hat = g_Config.m_ClVisualsWinterHat;
 	const bool Halo = g_Config.m_ClVisualsHalo;
@@ -232,6 +374,16 @@ void CVisuals::InitFlakes()
 		Flake.m_SwayPhase = random_float(0.0f, 2.0f * pi);
 		Flake.m_SwayFrequency = random_float(0.5f, 1.5f);
 	}
+	for(CFirefly &Firefly : m_aFireflies)
+	{
+		Firefly.m_Base = vec2(random_float(0.0f, FIREFLY_TILE_WIDTH), random_float(0.0f, FIREFLY_TILE_HEIGHT));
+		Firefly.m_Amp = vec2(random_float(25.0f, 70.0f), random_float(20.0f, 55.0f));
+		Firefly.m_Freq = vec2(random_float(0.15f, 0.5f), random_float(0.15f, 0.5f));
+		Firefly.m_Phase = vec2(random_float(0.0f, 2.0f * pi), random_float(0.0f, 2.0f * pi));
+		Firefly.m_Size = random_float(11.0f, 20.0f);
+		Firefly.m_TwinkleFreq = random_float(0.8f, 2.0f);
+		Firefly.m_TwinklePhase = random_float(0.0f, 2.0f * pi);
+	}
 	m_FlakesInitialized = true;
 }
 
@@ -261,116 +413,6 @@ void CVisuals::DrawFlake(vec2 Center, float Size, float Angle) const
 	}
 }
 
-void CVisuals::DrawFrost(const CScreenRect &View) const
-{
-	const float Time = Client()->LocalTime();
-	const vec2 Size = View.Size();
-	const float Thickness = Size.y * 0.14f;
-	const float Strength = 0.40f + 0.05f * std::sin(Time * 0.8f);
-	const ColorRGBA Edge(0.78f, 0.92f, 1.0f, Strength);
-	const ColorRGBA Clear(0.78f, 0.92f, 1.0f, 0.0f);
-	const float Left = View.m_TopLeft.x;
-	const float Top = View.m_TopLeft.y;
-
-	Graphics()->TextureClear();
-	Graphics()->QuadsBegin();
-	IGraphics::CQuadItem Item;
-
-	Graphics()->SetColor4(Edge, Edge, Clear, Clear);
-	Item = IGraphics::CQuadItem(Left, Top, Size.x, Thickness);
-	Graphics()->QuadsDrawTL(&Item, 1);
-
-	Graphics()->SetColor4(Clear, Clear, Edge, Edge);
-	Item = IGraphics::CQuadItem(Left, Top + Size.y - Thickness, Size.x, Thickness);
-	Graphics()->QuadsDrawTL(&Item, 1);
-
-	Graphics()->SetColor4(Edge, Clear, Edge, Clear);
-	Item = IGraphics::CQuadItem(Left, Top, Thickness, Size.y);
-	Graphics()->QuadsDrawTL(&Item, 1);
-
-	Graphics()->SetColor4(Clear, Edge, Clear, Edge);
-	Item = IGraphics::CQuadItem(Left + Size.x - Thickness, Top, Thickness, Size.y);
-	Graphics()->QuadsDrawTL(&Item, 1);
-
-	Graphics()->QuadsEnd();
-	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-}
-
-void CVisuals::DrawGarland(const CScreenRect &View) const
-{
-	const float Time = Client()->LocalTime();
-	const vec2 Size = View.Size();
-	const float SwagWidth = Size.y * 0.42f;
-	const float Sag = Size.y * 0.045f;
-	const float TopY = View.m_TopLeft.y + Size.y * 0.012f;
-	const float WireHalf = Size.y * 0.002f;
-	const float BulbRadius = Size.y * 0.011f;
-	const int NumSwags = (int)std::ceil(Size.x / SwagWidth);
-	constexpr int SEGMENTS = 14;
-	constexpr int BULBS_PER_SWAG = 4;
-	const ColorRGBA aPalette[4] = {
-		ColorRGBA(1.0f, 0.20f, 0.20f, 1.0f),
-		ColorRGBA(1.0f, 0.80f, 0.20f, 1.0f),
-		ColorRGBA(0.30f, 1.0f, 0.40f, 1.0f),
-		ColorRGBA(0.30f, 0.60f, 1.0f, 1.0f),
-	};
-
-	const auto PointAt = [&](int Swag, float U) {
-		return vec2(View.m_TopLeft.x + (Swag + U) * SwagWidth, TopY + Sag * std::sin(U * pi));
-	};
-	const auto BulbBrightness = [&](int Index) {
-		return 0.5f + 0.5f * std::sin(Time * 3.0f + Index * 1.7f);
-	};
-
-	// wire and bulbs
-	Graphics()->TextureClear();
-	Graphics()->QuadsBegin();
-	Graphics()->SetColor(0.08f, 0.30f, 0.12f, 0.95f);
-	for(int Swag = 0; Swag < NumSwags; Swag++)
-	{
-		for(int i = 0; i < SEGMENTS; i++)
-		{
-			const vec2 A = PointAt(Swag, (float)i / SEGMENTS);
-			const vec2 B = PointAt(Swag, (float)(i + 1) / SEGMENTS);
-			const IGraphics::CFreeformItem Item(A.x, A.y - WireHalf, B.x, B.y - WireHalf, A.x, A.y + WireHalf, B.x, B.y + WireHalf);
-			Graphics()->QuadsDrawFreeform(&Item, 1);
-		}
-	}
-	for(int Swag = 0; Swag < NumSwags; Swag++)
-	{
-		for(int k = 0; k < BULBS_PER_SWAG; k++)
-		{
-			const int Index = Swag * BULBS_PER_SWAG + k;
-			const vec2 Pos = PointAt(Swag, (k + 0.5f) / BULBS_PER_SWAG) + vec2(0.0f, BulbRadius * 0.9f);
-			ColorRGBA Color = aPalette[Index % 4];
-			const float Light = 0.45f + 0.55f * BulbBrightness(Index);
-			Graphics()->SetColor(Color.r * Light, Color.g * Light, Color.b * Light, 1.0f);
-			Graphics()->DrawCircle(Pos.x, Pos.y, BulbRadius, 12);
-		}
-	}
-	Graphics()->QuadsEnd();
-
-	// glow around the bulbs
-	Graphics()->BlendAdditive();
-	Graphics()->TextureSet(m_GlowTexture);
-	Graphics()->QuadsBegin();
-	for(int Swag = 0; Swag < NumSwags; Swag++)
-	{
-		for(int k = 0; k < BULBS_PER_SWAG; k++)
-		{
-			const int Index = Swag * BULBS_PER_SWAG + k;
-			const vec2 Pos = PointAt(Swag, (k + 0.5f) / BULBS_PER_SWAG) + vec2(0.0f, BulbRadius * 0.9f);
-			const ColorRGBA Color = aPalette[Index % 4];
-			Graphics()->SetColor(Color.r, Color.g, Color.b, 0.55f * BulbBrightness(Index));
-			IGraphics::CQuadItem Item(Pos.x, Pos.y, BulbRadius * 7.0f, BulbRadius * 7.0f);
-			Graphics()->QuadsDraw(&Item, 1);
-		}
-	}
-	Graphics()->QuadsEnd();
-	Graphics()->BlendNormal();
-	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-}
-
 void CVisuals::OnRender()
 {
 	const int State = Client()->State();
@@ -380,13 +422,14 @@ void CVisuals::OnRender()
 		m_vFlashes.clear();
 		m_vSparkles.clear();
 		m_vRings.clear();
+		m_vStreaks.clear();
 		return;
 	}
 
 	const bool Snow = g_Config.m_ClVisualsSnow;
-	const bool Frost = g_Config.m_ClVisualsFrost;
-	const bool Garland = g_Config.m_ClVisualsGarland;
-	if(!Snow && !Frost && !Garland && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vSparkles.empty() && m_vRings.empty())
+	const bool Fireflies = g_Config.m_ClVisualsFireflies;
+	const bool Predict = g_Config.m_ClCombatPredict;
+	if(!Snow && !Fireflies && !Predict && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty())
 		return;
 
 	// The game world is still mapped to the screen here, so everything below is drawn in world coordinates.
@@ -395,14 +438,14 @@ void CVisuals::OnRender()
 	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.1f);
 	const double Time = Client()->LocalTime();
 
+	if(!m_FlakesInitialized)
+		InitFlakes();
+
 	Graphics()->TextureClear();
 	Graphics()->QuadsBegin();
 
 	if(Snow)
 	{
-		if(!m_FlakesInitialized)
-			InitFlakes();
-
 		// The size grows when zooming out so the flakes stay visible; positions only depend on time,
 		// so zooming does not move them.
 		const float SizeScale = std::clamp(View.Size().y / 700.0f, 1.0f, 4.0f);
@@ -469,7 +512,7 @@ void CVisuals::OnRender()
 			const float Progress = 1.0f - std::clamp(Ring.m_Life / Ring.m_MaxLife, 0.0f, 1.0f);
 			const float Radius = Ring.m_MaxRadius * (1.0f - (1.0f - Progress) * (1.0f - Progress));
 			const float HalfWidth = 1.6f;
-			Graphics()->SetColor(0.8f, 0.95f, 1.0f, (1.0f - Progress) * 0.85f);
+			Graphics()->SetColor(Ring.m_Color.r, Ring.m_Color.g, Ring.m_Color.b, (1.0f - Progress) * 0.85f);
 			for(int Segment = 0; Segment < SEGMENTS; Segment++)
 			{
 				const float A0 = 2.0f * pi * Segment / SEGMENTS;
@@ -491,8 +534,8 @@ void CVisuals::OnRender()
 	Graphics()->QuadsEnd();
 	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 
-	// glowing things: flashes and the sparkle trail
-	if(!m_vFlashes.empty() || !m_vSparkles.empty())
+	// glowing flashes
+	if(!m_vFlashes.empty())
 	{
 		Graphics()->BlendAdditive();
 		for(size_t i = 0; i < m_vFlashes.size();)
@@ -510,31 +553,172 @@ void CVisuals::OnRender()
 			DrawSprite(m_GlowTexture, Flash.m_Pos, Size, Size, 0.0f, false, ColorRGBA(1.0f, 1.0f, 1.0f, Remaining * 0.9f));
 			i++;
 		}
-		for(size_t i = 0; i < m_vSparkles.size();)
-		{
-			CSparkle &Sparkle = m_vSparkles[i];
-			Sparkle.m_Life -= DeltaTime;
-			if(Sparkle.m_Life <= 0.0f)
-			{
-				Sparkle = m_vSparkles.back();
-				m_vSparkles.pop_back();
-				continue;
-			}
-			Sparkle.m_Pos += Sparkle.m_Vel * DeltaTime;
-			const float Remaining = std::clamp(Sparkle.m_Life / Sparkle.m_MaxLife, 0.0f, 1.0f);
-			ColorRGBA Color = Sparkle.m_Color;
-			Color.a = Remaining * 0.8f;
-			const float Size = Sparkle.m_Size * (0.4f + 0.6f * Remaining);
-			DrawSprite(m_GlowTexture, Sparkle.m_Pos, Size, Size, 0.0f, false, Color);
-			i++;
-		}
 		Graphics()->BlendNormal();
 	}
 
-	if(Frost)
-		DrawFrost(View);
-	if(Garland)
-		DrawGarland(View);
+	// fireflies
+	if(Fireflies)
+	{
+		const float SizeScale = std::clamp(View.Size().y / 700.0f, 1.0f, 4.0f);
+		const float Margin = 100.0f + 20.0f * SizeScale;
+		Graphics()->BlendAdditive();
+		Graphics()->TextureSet(m_GlowTexture);
+		Graphics()->QuadsBegin();
+		for(const CFirefly &Firefly : m_aFireflies)
+		{
+			const float PosX = Firefly.m_Base.x + std::sin((float)std::fmod(Time * Firefly.m_Freq.x, 2.0 * pi) + Firefly.m_Phase.x) * Firefly.m_Amp.x;
+			const float PosY = Firefly.m_Base.y + std::cos((float)std::fmod(Time * Firefly.m_Freq.y, 2.0 * pi) + Firefly.m_Phase.y) * Firefly.m_Amp.y;
+			const float Twinkle = 0.5f + 0.5f * std::sin((float)std::fmod(Time * Firefly.m_TwinkleFreq, 2.0 * pi) + Firefly.m_TwinklePhase);
+			Graphics()->SetColor(0.85f, 1.0f, 0.45f, 0.25f + 0.65f * Twinkle);
+
+			const int MinTileX = (int)std::ceil((View.m_TopLeft.x - Margin - PosX) / FIREFLY_TILE_WIDTH);
+			const int MaxTileX = (int)std::floor((View.m_BottomRight.x + Margin - PosX) / FIREFLY_TILE_WIDTH);
+			const int MinTileY = (int)std::ceil((View.m_TopLeft.y - Margin - PosY) / FIREFLY_TILE_HEIGHT);
+			const int MaxTileY = (int)std::floor((View.m_BottomRight.y + Margin - PosY) / FIREFLY_TILE_HEIGHT);
+			if((MaxTileX - MinTileX + 1) * (MaxTileY - MinTileY + 1) > 400)
+				continue;
+			for(int TileY = MinTileY; TileY <= MaxTileY; TileY++)
+			{
+				for(int TileX = MinTileX; TileX <= MaxTileX; TileX++)
+				{
+					IGraphics::CQuadItem Item(PosX + TileX * FIREFLY_TILE_WIDTH, PosY + TileY * FIREFLY_TILE_HEIGHT, Firefly.m_Size * SizeScale, Firefly.m_Size * SizeScale);
+					Graphics()->QuadsDraw(&Item, 1);
+				}
+			}
+		}
+		Graphics()->QuadsEnd();
+		Graphics()->BlendNormal();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	if(Predict)
+		RenderGunPredict(View);
+}
+
+void CVisuals::RenderGunPredict(const CScreenRect &View) const
+{
+	const auto &Snap = GameClient()->m_Snap;
+	if(!Snap.m_pLocalCharacter || Snap.m_SpecInfo.m_Active || Snap.m_LocalClientId < 0 || Client()->State() != IClient::STATE_ONLINE)
+		return;
+	const int Weapon = Snap.m_pLocalCharacter->m_Weapon;
+	if(Weapon != WEAPON_GUN && Weapon != WEAPON_SHOTGUN && Weapon != WEAPON_GRENADE && Weapon != WEAPON_LASER)
+		return;
+
+	const vec2 Pos = GameClient()->m_aClients[Snap.m_LocalClientId].m_RenderPos;
+	const vec2 Mouse = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+	vec2 Dir = normalize(vec2((int)Mouse.x, (int)Mouse.y));
+	if(Dir == vec2(0.0f, 0.0f))
+		Dir = vec2(1.0f, 0.0f);
+	const CTuningParams &Tuning = GameClient()->m_aTuning[g_Config.m_ClDummy];
+
+	std::vector<vec2> vPoints;
+	std::vector<vec2> vBounces;
+	vec2 End = Pos;
+
+	if(Weapon == WEAPON_LASER || Weapon == WEAPON_SHOTGUN)
+	{
+		// the same bouncing as a real laser: trickshots work
+		vec2 Cur = Pos;
+		vec2 CurDir = Dir;
+		float Energy = Tuning.m_LaserReach;
+		const float BounceCost = Tuning.m_LaserBounceCost;
+		const int MaxBounces = Tuning.m_LaserBounceNum;
+		int Bounces = 0;
+		bool LastZero = false;
+		vPoints.push_back(Cur);
+		for(int Iteration = 0; Iteration < 20 && Energy >= 0.0f; Iteration++)
+		{
+			vec2 To = Cur + CurDir * Energy;
+			vec2 Hit;
+			const int Res = Collision()->IntersectLineTeleWeapon(Cur, To, &Hit, &To);
+			vPoints.push_back(To);
+			End = To;
+			if(!Res)
+				break;
+
+			vec2 Next = To;
+			vec2 NextDir = CurDir * 4.0f;
+			Collision()->MovePoint(&Next, &NextDir, 1.0f, nullptr);
+
+			const float Distance = distance(Cur, To);
+			if(Distance == 0.0f && LastZero)
+				break;
+			Energy -= Distance + BounceCost;
+			LastZero = Distance == 0.0f;
+			Bounces++;
+			vBounces.push_back(To);
+			if(Bounces > MaxBounces)
+				break;
+			Cur = Next;
+			CurDir = normalize(NextDir);
+		}
+	}
+	else
+	{
+		// grenade and gun fly on a curve and stop at the first wall
+		float Curvature, Speed, Lifetime;
+		if(Weapon == WEAPON_GRENADE)
+		{
+			Curvature = Tuning.m_GrenadeCurvature;
+			Speed = Tuning.m_GrenadeSpeed;
+			Lifetime = Tuning.m_GrenadeLifetime;
+		}
+		else
+		{
+			Curvature = Tuning.m_GunCurvature;
+			Speed = Tuning.m_GunSpeed;
+			Lifetime = Tuning.m_GunLifetime;
+		}
+		const int TickSpeed = Client()->GameTickSpeed();
+		const int Ticks = std::clamp((int)(Lifetime * TickSpeed), 1, 300);
+		const vec2 Start = Pos + Dir * (CCharacterCore::PhysicalSize() * 0.75f);
+		vec2 Prev = Start;
+		vPoints.push_back(Start);
+		End = Start;
+		for(int Tick = 1; Tick <= Ticks; Tick++)
+		{
+			const vec2 Cur = CalcPos(Start, Dir, Curvature, Speed, Tick / (float)TickSpeed);
+			vec2 Hit, Before;
+			if(Collision()->IntersectLine(Prev, Cur, &Hit, &Before))
+			{
+				vPoints.push_back(Before);
+				End = Before;
+				break;
+			}
+			vPoints.push_back(Cur);
+			End = Cur;
+			Prev = Cur;
+		}
+	}
+
+	if(vPoints.size() < 2)
+		return;
+
+	const float Scale = std::clamp(View.Size().y / 700.0f, 1.0f, 4.0f);
+	const float HalfWidth = 0.8f * Scale;
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	const size_t NumSegments = vPoints.size() - 1;
+	for(size_t i = 0; i < NumSegments; i++)
+	{
+		const vec2 A = vPoints[i];
+		const vec2 B = vPoints[i + 1];
+		const float Length = distance(A, B);
+		if(Length < 0.01f)
+			continue;
+		const vec2 Perp = vec2(-(B.y - A.y), B.x - A.x) / Length * HalfWidth;
+		Graphics()->SetColor(0.75f, 0.95f, 1.0f, 0.75f - 0.4f * (float)i / (float)NumSegments);
+		const IGraphics::CFreeformItem Item(A - Perp, A + Perp, B - Perp, B + Perp);
+		Graphics()->QuadsDrawFreeform(&Item, 1);
+	}
+	// small dots where a laser bounces and a bigger one where the shot ends
+	Graphics()->SetColor(1.0f, 0.95f, 0.5f, 0.85f);
+	for(const vec2 &Bounce : vBounces)
+		Graphics()->DrawCircle(Bounce.x, Bounce.y, 2.2f * Scale, 12);
+	Graphics()->SetColor(1.0f, 0.45f, 0.35f, 0.9f);
+	Graphics()->DrawCircle(End.x, End.y, 3.5f * Scale, 14);
+	Graphics()->QuadsEnd();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 void CVisuals::SpawnBurst(vec2 Pos, vec2 Dir, float Spread, int Num, float MinSpeed, float MaxSpeed)
@@ -555,13 +739,14 @@ void CVisuals::SpawnBurst(vec2 Pos, vec2 Dir, float Spread, int Num, float MinSp
 	}
 }
 
-void CVisuals::SpawnRing(vec2 Pos, float MaxRadius)
+void CVisuals::SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color)
 {
 	if(m_vRings.size() >= MAX_RINGS)
 		return;
 	CRing Ring;
 	Ring.m_Pos = Pos;
 	Ring.m_MaxRadius = MaxRadius;
+	Ring.m_Color = Color;
 	Ring.m_MaxLife = 0.45f;
 	Ring.m_Life = Ring.m_MaxLife;
 	m_vRings.push_back(Ring);
