@@ -362,7 +362,7 @@ void CVisuals::DrawGarland(const CScreenRect &View) const
 			const vec2 Pos = PointAt(Swag, (k + 0.5f) / BULBS_PER_SWAG) + vec2(0.0f, BulbRadius * 0.9f);
 			const ColorRGBA Color = aPalette[Index % 4];
 			Graphics()->SetColor(Color.r, Color.g, Color.b, 0.55f * BulbBrightness(Index));
-			const IGraphics::CQuadItem Item(Pos.x, Pos.y, BulbRadius * 7.0f, BulbRadius * 7.0f);
+			IGraphics::CQuadItem Item(Pos.x, Pos.y, BulbRadius * 7.0f, BulbRadius * 7.0f);
 			Graphics()->QuadsDraw(&Item, 1);
 		}
 	}
