@@ -641,7 +641,8 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 
 	Data.m_InGame = true;
 
-	Data.m_ShowName = pPlayerInfo->m_Local ? g_Config.m_ClNamePlatesOwn : g_Config.m_ClNamePlates;
+	// the shimmering name is also shown when the own name plate is off
+	Data.m_ShowName = pPlayerInfo->m_Local ? (g_Config.m_ClNamePlatesOwn || g_Config.m_ClVisualsNameShimmer) : g_Config.m_ClNamePlates;
 	str_copy(Data.m_aName, GameClient()->m_aClients[pPlayerInfo->m_ClientId].m_aName);
 	Data.m_ShowFriendMark = Data.m_ShowName && g_Config.m_ClNamePlatesFriendMark && GameClient()->m_aClients[pPlayerInfo->m_ClientId].m_Friend;
 	Data.m_ShowClientId = Data.m_ShowName && (g_Config.m_Debug || g_Config.m_ClNamePlatesIds);
@@ -658,7 +659,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	Data.m_FontSizeHookStrongWeak = 18.0f + 20.0f * g_Config.m_ClNamePlatesStrongSize / 100.0f;
 	Data.m_FontSizeDirection = 18.0f + 20.0f * g_Config.m_ClDirectionSize / 100.0f;
 
-	if(g_Config.m_ClNamePlatesAlways == 0)
+	if(g_Config.m_ClNamePlatesAlways == 0 && !(pPlayerInfo->m_Local && g_Config.m_ClVisualsNameShimmer))
 		Alpha *= std::clamp(1.0f - std::pow(distance(GameClient()->m_Controls.m_aTargetPos[g_Config.m_ClDummy], Position) / 200.0f, 16.0f), 0.0f, 1.0f);
 	if(OtherTeam)
 		Alpha *= (float)g_Config.m_ClShowOthersAlpha / 100.0f;
@@ -681,16 +682,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 		}
 	}
 	if(pPlayerInfo->m_Local && g_Config.m_ClVisualsNameShimmer)
-	{
-		// the name shimmers in the colors of the own skin
-		const auto &LocalInfo = ClientData.m_RenderInfo;
-		ColorHSLA Base = LocalInfo.m_CustomColoredSkin ? color_cast<ColorHSLA>(LocalInfo.m_ColorBody) : ColorHSLA(0.12f, 0.8f, 0.6f);
-		const float Phase = Client()->LocalTime() * 1.5f;
-		const float Hue = std::fmod(Base.h + 0.05f * std::sin(Phase) + 1.0f, 1.0f);
-		const float Saturation = std::max(Base.s, 0.6f);
-		const float Lightness = 0.72f + 0.16f * std::sin(Phase * 1.3f + 1.0f);
-		Data.m_Color = color_cast<ColorRGBA>(ColorHSLA(Hue, Saturation, Lightness));
-	}
+		Data.m_Color = GameClient()->m_Visuals.NameShimmerColor(ClientData.m_RenderInfo.m_CustomColoredSkin, ClientData.m_RenderInfo.m_ColorBody);
 	Data.m_Color.a = Alpha;
 
 	int ShowDirectionConfig = g_Config.m_ClShowDirection;

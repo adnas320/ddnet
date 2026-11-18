@@ -19,7 +19,9 @@ class CVisuals : public CComponent
 		NUM_FLAKES = 60, // per tile of the snow field
 		MAX_BURST_FLAKES = 600,
 		MAX_SPARKLES = 300,
-		MAX_STREAKS = 80,
+		NUM_PETALS = 22, // per tile of the petal field
+		NUM_BUBBLES = 16, // per tile of the bubble field
+		MAX_HEARTS = 40,
 		MAX_RINGS = 8,
 		NUM_FIREFLIES = 14, // per tile of the firefly field
 		NUM_RECENT_LASERS = 32,
@@ -38,6 +40,7 @@ class CVisuals : public CComponent
 		float m_Spin;
 		float m_SwayPhase;
 		float m_SwayFrequency;
+		int m_Type; // look of the flake
 	};
 
 	// short living flakes thrown around by weapon hits and landings
@@ -50,6 +53,7 @@ class CVisuals : public CComponent
 		float m_Size;
 		float m_Angle;
 		float m_Spin;
+		int m_Type;
 	};
 
 	// short white flash where a weapon hits something
@@ -74,14 +78,14 @@ class CVisuals : public CComponent
 		ColorRGBA m_Color;
 	};
 
-	// thin line in the air that stays behind a fast tee
-	struct CStreak
+	// little heart that floats up from the tee
+	struct CHeart
 	{
 		vec2 m_Pos;
-		vec2 m_Dir;
-		float m_Length;
 		float m_Life;
 		float m_MaxLife;
+		float m_Size;
+		float m_SwayPhase;
 		ColorRGBA m_Color;
 	};
 
@@ -95,6 +99,7 @@ class CVisuals : public CComponent
 		float m_Size;
 		float m_TwinkleFreq;
 		float m_TwinklePhase;
+		int m_Type; // color and behavior
 	};
 
 	// expanding ring at the feet of the tee
@@ -119,11 +124,13 @@ class CVisuals : public CComponent
 
 	CFlake m_aFlakes[NUM_FLAKES];
 	CFirefly m_aFireflies[NUM_FIREFLIES];
+	CFlake m_aPetals[NUM_PETALS];
+	CFlake m_aBubbles[NUM_BUBBLES];
 	bool m_FlakesInitialized = false;
 	std::vector<CBurstFlake> m_vBurstFlakes;
 	std::vector<CFlash> m_vFlashes;
 	std::vector<CSparkle> m_vSparkles;
-	std::vector<CStreak> m_vStreaks;
+	std::vector<CHeart> m_vHearts;
 	std::vector<CRing> m_vRings;
 	CRecentLaser m_aRecentLasers[NUM_RECENT_LASERS];
 	int m_NextRecentLaser = 0;
@@ -146,14 +153,17 @@ class CVisuals : public CComponent
 	int m_LastJumped = 0;
 	bool m_JumpedInitialized = false;
 	float m_DustAccumulator = 0.0f;
-	float m_StreakAccumulator = 0.0f;
+	float m_EmberAccumulator = 0.0f;
+	float m_HeartAccumulator = 0.0f;
 
 	void InitFlakes();
 	void SpawnBurst(vec2 Pos, vec2 Dir, float Spread, int Num, float MinSpeed, float MaxSpeed);
 	void SpawnFlash(vec2 Pos, float Size, float Life);
 	void SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color);
 	void DrawSprite(IGraphics::CTextureHandle Texture, vec2 Center, float Width, float Height, float Rotation, bool Flip, ColorRGBA Color) const;
-	void DrawFlake(vec2 Center, float Size, float Angle) const;
+	void DrawFlake(vec2 Center, float Size, float Angle, int Type) const;
+	void DrawHeart(vec2 Center, float Size) const;
+	void DrawStars(vec2 BodyPos, float TeeSize, float Alpha) const;
 	void DrawOrbs(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA Color, bool Front) const;
 	void RenderGunPredict(const CScreenRect &View) const;
 	void UpdateHat(vec2 LookDir, vec2 Vel, float DeltaTime);
@@ -173,6 +183,9 @@ public:
 	// Hat, halo and effect spawning, drawn on top of the tee. LookDir is the aim direction,
 	// Vel the velocity of the tee in units per tick.
 	void RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, float Alpha, vec2 LookDir, vec2 Vel, bool InAir, int Jumped, ColorRGBA TeeColor);
+
+	// color of the shimmering own name, for the name plate and the scoreboard
+	ColorRGBA NameShimmerColor(bool CustomColored, ColorRGBA BodyColor) const;
 
 	// weapon hooks
 	void OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun);

@@ -259,13 +259,13 @@ void CMenus::RenderSettingsProfiles(CUIRect MainView)
 		char aText[64];
 		const float LineHeight = Texts.h / 3.0f;
 		Texts.HSplitTop(LineHeight, &Line, &Texts);
-		str_format(aText, sizeof(aText), "Name: %s", Values.m_aName);
+		str_format(aText, sizeof(aText), "Ник: %s", Values.m_aName);
 		Ui()->DoLabel(&Line, aText, 14.0f, TEXTALIGN_ML);
 		Texts.HSplitTop(LineHeight, &Line, &Texts);
-		str_format(aText, sizeof(aText), "Clan: %s", Values.m_aClan);
+		str_format(aText, sizeof(aText), "Клан: %s", Values.m_aClan);
 		Ui()->DoLabel(&Line, aText, 14.0f, TEXTALIGN_ML);
 		Texts.HSplitTop(LineHeight, &Line, &Texts);
-		str_format(aText, sizeof(aText), "Skin: %s", Values.m_aSkin);
+		str_format(aText, sizeof(aText), "Скин: %s", Values.m_aSkin);
 		Ui()->DoLabel(&Line, aText, 14.0f, TEXTALIGN_ML);
 	};
 
@@ -281,12 +281,12 @@ void CMenus::RenderSettingsProfiles(CUIRect MainView)
 	Left.Margin(10.0f, &Left);
 	CUIRect Label, Preview;
 	Left.HSplitTop(28.0f, &Label, &Left);
-	Ui()->DoLabel(&Label, "Your profile", 20.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, "Ваш профиль", 20.0f, TEXTALIGN_ML);
 	Left.HSplitTop(60.0f, &Preview, &Left);
 	RenderPlayerValues(Preview, Current);
 	Left.HSplitTop(8.0f, nullptr, &Left);
 	Left.HSplitTop(28.0f, &Label, &Left);
-	Ui()->DoLabel(&Label, "After loading", 20.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, "После загрузки", 20.0f, TEXTALIGN_ML);
 	Left.HSplitTop(60.0f, &Preview, &Left);
 	if(s_Selected >= 0)
 		RenderPlayerValues(Preview, ApplyProfile(Current, gs_vProfiles[s_Selected], EnabledParts, s_OverwriteEmptyClan != 0));
@@ -298,7 +298,7 @@ void CMenus::RenderSettingsProfiles(CUIRect MainView)
 	CUIRect Checks, Buttons;
 	Right.VSplitMid(&Checks, &Buttons, 10.0f);
 
-	const char *apPartNames[NUM_PROFILE_PARTS] = {"Save/Load skin", "Save/Load colors", "Save/Load eyes", "Save/Load name", "Save/Load clan", "Save/Load flag"};
+	const char *apPartNames[NUM_PROFILE_PARTS] = {"Скин", "Цвета", "Глаза", "Ник", "Клан", "Флаг"};
 	for(int Part = 0; Part < NUM_PROFILE_PARTS; Part++)
 	{
 		CUIRect Row;
@@ -311,7 +311,7 @@ void CMenus::RenderSettingsProfiles(CUIRect MainView)
 	CUIRect Button;
 	Buttons.HSplitTop(34.0f, &Button, &Buttons);
 	static CButtonContainer s_LoadButton;
-	if(DoButton_Menu(&s_LoadButton, "Load", 0, &Button) && s_Selected >= 0)
+	if(DoButton_Menu(&s_LoadButton, "Загрузить", 0, &Button) && s_Selected >= 0)
 	{
 		StoreValues(ApplyProfile(Current, gs_vProfiles[s_Selected], EnabledParts, s_OverwriteEmptyClan != 0), s_Dummy != 0);
 		if(s_Dummy)
@@ -322,7 +322,7 @@ void CMenus::RenderSettingsProfiles(CUIRect MainView)
 	Buttons.HSplitTop(8.0f, nullptr, &Buttons);
 	Buttons.HSplitTop(34.0f, &Button, &Buttons);
 	static CButtonContainer s_SaveButton;
-	if(DoButton_Menu(&s_SaveButton, "Save", 0, &Button) && EnabledParts != 0)
+	if(DoButton_Menu(&s_SaveButton, "Сохранить", 0, &Button) && EnabledParts != 0)
 	{
 		SProfile Profile;
 		str_copy(Profile.m_aName, Current.m_aName);
@@ -340,7 +340,7 @@ void CMenus::RenderSettingsProfiles(CUIRect MainView)
 	}
 	Buttons.HSplitTop(8.0f, nullptr, &Buttons);
 	Buttons.HSplitTop(20.0f, &Button, &Buttons);
-	if(DoButton_CheckBox(&s_AllowDeleting, "Enable deleting", s_AllowDeleting, &Button))
+	if(DoButton_CheckBox(&s_AllowDeleting, "Разрешить удаление", s_AllowDeleting, &Button))
 		s_AllowDeleting ^= 1;
 	bool DeleteSelected = false;
 	if(s_AllowDeleting && s_Selected >= 0)
@@ -348,7 +348,7 @@ void CMenus::RenderSettingsProfiles(CUIRect MainView)
 		Buttons.HSplitTop(5.0f, nullptr, &Buttons);
 		Buttons.HSplitTop(24.0f, &Button, &Buttons);
 		static CButtonContainer s_DeleteButton;
-		if(DoButton_Menu(&s_DeleteButton, "Delete selected", 0, &Button))
+		if(DoButton_Menu(&s_DeleteButton, "Удалить выбранный", 0, &Button))
 			DeleteSelected = true;
 	}
 
@@ -358,9 +358,9 @@ void CMenus::RenderSettingsProfiles(CUIRect MainView)
 	ListArea.HSplitTop(10.0f, nullptr, &ListArea);
 	Options.VSplitLeft(Options.w / 3.0f, &OptionA, &Options);
 	Options.VSplitMid(&OptionB, &OptionC);
-	if(DoButton_CheckBox(&s_Dummy, "Dummy", s_Dummy, &OptionA))
+	if(DoButton_CheckBox(&s_Dummy, "Дамми", s_Dummy, &OptionA))
 		s_Dummy ^= 1;
-	if(DoButton_CheckBox(&s_OverwriteEmptyClan, "Overwrite clan even if the profile has none", s_OverwriteEmptyClan, &OptionC))
+	if(DoButton_CheckBox(&s_OverwriteEmptyClan, "Перезаписывать клан, даже если в профиле его нет", s_OverwriteEmptyClan, &OptionC))
 		s_OverwriteEmptyClan ^= 1;
 	(void)OptionB;
 

@@ -855,6 +855,12 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
 				{
 					NameColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClAuthedPlayerColor));
 				}
+				if(g_Config.m_ClVisualsNameShimmer && pInfo->m_Local)
+				{
+					const float Alpha = NameColor.a;
+					NameColor = GameClient()->m_Visuals.NameShimmerColor(ClientData.m_RenderInfo.m_CustomColoredSkin, ClientData.m_RenderInfo.m_ColorBody);
+					NameColor.a = Alpha;
+				}
 				Player.m_Name.Render(TextRender(), vec2(NameOffset, TextY), NameColor);
 
 				// ready / watching

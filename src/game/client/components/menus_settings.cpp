@@ -51,9 +51,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Localize("Sound"),
 		Localize("DDNet"),
 		Localize("Assets"),
-		Localize("Visuals"),
-		Localize("Profiles"),
-		Localize("Combat"),
+		"Визуалы",
+		"Профили",
+		"Бой",
 		Localize("Credits")};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 

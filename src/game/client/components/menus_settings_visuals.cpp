@@ -6,7 +6,7 @@
 
 #include <game/client/ui.h>
 
-// All texts on this page are intentionally English only (no Localize).
+// Все тексты на этой странице намеренно только на русском (без Localize).
 
 namespace {
 
@@ -46,26 +46,31 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 			Value ^= 1;
 	};
 
-	CUIRect Card = BeginCard(Left, "New Year", 4);
-	DoToggle(Card, g_Config.m_ClVisualsWinterHat, "Winter hat on your own tee");
-	DoToggle(Card, g_Config.m_ClVisualsSnow, "Falling snow");
-	DoToggle(Card, g_Config.m_ClVisualsSnowWeapons, "Snow and flash on weapon hits");
-	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Snow when you land on the ground", true);
+	CUIRect Card = BeginCard(Left, "Новый год", 4);
+	DoToggle(Card, g_Config.m_ClVisualsWinterHat, "Новогодняя шапка на вашей тишке");
+	DoToggle(Card, g_Config.m_ClVisualsSnow, "Падающий снег");
+	DoToggle(Card, g_Config.m_ClVisualsSnowWeapons, "Снег и вспышка при попадании оружия");
+	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Снег при приземлении", true);
 
-	Card = BeginCard(Left, "Spirits", 2);
-	DoToggle(Card, g_Config.m_ClVisualsHalo, "Halo above your own tee");
-	DoToggle(Card, g_Config.m_ClVisualsHaloRainbow, "Rainbow halo", true);
+	Card = BeginCard(Left, "Духи", 2);
+	DoToggle(Card, g_Config.m_ClVisualsHalo, "Нимб над вашей тишкой");
+	DoToggle(Card, g_Config.m_ClVisualsHaloRainbow, "Радужный нимб", true);
 
-	Card = BeginCard(Right, "Effects", 6);
-	DoToggle(Card, g_Config.m_ClVisualsAura, "Aura in the color of your skin");
-	DoToggle(Card, g_Config.m_ClVisualsTrail, "Rainbow sparkle trail behind you");
-	DoToggle(Card, g_Config.m_ClVisualsJumpRings, "Rings when you jump");
-	DoToggle(Card, g_Config.m_ClVisualsLandRing, "Shockwave when you land hard");
-	DoToggle(Card, g_Config.m_ClVisualsNameShimmer, "Shimmering name in skin colors");
-	DoToggle(Card, g_Config.m_ClVisualsSpeedLines, "Speed lines when you are fast", true);
+	Card = BeginCard(Left, "Мир", 3);
+	DoToggle(Card, g_Config.m_ClVisualsFireflies, "Светлячки");
+	DoToggle(Card, g_Config.m_ClVisualsPetals, "Лепестки сакуры");
+	DoToggle(Card, g_Config.m_ClVisualsBubbles, "Мыльные пузыри", true);
 
-	Card = BeginCard(Right, "Extras", 3);
-	DoToggle(Card, g_Config.m_ClVisualsDust, "Dust puffs when running");
-	DoToggle(Card, g_Config.m_ClVisualsOrbs, "Orbs orbiting your tee");
-	DoToggle(Card, g_Config.m_ClVisualsFireflies, "Fireflies in the world", true);
+	Card = BeginCard(Right, "Эффекты", 4);
+	DoToggle(Card, g_Config.m_ClVisualsAura, "Аура цвета вашего скина");
+	DoToggle(Card, g_Config.m_ClVisualsTrail, "Радужный искристый след за тишкой");
+	DoToggle(Card, g_Config.m_ClVisualsJumpRings, "Кольца при прыжке");
+	DoToggle(Card, g_Config.m_ClVisualsNameShimmer, "Переливающийся ник цвета скина", true);
+
+	Card = BeginCard(Right, "Дополнительно", 5);
+	DoToggle(Card, g_Config.m_ClVisualsDust, "Пыль при беге");
+	DoToggle(Card, g_Config.m_ClVisualsOrbs, "Шарики, вращающиеся вокруг тишки");
+	DoToggle(Card, g_Config.m_ClVisualsEmbers, "Искры, поднимающиеся от тишки");
+	DoToggle(Card, g_Config.m_ClVisualsHearts, "Летящие сердечки");
+	DoToggle(Card, g_Config.m_ClVisualsStars, "Мерцающие звёздочки", true);
 }
