@@ -641,8 +641,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 
 	Data.m_InGame = true;
 
-	// the shimmering name is also shown when the own name plate is off
-	Data.m_ShowName = pPlayerInfo->m_Local ? (g_Config.m_ClNamePlatesOwn || g_Config.m_ClVisualsNameShimmer) : g_Config.m_ClNamePlates;
+	Data.m_ShowName = pPlayerInfo->m_Local ? g_Config.m_ClNamePlatesOwn : g_Config.m_ClNamePlates;
 	str_copy(Data.m_aName, GameClient()->m_aClients[pPlayerInfo->m_ClientId].m_aName);
 	Data.m_ShowFriendMark = Data.m_ShowName && g_Config.m_ClNamePlatesFriendMark && GameClient()->m_aClients[pPlayerInfo->m_ClientId].m_Friend;
 	Data.m_ShowClientId = Data.m_ShowName && (g_Config.m_Debug || g_Config.m_ClNamePlatesIds);
@@ -659,7 +658,7 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 	Data.m_FontSizeHookStrongWeak = 18.0f + 20.0f * g_Config.m_ClNamePlatesStrongSize / 100.0f;
 	Data.m_FontSizeDirection = 18.0f + 20.0f * g_Config.m_ClDirectionSize / 100.0f;
 
-	if(g_Config.m_ClNamePlatesAlways == 0 && !(pPlayerInfo->m_Local && g_Config.m_ClVisualsNameShimmer))
+	if(g_Config.m_ClNamePlatesAlways == 0)
 		Alpha *= std::clamp(1.0f - std::pow(distance(GameClient()->m_Controls.m_aTargetPos[g_Config.m_ClDummy], Position) / 200.0f, 16.0f), 0.0f, 1.0f);
 	if(OtherTeam)
 		Alpha *= (float)g_Config.m_ClShowOthersAlpha / 100.0f;
@@ -681,8 +680,6 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
 				Data.m_Color = GameClient()->GetDDTeamColor(Team, 0.75f);
 		}
 	}
-	if(pPlayerInfo->m_Local && g_Config.m_ClVisualsNameShimmer)
-		Data.m_Color = GameClient()->m_Visuals.NameShimmerColor(ClientData.m_RenderInfo.m_CustomColoredSkin, ClientData.m_RenderInfo.m_ColorBody);
 	Data.m_Color.a = Alpha;
 
 	int ShowDirectionConfig = g_Config.m_ClShowDirection;

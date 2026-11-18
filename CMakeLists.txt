@@ -2063,7 +2063,6 @@ set(EXPECTED_DATA
   themes/winter_night.map
   touch_controls.json
   visuals/glow.png
-  visuals/halo.png
   visuals/winter_hat.png
   wordlist.txt
   # tidy-alphabetical-end

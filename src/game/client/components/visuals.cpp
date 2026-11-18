@@ -22,11 +22,6 @@ constexpr float HAT_WIDTH = 0.92f;
 constexpr float HAT_ASPECT = 166.0f / 239.0f; // height / width of winter_hat.png
 constexpr float HAT_PIVOT_Y = -0.22f; // the hat swings around this point on the head
 
-constexpr float HALO_WIDTH = 0.84f;
-constexpr float HALO_HEIGHT = 0.42f;
-constexpr float HALO_Y = -0.72f;
-constexpr float HALO_Y_WITH_HAT = -0.96f;
-
 // the snow field is one tile in world coordinates that repeats over the whole map
 constexpr float SNOW_TILE_WIDTH = 1400.0f;
 constexpr float SNOW_TILE_HEIGHT = 900.0f;
@@ -35,6 +30,8 @@ constexpr float PETAL_TILE_WIDTH = 1300.0f;
 constexpr float PETAL_TILE_HEIGHT = 900.0f;
 constexpr float BUBBLE_TILE_WIDTH = 1200.0f;
 constexpr float BUBBLE_TILE_HEIGHT = 900.0f;
+constexpr float BUTTERFLY_TILE_WIDTH = 1400.0f;
+constexpr float BUTTERFLY_TILE_HEIGHT = 900.0f;
 constexpr float FIREFLY_TILE_WIDTH = 1100.0f;
 constexpr float FIREFLY_TILE_HEIGHT = 800.0f;
 
@@ -49,7 +46,6 @@ ColorRGBA Lighten(ColorRGBA Color, float Amount)
 void CVisuals::OnInit()
 {
 	m_HatTexture = Graphics()->LoadTexture("visuals/winter_hat.png", IStorage::TYPE_ALL);
-	m_HaloTexture = Graphics()->LoadTexture("visuals/halo.png", IStorage::TYPE_ALL);
 	m_GlowTexture = Graphics()->LoadTexture("visuals/glow.png", IStorage::TYPE_ALL);
 }
 
@@ -59,7 +55,11 @@ void CVisuals::OnReset()
 	m_vFlashes.clear();
 	m_vSparkles.clear();
 	m_vRings.clear();
-	m_vHearts.clear();
+	m_vGlows.clear();
+	m_vSouls.clear();
+	m_vMeteors.clear();
+	m_vEchoes.clear();
+	m_PetInitialized = false;
 	m_JumpedInitialized = false;
 	m_FlakesInitialized = false;
 	m_HatInitialized = false;
@@ -92,25 +92,52 @@ void CVisuals::DrawSprite(IGraphics::CTextureHandle Texture, vec2 Center, float 
 	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
-void CVisuals::DrawOrbs(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA Color, bool Front) const
+void CVisuals::SpawnGlow(vec2 Pos, vec2 Vel, float Life, float Size, float Grow, float AlphaScale, ColorRGBA Color, float Gravity)
 {
-	if(!g_Config.m_ClVisualsOrbs)
+	if(m_vGlows.size() >= MAX_GLOWS)
 		return;
-	const float Time = Client()->LocalTime();
-	const ColorRGBA Light = Lighten(Color, 0.4f);
-	Graphics()->BlendAdditive();
-	for(int i = 0; i < 3; i++)
+	CSparkle Glow;
+	Glow.m_Pos = Pos;
+	Glow.m_Vel = Vel;
+	Glow.m_MaxLife = Life;
+	Glow.m_Life = Life;
+	Glow.m_Size = Size;
+	Glow.m_Grow = Grow;
+	Glow.m_AlphaScale = AlphaScale;
+	Glow.m_Gravity = Gravity;
+	Glow.m_Color = Color;
+	m_vGlows.push_back(Glow);
+}
+
+// moves and draws glowing particles, the caller has to enable additive blending
+void CVisuals::StepGlows(std::vector<CSparkle> &vGlows, float DeltaTime)
+{
+	for(size_t i = 0; i < vGlows.size();)
 	{
-		const float Angle = Time * 2.2f + i * 2.0f * pi / 3.0f;
-		const float Depth = std::sin(Angle); // positive: in front of the tee
-		if((Depth >= 0.0f) != Front)
+		CSparkle &Glow = vGlows[i];
+		Glow.m_Life -= DeltaTime;
+		if(Glow.m_Life <= 0.0f)
+		{
+			Glow = vGlows.back();
+			vGlows.pop_back();
 			continue;
-		const vec2 Pos = BodyPos + vec2(Depth * 0.38f, std::cos(Angle) * 0.95f) * TeeSize;
-		const float Scale = 0.85f + 0.2f * Depth;
-		DrawSprite(m_GlowTexture, Pos, 0.4f * TeeSize * Scale, 0.4f * TeeSize * Scale, 0.0f, false, ColorRGBA(Light.r, Light.g, Light.b, 0.9f * Alpha));
-		DrawSprite(m_GlowTexture, Pos, 0.14f * TeeSize * Scale, 0.14f * TeeSize * Scale, 0.0f, false, ColorRGBA(1.0f, 1.0f, 1.0f, Alpha));
+		}
+		Glow.m_Vel.y += Glow.m_Gravity * DeltaTime;
+		Glow.m_Pos += Glow.m_Vel * DeltaTime;
+		const float Remaining = std::clamp(Glow.m_Life / Glow.m_MaxLife, 0.0f, 1.0f);
+		ColorRGBA Color = Glow.m_Color;
+		Color.a = Remaining * Glow.m_AlphaScale;
+		const float Size = Glow.m_Size * std::max(0.2f, 1.0f + Glow.m_Grow * (1.0f - Remaining));
+		DrawSprite(m_GlowTexture, Glow.m_Pos, Size, Size, 0.0f, false, Color);
+		i++;
 	}
-	Graphics()->BlendNormal();
+}
+
+void CVisuals::GetEcho(int Index, vec2 &Pos, float &Alpha) const
+{
+	const CEcho &Echo = m_vEchoes[Index];
+	Pos = Echo.m_Pos;
+	Alpha = std::clamp(Echo.m_Life / Echo.m_MaxLife, 0.0f, 1.0f) * 0.4f;
 }
 
 void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA TeeColor)
@@ -118,6 +145,21 @@ void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRG
 	const float Time = Client()->LocalTime();
 	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.05f);
 	const ColorRGBA Light = Lighten(TeeColor, 0.3f);
+
+	// echoes get older (they are drawn by the player renderer before the tee)
+	if(!g_Config.m_ClVisualsEcho)
+		m_vEchoes.clear();
+	for(size_t i = 0; i < m_vEchoes.size();)
+	{
+		m_vEchoes[i].m_Life -= DeltaTime;
+		if(m_vEchoes[i].m_Life <= 0.0f)
+		{
+			m_vEchoes[i] = m_vEchoes.back();
+			m_vEchoes.pop_back();
+			continue;
+		}
+		i++;
+	}
 
 	Graphics()->BlendAdditive();
 
@@ -129,27 +171,8 @@ void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRG
 	}
 
 	// sparkle trail and dust puffs, drawn behind the tee
-	for(size_t i = 0; i < m_vSparkles.size();)
-	{
-		CSparkle &Sparkle = m_vSparkles[i];
-		Sparkle.m_Life -= DeltaTime;
-		if(Sparkle.m_Life <= 0.0f)
-		{
-			Sparkle = m_vSparkles.back();
-			m_vSparkles.pop_back();
-			continue;
-		}
-		Sparkle.m_Pos += Sparkle.m_Vel * DeltaTime;
-		const float Remaining = std::clamp(Sparkle.m_Life / Sparkle.m_MaxLife, 0.0f, 1.0f);
-		ColorRGBA Color = Sparkle.m_Color;
-		Color.a = Remaining * Sparkle.m_AlphaScale;
-		const float Size = Sparkle.m_Size * std::max(0.2f, 1.0f + Sparkle.m_Grow * (1.0f - Remaining));
-		DrawSprite(m_GlowTexture, Sparkle.m_Pos, Size, Size, 0.0f, false, Color);
-		i++;
-	}
+	StepGlows(m_vSparkles, DeltaTime);
 	Graphics()->BlendNormal();
-
-	DrawOrbs(BodyPos, TeeSize, Alpha, TeeColor, false);
 }
 
 void CVisuals::UpdateHat(vec2 LookDir, vec2 Vel, float DeltaTime)
@@ -203,7 +226,6 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 	const float Time = Client()->LocalTime();
 	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.05f);
 	const vec2 Feet = Position + vec2(0.0f, 14.0f);
-	const ColorRGBA Light = Lighten(TeeColor, 0.4f);
 	const ColorRGBA RingColor = Lighten(TeeColor, 0.5f);
 
 	// landing: snow flies up from the ground
@@ -272,57 +294,39 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 	else
 		m_DustAccumulator = 0.0f;
 
-	// glowing embers rise from the tee
-	if(g_Config.m_ClVisualsEmbers)
+	// echoes: faded copies of the tee stay behind when moving fast
+	if(g_Config.m_ClVisualsEcho && length(Vel) > 5.0f)
 	{
-		m_EmberAccumulator += DeltaTime * 22.0f;
-		while(m_EmberAccumulator >= 1.0f)
+		m_EchoTimer += DeltaTime;
+		if(m_EchoTimer >= 0.045f)
 		{
-			m_EmberAccumulator -= 1.0f;
-			if(m_vSparkles.size() >= MAX_SPARKLES)
-				break;
-			CSparkle Ember;
-			Ember.m_Pos = BodyPos + vec2(random_float(-0.35f, 0.35f), random_float(-0.2f, 0.3f)) * TeeSize;
-			Ember.m_Vel = vec2(random_float(-14.0f, 14.0f), random_float(-60.0f, -30.0f));
-			Ember.m_MaxLife = random_float(0.6f, 1.1f);
-			Ember.m_Life = Ember.m_MaxLife;
-			Ember.m_Size = random_float(0.12f, 0.22f) * TeeSize;
-			Ember.m_Grow = -0.7f;
-			Ember.m_AlphaScale = 0.9f;
-			Ember.m_Color = ColorRGBA(1.0f, random_float(0.35f, 0.65f), 0.1f, 1.0f);
-			m_vSparkles.push_back(Ember);
+			m_EchoTimer = 0.0f;
+			if(m_vEchoes.size() < MAX_ECHOES)
+			{
+				CEcho Echo;
+				Echo.m_Pos = Position;
+				Echo.m_MaxLife = 0.3f;
+				Echo.m_Life = Echo.m_MaxLife;
+				m_vEchoes.push_back(Echo);
+			}
 		}
 	}
 	else
-		m_EmberAccumulator = 0.0f;
+		m_EchoTimer = 0.045f;
 
-	// hearts float up above the tee
-	if(g_Config.m_ClVisualsHearts)
+	if(g_Config.m_ClVisualsStars)
+		DrawConstellation(BodyPos, TeeSize, Alpha);
+
+	// pet
+	if(g_Config.m_ClVisualsPet > 0)
 	{
-		m_HeartAccumulator += DeltaTime * 1.4f;
-		while(m_HeartAccumulator >= 1.0f)
-		{
-			m_HeartAccumulator -= 1.0f;
-			if(m_vHearts.size() >= MAX_HEARTS)
-				break;
-			CHeart Heart;
-			Heart.m_Pos = BodyPos + vec2(random_float(-0.4f, 0.4f), -0.6f) * TeeSize;
-			Heart.m_MaxLife = random_float(1.4f, 2.2f);
-			Heart.m_Life = Heart.m_MaxLife;
-			Heart.m_Size = random_float(0.28f, 0.42f) * TeeSize;
-			Heart.m_SwayPhase = random_float(0.0f, 2.0f * pi);
-			Heart.m_Color = random_float() < 0.5f ? ColorRGBA(1.0f, 0.35f, 0.5f, 1.0f) : ColorRGBA(1.0f, 0.6f, 0.75f, 1.0f);
-			m_vHearts.push_back(Heart);
-		}
+		UpdatePet(BodyPos, TeeSize, LookDir, DeltaTime);
+		DrawPet(g_Config.m_ClVisualsPet, m_PetPos, 0.32f * TeeSize, m_PetFacing, Alpha);
 	}
 	else
-		m_HeartAccumulator = 0.0f;
-
-	DrawStars(BodyPos, TeeSize, Alpha);
-	DrawOrbs(BodyPos, TeeSize, Alpha, TeeColor, true);
+		m_PetInitialized = false;
 
 	const bool Hat = g_Config.m_ClVisualsWinterHat;
-	const bool Halo = g_Config.m_ClVisualsHalo;
 	if(!Hat)
 		m_HatInitialized = false;
 
@@ -341,16 +345,6 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 		const float WidthScale = std::max(std::abs(m_HatFlip), 0.08f);
 		const float HeightScale = 1.0f - m_HatBob * 1.2f;
 		DrawSprite(m_HatTexture, Center, HAT_WIDTH * WidthScale * TeeSize, HAT_WIDTH * HAT_ASPECT * HeightScale * TeeSize, m_HatAngle, m_HatFlip < 0.0f, ColorRGBA(1.0f, 1.0f, 1.0f, Alpha));
-	}
-
-	if(Halo)
-	{
-		ColorRGBA Color = g_Config.m_ClVisualsHaloRainbow ? Rainbow(0.0f) : ColorRGBA(1.0f, 0.82f, 0.20f, 1.0f);
-		Color.a = Alpha;
-		// the halo floats slowly up and down
-		const float Bob = std::sin(Time * 2.5f) * 0.015f;
-		const vec2 Center = BodyPos + vec2(0.0f, (Hat ? HALO_Y_WITH_HAT : HALO_Y) + Bob) * TeeSize;
-		DrawSprite(m_HaloTexture, Center, HALO_WIDTH * TeeSize, HALO_HEIGHT * TeeSize, 0.0f, false, Color);
 	}
 }
 
@@ -420,6 +414,16 @@ void CVisuals::InitFlakes()
 			Firefly.m_Amp *= 1.5f;
 		}
 	}
+	for(CButterfly &Butterfly : m_aButterflies)
+	{
+		Butterfly.m_Base = vec2(random_float(0.0f, BUTTERFLY_TILE_WIDTH), random_float(0.0f, BUTTERFLY_TILE_HEIGHT));
+		Butterfly.m_Amp = vec2(random_float(80.0f, 170.0f), random_float(60.0f, 120.0f));
+		Butterfly.m_Freq = vec2(random_float(0.2f, 0.5f), random_float(0.25f, 0.6f));
+		Butterfly.m_Phase = vec2(random_float(0.0f, 2.0f * pi), random_float(0.0f, 2.0f * pi));
+		Butterfly.m_Size = random_float(9.0f, 15.0f);
+		Butterfly.m_FlapFreq = random_float(6.0f, 11.0f);
+		Butterfly.m_Type = std::min((int)(random_float() * 3.0f), 2);
+	}
 	m_FlakesInitialized = true;
 }
 
@@ -479,56 +483,210 @@ void CVisuals::DrawFlake(vec2 Center, float Size, float Angle, int Type) const
 	}
 }
 
-void CVisuals::DrawHeart(vec2 Center, float Size) const
+void CVisuals::DrawGhost(vec2 Center, float Size, ColorRGBA Color, float Phase, float EyeShift) const
 {
-	Graphics()->DrawCircle(Center.x - 0.22f * Size, Center.y - 0.12f * Size, 0.3f * Size, 12);
-	Graphics()->DrawCircle(Center.x + 0.22f * Size, Center.y - 0.12f * Size, 0.3f * Size, 12);
-	const IGraphics::CFreeformItem Item(
-		Center.x - 0.5f * Size, Center.y - 0.02f * Size,
-		Center.x + 0.5f * Size, Center.y - 0.02f * Size,
-		Center.x, Center.y + 0.58f * Size,
-		Center.x, Center.y + 0.58f * Size);
-	Graphics()->QuadsDrawFreeform(&Item, 1);
+	// has to be called while untextured quads are being drawn
+	Graphics()->SetColor(Color);
+	Graphics()->DrawCircle(Center.x, Center.y - 0.2f * Size, 0.8f * Size, 20);
+	const IGraphics::CFreeformItem Body(
+		Center.x - 0.8f * Size, Center.y - 0.2f * Size,
+		Center.x + 0.8f * Size, Center.y - 0.2f * Size,
+		Center.x - 0.8f * Size, Center.y + 0.6f * Size,
+		Center.x + 0.8f * Size, Center.y + 0.6f * Size);
+	Graphics()->QuadsDrawFreeform(&Body, 1);
+	for(int i = -1; i <= 1; i++)
+		Graphics()->DrawCircle(Center.x + i * 0.53f * Size, Center.y + 0.6f * Size + std::sin(Phase + i * 1.3f) * 0.08f * Size, 0.27f * Size, 10);
+	Graphics()->SetColor(0.1f, 0.1f, 0.15f, Color.a);
+	Graphics()->DrawCircle(Center.x - 0.28f * Size + EyeShift * Size, Center.y - 0.2f * Size, 0.12f * Size, 10);
+	Graphics()->DrawCircle(Center.x + 0.28f * Size + EyeShift * Size, Center.y - 0.2f * Size, 0.12f * Size, 10);
 }
 
-void CVisuals::DrawStars(vec2 BodyPos, float TeeSize, float Alpha) const
+void CVisuals::DrawButterfly(vec2 Center, float Size, float Flap, ColorRGBA Color) const
 {
-	if(!g_Config.m_ClVisualsStars)
-		return;
-	const float Time = Client()->LocalTime();
-	for(int i = 0; i < 5; i++)
+	// has to be called while untextured quads are being drawn
+	const auto Diamond = [&](float X, float Y, float HalfWidth, float HalfHeight) {
+		const IGraphics::CFreeformItem Item(
+			Center.x + X - HalfWidth, Center.y + Y,
+			Center.x + X, Center.y + Y - HalfHeight,
+			Center.x + X, Center.y + Y + HalfHeight,
+			Center.x + X + HalfWidth, Center.y + Y);
+		Graphics()->QuadsDrawFreeform(&Item, 1);
+	};
+	for(int Side = -1; Side <= 1; Side += 2)
 	{
-		const float Angle = i * 2.0f * pi / 5.0f + Time * 0.5f;
-		const float Radius = TeeSize * (1.25f + 0.1f * std::sin(Time + i));
-		const vec2 Pos = BodyPos + vec2(std::cos(Angle), std::sin(Angle) * 0.8f) * Radius;
-		const float Twinkle = 0.5f + 0.5f * std::sin(Time * 3.0f + i * 1.9f);
-		const float Size = 0.3f * TeeSize * (0.45f + 0.55f * Twinkle);
-
-		Graphics()->BlendAdditive();
-		DrawSprite(m_GlowTexture, Pos, Size * 2.2f, Size * 2.2f, 0.0f, false, ColorRGBA(1.0f, 0.9f, 0.5f, 0.6f * Twinkle * Alpha));
-		Graphics()->TextureClear();
-		Graphics()->QuadsBegin();
-		Graphics()->SetColor(1.0f, 0.97f, 0.7f, (0.4f + 0.6f * Twinkle) * Alpha);
-		// two crossed thin diamonds make a four-pointed star
-		const IGraphics::CFreeformItem Horizontal(Pos.x - Size, Pos.y, Pos.x, Pos.y - 0.18f * Size, Pos.x, Pos.y + 0.18f * Size, Pos.x + Size, Pos.y);
-		const IGraphics::CFreeformItem Vertical(Pos.x - 0.18f * Size, Pos.y, Pos.x, Pos.y - Size, Pos.x, Pos.y + Size, Pos.x + 0.18f * Size, Pos.y);
-		Graphics()->QuadsDrawFreeform(&Horizontal, 1);
-		Graphics()->QuadsDrawFreeform(&Vertical, 1);
-		Graphics()->QuadsEnd();
-		Graphics()->BlendNormal();
+		Graphics()->SetColor(Color);
+		Diamond(Side * 0.6f * Size * Flap, -0.3f * Size, 0.6f * Size * Flap, 0.5f * Size);
+		Graphics()->SetColor(Color.r * 0.8f, Color.g * 0.8f, Color.b * 0.8f, Color.a);
+		Diamond(Side * 0.45f * Size * Flap, 0.3f * Size, 0.45f * Size * Flap, 0.38f * Size);
 	}
+	Graphics()->SetColor(0.15f, 0.1f, 0.1f, Color.a);
+	const IGraphics::CFreeformItem Body(
+		Center.x - 0.05f * Size, Center.y - 0.5f * Size,
+		Center.x + 0.05f * Size, Center.y - 0.5f * Size,
+		Center.x - 0.05f * Size, Center.y + 0.6f * Size,
+		Center.x + 0.05f * Size, Center.y + 0.6f * Size);
+	Graphics()->QuadsDrawFreeform(&Body, 1);
+}
+
+void CVisuals::UpdatePet(vec2 BodyPos, float TeeSize, vec2 LookDir, float DeltaTime)
+{
+	if(LookDir.x > 0.2f)
+		m_PetFacing = 1.0f;
+	else if(LookDir.x < -0.2f)
+		m_PetFacing = -1.0f;
+
+	// the pet hovers behind the shoulder of the tee and follows it on a soft spring
+	const float Time = Client()->LocalTime();
+	const vec2 Target = BodyPos + vec2(-m_PetFacing * 1.15f * TeeSize, -0.85f * TeeSize + std::sin(Time * 3.0f) * 0.1f * TeeSize);
+	if(!m_PetInitialized || distance(m_PetPos, Target) > 700.0f)
+	{
+		m_PetInitialized = true;
+		m_PetPos = Target;
+		m_PetVel = vec2(0.0f, 0.0f);
+		return;
+	}
+	const int Steps = std::clamp((int)std::ceil(DeltaTime / (1.0f / 120.0f)), 1, 12);
+	const float Step = DeltaTime / Steps;
+	for(int i = 0; i < Steps; i++)
+	{
+		m_PetVel += ((Target - m_PetPos) * 45.0f - m_PetVel * 9.0f) * Step;
+		m_PetPos += m_PetVel * Step;
+	}
+}
+
+void CVisuals::DrawPet(int Type, vec2 Center, float Size, float Facing, float Alpha) const
+{
+	const float Time = Client()->LocalTime();
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	if(Type == 1)
+	{
+		// ghost
+		DrawGhost(Center, Size, ColorRGBA(1.0f, 1.0f, 1.0f, 0.85f * Alpha), Time * 5.0f, Facing * 0.08f);
+	}
+	else if(Type == 2)
+	{
+		// cat
+		const ColorRGBA Fur(1.0f, 0.65f, 0.25f, Alpha);
+		Graphics()->SetColor(Fur);
+		Graphics()->DrawCircle(Center.x, Center.y, 0.85f * Size, 20);
+		for(int Side = -1; Side <= 1; Side += 2)
+		{
+			const IGraphics::CFreeformItem Ear(
+				Center.x + Side * 0.85f * Size, Center.y - 0.2f * Size,
+				Center.x + Side * 0.65f * Size, Center.y - 1.0f * Size,
+				Center.x + Side * 0.15f * Size, Center.y - 0.7f * Size,
+				Center.x + Side * 0.15f * Size, Center.y - 0.7f * Size);
+			Graphics()->QuadsDrawFreeform(&Ear, 1);
+		}
+		// tail swings behind
+		for(int i = 0; i < 3; i++)
+			Graphics()->DrawCircle(Center.x - Facing * (1.0f + 0.22f * i) * Size, Center.y + (0.3f - 0.3f * i + std::sin(Time * 5.0f + i) * 0.12f) * Size, (0.2f - 0.03f * i) * Size, 8);
+		Graphics()->SetColor(0.15f, 0.1f, 0.1f, Alpha);
+		Graphics()->DrawCircle(Center.x - 0.32f * Size + Facing * 0.1f * Size, Center.y - 0.1f * Size, 0.12f * Size, 10);
+		Graphics()->DrawCircle(Center.x + 0.32f * Size + Facing * 0.1f * Size, Center.y - 0.1f * Size, 0.12f * Size, 10);
+		Graphics()->SetColor(1.0f, 0.5f, 0.6f, Alpha);
+		Graphics()->DrawCircle(Center.x + Facing * 0.1f * Size, Center.y + 0.12f * Size, 0.08f * Size, 8);
+	}
+	else
+	{
+		// bat with flapping wings
+		const float Flap = std::sin(Time * 14.0f);
+		Graphics()->SetColor(0.38f, 0.22f, 0.55f, Alpha);
+		for(int Side = -1; Side <= 1; Side += 2)
+		{
+			const IGraphics::CFreeformItem Wing(
+				Center.x + Side * 0.4f * Size, Center.y,
+				Center.x + Side * 1.7f * Size, Center.y - 0.9f * Size * Flap,
+				Center.x + Side * 1.1f * Size, Center.y + 0.6f * Size,
+				Center.x + Side * 1.1f * Size, Center.y + 0.6f * Size);
+			Graphics()->QuadsDrawFreeform(&Wing, 1);
+			const IGraphics::CFreeformItem Ear(
+				Center.x + Side * 0.55f * Size, Center.y - 0.3f * Size,
+				Center.x + Side * 0.4f * Size, Center.y - 0.95f * Size,
+				Center.x + Side * 0.1f * Size, Center.y - 0.5f * Size,
+				Center.x + Side * 0.1f * Size, Center.y - 0.5f * Size);
+			Graphics()->QuadsDrawFreeform(&Ear, 1);
+		}
+		Graphics()->DrawCircle(Center.x, Center.y, 0.65f * Size, 16);
+		Graphics()->SetColor(1.0f, 0.25f, 0.25f, Alpha);
+		Graphics()->DrawCircle(Center.x - 0.25f * Size, Center.y - 0.08f * Size, 0.1f * Size, 8);
+		Graphics()->DrawCircle(Center.x + 0.25f * Size, Center.y - 0.08f * Size, 0.1f * Size, 8);
+	}
+	Graphics()->QuadsEnd();
 	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
-ColorRGBA CVisuals::NameShimmerColor(bool CustomColored, ColorRGBA BodyColor) const
+void CVisuals::DrawConstellation(vec2 BodyPos, float TeeSize, float Alpha) const
 {
-	// colors flow around the hue of the skin and the brightness waves up and down
-	const ColorHSLA Base = CustomColored ? color_cast<ColorHSLA>(BodyColor) : ColorHSLA(0.12f, 0.8f, 0.6f);
-	const float Phase = Client()->LocalTime() * 1.5f;
-	const float Hue = std::fmod(Base.h + 0.06f * std::sin(Phase) + 1.0f, 1.0f);
-	const float Saturation = std::max(Base.s, 0.6f);
-	const float Lightness = 0.72f + 0.16f * std::sin(Phase * 1.3f + 1.0f);
-	return color_cast<ColorRGBA>(ColorHSLA(Hue, Saturation, Lightness));
+	// a small constellation above the tee: stars joined by thin lines, slowly swaying and twinkling
+	static const vec2 s_aStars[7] = {
+		vec2(-1.5f, -0.5f), vec2(-1.0f, -1.2f), vec2(-0.3f, -1.5f), vec2(0.5f, -1.25f),
+		vec2(1.1f, -1.7f), vec2(1.6f, -0.9f), vec2(1.45f, -0.1f)};
+	const float Time = Client()->LocalTime();
+	const float Sway = std::sin(Time * 0.5f) * 0.12f;
+	const float SinSway = std::sin(Sway);
+	const float CosSway = std::cos(Sway);
+	vec2 aPositions[7];
+	for(int i = 0; i < 7; i++)
+	{
+		const vec2 Local = s_aStars[i] + vec2(0.0f, std::sin(Time * 1.2f + i) * 0.05f);
+		aPositions[i] = BodyPos + vec2(Local.x * CosSway - Local.y * SinSway, Local.x * SinSway + Local.y * CosSway) * TeeSize;
+	}
+
+	Graphics()->BlendAdditive();
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	Graphics()->SetColor(0.7f, 0.85f, 1.0f, 0.35f * Alpha);
+	for(int i = 0; i < 6; i++)
+	{
+		const vec2 A = aPositions[i];
+		const vec2 B = aPositions[i + 1];
+		const float Length = distance(A, B);
+		if(Length < 0.01f)
+			continue;
+		const vec2 Perp = vec2(-(B.y - A.y), B.x - A.x) / Length * 0.5f;
+		const IGraphics::CFreeformItem Item(A - Perp, A + Perp, B - Perp, B + Perp);
+		Graphics()->QuadsDrawFreeform(&Item, 1);
+	}
+	Graphics()->QuadsEnd();
+
+	for(int i = 0; i < 7; i++)
+	{
+		const float Twinkle = 0.5f + 0.5f * std::sin(Time * 2.5f + i * 1.7f);
+		const float Size = (0.1f + 0.05f * (i % 3)) * TeeSize * (0.6f + 0.4f * Twinkle);
+		const vec2 Pos = aPositions[i];
+		DrawSprite(m_GlowTexture, Pos, Size * 5.0f, Size * 5.0f, 0.0f, false, ColorRGBA(0.7f, 0.85f, 1.0f, 0.55f * Twinkle * Alpha));
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(1.0f, 0.98f, 0.85f, (0.5f + 0.5f * Twinkle) * Alpha);
+		// two crossed thin diamonds make a four-pointed star
+		const IGraphics::CFreeformItem Horizontal(Pos.x - Size * 1.6f, Pos.y, Pos.x, Pos.y - 0.2f * Size, Pos.x, Pos.y + 0.2f * Size, Pos.x + Size * 1.6f, Pos.y);
+		const IGraphics::CFreeformItem Vertical(Pos.x - 0.2f * Size, Pos.y, Pos.x, Pos.y - Size * 1.6f, Pos.x, Pos.y + Size * 1.6f, Pos.x + 0.2f * Size, Pos.y);
+		Graphics()->QuadsDrawFreeform(&Horizontal, 1);
+		Graphics()->QuadsDrawFreeform(&Vertical, 1);
+		Graphics()->QuadsEnd();
+	}
+	Graphics()->BlendNormal();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+ColorRGBA CVisuals::NameShimmerColor(int CharIndex) const
+{
+	// the chosen colors flow through the name from left to right
+	const ColorRGBA aColors[3] = {
+		color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClVisualsNameColor1)),
+		color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClVisualsNameColor2)),
+		color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClVisualsNameColor3)),
+	};
+	const double Phase = CharIndex * 0.1 - Client()->LocalTime() * g_Config.m_ClVisualsNameSpeed * 0.1;
+	const float Position = (float)(Phase - std::floor(Phase)) * 3.0f;
+	const int Index = std::min((int)Position, 2);
+	float Blend = Position - Index;
+	Blend = Blend * Blend * (3.0f - 2.0f * Blend);
+	const ColorRGBA &From = aColors[Index];
+	const ColorRGBA &To = aColors[(Index + 1) % 3];
+	return ColorRGBA(From.r + (To.r - From.r) * Blend, From.g + (To.g - From.g) * Blend, From.b + (To.b - From.b) * Blend, 1.0f);
 }
 
 void CVisuals::OnRender()
@@ -540,7 +698,10 @@ void CVisuals::OnRender()
 		m_vFlashes.clear();
 		m_vSparkles.clear();
 		m_vRings.clear();
-		m_vHearts.clear();
+		m_vGlows.clear();
+		m_vSouls.clear();
+		m_vMeteors.clear();
+		m_vEchoes.clear();
 		return;
 	}
 
@@ -549,7 +710,9 @@ void CVisuals::OnRender()
 	const bool Predict = g_Config.m_ClCombatPredict;
 	const bool Petals = g_Config.m_ClVisualsPetals;
 	const bool Bubbles = g_Config.m_ClVisualsBubbles;
-	if(!Snow && !Fireflies && !Predict && !Petals && !Bubbles && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vHearts.empty())
+	const bool Butterflies = g_Config.m_ClVisualsButterflies;
+	const bool Meteors = g_Config.m_ClVisualsMeteors;
+	if(!Snow && !Fireflies && !Predict && !Petals && !Bubbles && !Butterflies && !Meteors && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty() && m_vMeteors.empty())
 		return;
 
 	// The game world is still mapped to the screen here, so everything below is drawn in world coordinates.
@@ -662,22 +825,39 @@ void CVisuals::OnRender()
 		}
 	}
 
-	// hearts floating up from the tee
-	for(size_t i = 0; i < m_vHearts.size();)
+	// butterflies flutter around on soft curves
+	if(Butterflies)
 	{
-		CHeart &Heart = m_vHearts[i];
-		Heart.m_Life -= DeltaTime;
-		if(Heart.m_Life <= 0.0f)
+		static const ColorRGBA s_aButterflyColors[3] = {ColorRGBA(1.0f, 0.6f, 0.2f, 0.9f), ColorRGBA(0.4f, 0.7f, 1.0f, 0.9f), ColorRGBA(1.0f, 0.6f, 0.85f, 0.9f)};
+		for(const CButterfly &Butterfly : m_aButterflies)
 		{
-			Heart = m_vHearts.back();
-			m_vHearts.pop_back();
+			const float PosX = Butterfly.m_Base.x + std::sin((float)std::fmod(Time * Butterfly.m_Freq.x, 2.0 * pi) + Butterfly.m_Phase.x) * Butterfly.m_Amp.x;
+			const float PosY = Butterfly.m_Base.y + std::cos((float)std::fmod(Time * Butterfly.m_Freq.y, 2.0 * pi) + Butterfly.m_Phase.y) * Butterfly.m_Amp.y;
+			const float Flap = 0.3f + 0.7f * std::abs(std::sin((float)std::fmod(Time * Butterfly.m_FlapFreq, 2.0 * pi) + Butterfly.m_Phase.x));
+			const float Size = Butterfly.m_Size * FieldScale;
+			const ColorRGBA Color = s_aButterflyColors[Butterfly.m_Type];
+			ForEachTile(PosX, PosY, BUTTERFLY_TILE_WIDTH, BUTTERFLY_TILE_HEIGHT, Size * 2.0f + 200.0f, [&](vec2 Center) {
+				DrawButterfly(Center, Size, Flap, Color);
+			});
+		}
+	}
+
+	// souls of tees that died rise up
+	for(size_t i = 0; i < m_vSouls.size();)
+	{
+		CSoul &Soul = m_vSouls[i];
+		Soul.m_Life -= DeltaTime;
+		if(Soul.m_Life <= 0.0f)
+		{
+			Soul = m_vSouls.back();
+			m_vSouls.pop_back();
 			continue;
 		}
-		Heart.m_Pos.y -= 28.0f * DeltaTime;
-		Heart.m_Pos.x += std::sin(Heart.m_SwayPhase + Heart.m_Life * 3.0f) * 10.0f * DeltaTime;
-		const float Remaining = std::clamp(Heart.m_Life / Heart.m_MaxLife, 0.0f, 1.0f);
-		Graphics()->SetColor(Heart.m_Color.r, Heart.m_Color.g, Heart.m_Color.b, std::min(1.0f, Remaining * 2.0f) * 0.9f);
-		DrawHeart(Heart.m_Pos, Heart.m_Size);
+		Soul.m_Pos.y -= 45.0f * DeltaTime;
+		Soul.m_Pos.x += std::sin(Soul.m_Phase + Soul.m_Life * 3.0f) * 20.0f * DeltaTime;
+		const float Remaining = std::clamp(Soul.m_Life / Soul.m_MaxLife, 0.0f, 1.0f);
+		const ColorRGBA Color(Soul.m_Color.r, Soul.m_Color.g, Soul.m_Color.b, std::min(1.0f, Remaining * 1.5f) * 0.7f);
+		DrawGhost(Soul.m_Pos, Soul.m_Size, Color, (float)Time * 5.0f + Soul.m_Phase, 0.0f);
 		i++;
 	}
 
@@ -761,6 +941,76 @@ void CVisuals::OnRender()
 			i++;
 		}
 		Graphics()->BlendNormal();
+	}
+
+	// glowing particles of weapon trails, sparks and fireworks
+	if(!m_vGlows.empty())
+	{
+		Graphics()->BlendAdditive();
+		StepGlows(m_vGlows, DeltaTime);
+		Graphics()->BlendNormal();
+	}
+
+	// shooting stars
+	if(Meteors)
+	{
+		m_MeteorTimer -= DeltaTime;
+		if(m_MeteorTimer <= 0.0f && m_vMeteors.size() < MAX_METEORS)
+		{
+			m_MeteorTimer = random_float(2.0f, 5.0f);
+			const vec2 ViewSize = View.Size();
+			CMeteor Meteor;
+			Meteor.m_Pos = View.m_TopLeft + vec2(random_float(0.1f, 1.0f) * ViewSize.x, random_float(0.0f, 0.35f) * ViewSize.y);
+			Meteor.m_Vel = normalize(vec2(0.8f, 0.45f)) * random_float(600.0f, 900.0f) * FieldScale;
+			Meteor.m_MaxLife = random_float(0.8f, 1.3f);
+			Meteor.m_Life = Meteor.m_MaxLife;
+			Meteor.m_Length = random_float(120.0f, 220.0f) * FieldScale;
+			Meteor.m_Size = random_float(2.0f, 3.5f) * FieldScale;
+			m_vMeteors.push_back(Meteor);
+		}
+	}
+	if(!m_vMeteors.empty())
+	{
+		Graphics()->BlendAdditive();
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		constexpr int TAIL_SEGMENTS = 8;
+		for(size_t i = 0; i < m_vMeteors.size();)
+		{
+			CMeteor &Meteor = m_vMeteors[i];
+			Meteor.m_Life -= DeltaTime;
+			if(Meteor.m_Life <= 0.0f)
+			{
+				Meteor = m_vMeteors.back();
+				m_vMeteors.pop_back();
+				continue;
+			}
+			Meteor.m_Pos += Meteor.m_Vel * DeltaTime;
+			const float Fade = std::min(1.0f, std::clamp(Meteor.m_Life / Meteor.m_MaxLife, 0.0f, 1.0f) * 3.0f);
+			const vec2 Dir = normalize(Meteor.m_Vel);
+			const vec2 Perp(-Dir.y, Dir.x);
+			for(int Segment = 0; Segment < TAIL_SEGMENTS; Segment++)
+			{
+				const float T0 = (float)Segment / TAIL_SEGMENTS;
+				const float T1 = (float)(Segment + 1) / TAIL_SEGMENTS;
+				const vec2 A = Meteor.m_Pos - Dir * Meteor.m_Length * T0;
+				const vec2 B = Meteor.m_Pos - Dir * Meteor.m_Length * T1;
+				const float WidthA = Meteor.m_Size * 0.6f * (1.0f - T0);
+				const float WidthB = Meteor.m_Size * 0.6f * (1.0f - T1);
+				Graphics()->SetColor(0.85f, 0.92f, 1.0f, (1.0f - T0) * 0.8f * Fade);
+				const IGraphics::CFreeformItem Item(A - Perp * WidthA, A + Perp * WidthA, B - Perp * WidthB, B + Perp * WidthB);
+				Graphics()->QuadsDrawFreeform(&Item, 1);
+			}
+			i++;
+		}
+		Graphics()->QuadsEnd();
+		for(const CMeteor &Meteor : m_vMeteors)
+		{
+			const float Fade = std::min(1.0f, std::clamp(Meteor.m_Life / Meteor.m_MaxLife, 0.0f, 1.0f) * 3.0f);
+			DrawSprite(m_GlowTexture, Meteor.m_Pos, Meteor.m_Size * 6.0f, Meteor.m_Size * 6.0f, 0.0f, false, ColorRGBA(0.9f, 0.95f, 1.0f, 0.9f * Fade));
+		}
+		Graphics()->BlendNormal();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 
 	// fireflies
@@ -990,12 +1240,29 @@ void CVisuals::SpawnFlash(vec2 Pos, float Size, float Life)
 
 void CVisuals::OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun)
 {
-	if(!g_Config.m_ClVisualsSnowWeapons || Client()->State() != IClient::STATE_ONLINE)
+	if(Client()->State() != IClient::STATE_ONLINE)
 		return;
 
 	// only react to freshly fired lasers
 	const int Age = Client()->PredGameTick(g_Config.m_ClDummy) - StartTick;
 	if(Age > 10 || Age < -10)
+		return;
+
+	const float Length = distance(From, To);
+	if(Length < 1.0f)
+		return;
+	const vec2 Dir = (To - From) / Length;
+
+	// electric sparks jump off the beam
+	if(g_Config.m_ClVisualsLaserSparks && random_float() < 0.7f)
+	{
+		const vec2 Perp(-Dir.y, Dir.x);
+		const vec2 Pos = From + (To - From) * random_float();
+		SpawnGlow(Pos, Perp * random_float(-60.0f, 60.0f) + Dir * random_float(-20.0f, 20.0f), random_float(0.15f, 0.3f), random_float(6.0f, 11.0f), -0.7f, 0.9f,
+			Shotgun ? ColorRGBA(1.0f, 0.8f, 0.4f, 1.0f) : ColorRGBA(0.6f, 0.9f, 1.0f, 1.0f));
+	}
+
+	if(!g_Config.m_ClVisualsSnowWeapons)
 		return;
 
 	// every laser is rendered many times, only the first time counts
@@ -1008,17 +1275,96 @@ void CVisuals::OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun)
 	m_aRecentLasers[m_NextRecentLaser].m_To = To;
 	m_NextRecentLaser = (m_NextRecentLaser + 1) % NUM_RECENT_LASERS;
 
-	const float Length = distance(From, To);
-	if(Length < 1.0f)
-		return;
-	const vec2 Dir = (To - From) / Length;
-
 	// only when the laser ends in a wall
 	if(!Collision()->CheckPoint(To + Dir * 8.0f))
 		return;
 
 	SpawnBurst(To - Dir * 2.0f, -Dir, 1.2f, Shotgun ? 8 : 5, 30.0f, 90.0f);
 	SpawnFlash(To - Dir * 2.0f, Shotgun ? 38.0f : 30.0f, 0.2f);
+}
+
+void CVisuals::OnProjectileRendered(vec2 Pos, vec2 Vel, int Weapon, float Alpha)
+{
+	if(Client()->State() != IClient::STATE_ONLINE)
+		return;
+	if(Weapon == WEAPON_GRENADE)
+	{
+		// a tail of fire
+		if(!g_Config.m_ClVisualsGrenadeTrail)
+			return;
+		for(int i = 0; i < 2; i++)
+			SpawnGlow(Pos + vec2(random_float(-3.0f, 3.0f), random_float(-3.0f, 3.0f)), vec2(random_float(-15.0f, 15.0f), random_float(-25.0f, 5.0f)), random_float(0.3f, 0.55f), random_float(10.0f, 18.0f), -0.8f, 0.85f * Alpha,
+				ColorRGBA(1.0f, random_float(0.4f, 0.75f), 0.1f, 1.0f));
+	}
+	else if(Weapon == WEAPON_GUN || Weapon == WEAPON_SHOTGUN)
+	{
+		// two glowing beads that wind around the bullet like a spiral
+		if(!g_Config.m_ClVisualsBulletTrail)
+			return;
+		const float Length = length(Vel);
+		if(Length < 0.00001f)
+			return;
+		const vec2 Dir = Vel / Length;
+		const vec2 Perp(-Dir.y, Dir.x);
+		const float Offset = std::sin(Client()->LocalTime() * 28.0f) * 4.0f;
+		SpawnGlow(Pos + Perp * Offset, vec2(0.0f, 0.0f), random_float(0.25f, 0.4f), random_float(7.0f, 9.0f), -0.7f, 0.9f * Alpha, ColorRGBA(0.4f, 0.9f, 1.0f, 1.0f));
+		SpawnGlow(Pos - Perp * Offset, vec2(0.0f, 0.0f), random_float(0.25f, 0.4f), random_float(7.0f, 9.0f), -0.7f, 0.9f * Alpha, ColorRGBA(1.0f, 0.5f, 0.9f, 1.0f));
+	}
+}
+
+void CVisuals::OnHookRendered(vec2 Pos, vec2 HookPos)
+{
+	if(!g_Config.m_ClVisualsHookSparks || Client()->State() != IClient::STATE_ONLINE)
+		return;
+	const float Length = distance(Pos, HookPos);
+	if(Length < 1.0f)
+		return;
+	const vec2 Dir = (HookPos - Pos) / Length;
+	const vec2 Perp(-Dir.y, Dir.x);
+	// sparks run along the chain
+	if(random_float() < 0.7f)
+		SpawnGlow(Pos + (HookPos - Pos) * random_float(), Perp * random_float(-35.0f, 35.0f), random_float(0.2f, 0.35f), random_float(6.0f, 10.0f), -0.6f, 0.85f, ColorRGBA(0.5f, 0.8f, 1.0f, 1.0f));
+	// and the head of the hook glows
+	SpawnGlow(HookPos, vec2(0.0f, 0.0f), 0.12f, 18.0f, -0.5f, 0.6f, ColorRGBA(0.6f, 0.85f, 1.0f, 1.0f));
+}
+
+void CVisuals::OnDeath(vec2 Pos, int ClientId)
+{
+	if(Client()->State() != IClient::STATE_ONLINE)
+		return;
+
+	if(g_Config.m_ClVisualsDeathSoul && m_vSouls.size() < MAX_SOULS)
+	{
+		ColorRGBA Color(1.0f, 1.0f, 1.0f, 1.0f);
+		if(in_range(ClientId, MAX_CLIENTS - 1))
+		{
+			const auto &RenderInfo = GameClient()->m_aClients[ClientId].m_RenderInfo;
+			if(RenderInfo.m_CustomColoredSkin)
+				Color = Lighten(RenderInfo.m_ColorBody, 0.55f);
+		}
+		CSoul Soul;
+		Soul.m_Pos = Pos;
+		Soul.m_MaxLife = 2.2f;
+		Soul.m_Life = Soul.m_MaxLife;
+		Soul.m_Size = 18.0f;
+		Soul.m_Phase = random_float(0.0f, 2.0f * pi);
+		Soul.m_Color = Color;
+		m_vSouls.push_back(Soul);
+	}
+
+	if(g_Config.m_ClVisualsDeathFirework)
+	{
+		// a burst of colorful sparks with a ring
+		const float Hue = random_float();
+		for(int i = 0; i < 24; i++)
+		{
+			const float Angle = random_float(0.0f, 2.0f * pi);
+			const ColorRGBA Color = color_cast<ColorRGBA>(ColorHSLA(std::fmod(Hue + random_float(-0.08f, 0.08f) + 1.0f, 1.0f), 1.0f, 0.6f));
+			SpawnGlow(Pos, vec2(std::cos(Angle), std::sin(Angle)) * random_float(80.0f, 240.0f), random_float(0.6f, 1.1f), random_float(9.0f, 16.0f), -0.6f, 0.95f, Color, 160.0f);
+		}
+		SpawnRing(Pos, 70.0f, color_cast<ColorRGBA>(ColorHSLA(Hue, 1.0f, 0.7f)));
+		SpawnFlash(Pos, 70.0f, 0.25f);
+	}
 }
 
 void CVisuals::OnExplosion(vec2 Pos)

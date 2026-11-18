@@ -531,6 +531,9 @@ void CPlayers::RenderHook(
 		(Pos.y > ScreenRect.m_BottomRight.y && HookPos.y > ScreenRect.m_BottomRight.y))
 		return;
 
+	if(ClientId == GameClient()->m_Snap.m_LocalClientId)
+		GameClient()->m_Visuals.OnHookRendered(Pos, HookPos);
+
 	float d = distance(Pos, HookPos);
 	vec2 Dir = normalize(Pos - HookPos);
 
@@ -870,6 +873,17 @@ void CPlayers::RenderPlayer(
 	{
 		// the aura is only shown on your own tee and has to be behind it
 		GameClient()->m_Visuals.RenderBehindTee(BodyPos, TeeBaseSize, Alpha, RenderInfo.m_ColorBody);
+		// faded copies of the tee that are left behind when moving fast
+		if(g_Config.m_ClVisualsEcho)
+		{
+			for(int EchoIndex = 0; EchoIndex < GameClient()->m_Visuals.NumEchoes(); EchoIndex++)
+			{
+				vec2 EchoPos;
+				float EchoAlpha;
+				GameClient()->m_Visuals.GetEcho(EchoIndex, EchoPos, EchoAlpha);
+				RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, EchoPos, EchoAlpha * Alpha);
+			}
+		}
 	}
 
 	RenderTools()->RenderTee(&State, &RenderInfo, Player.m_Emote, Direction, Position, Alpha);

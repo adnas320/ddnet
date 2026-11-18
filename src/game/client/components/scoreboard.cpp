@@ -857,11 +857,29 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
 				}
 				if(g_Config.m_ClVisualsNameShimmer && pInfo->m_Local)
 				{
-					const float Alpha = NameColor.a;
-					NameColor = GameClient()->m_Visuals.NameShimmerColor(ClientData.m_RenderInfo.m_CustomColoredSkin, ClientData.m_RenderInfo.m_ColorBody);
-					NameColor.a = Alpha;
+					// the own name is drawn letter by letter, its colors flow from left to right
+					CTextCursor NameCursor;
+					NameCursor.m_FontSize = FontSize;
+					NameCursor.SetPosition(vec2(NameOffset, TextY));
+					int CharIndex = 0;
+					for(int ByteIndex = 0; aBuf[ByteIndex] != '\0';)
+					{
+						const int Next = str_utf8_forward(aBuf, ByteIndex);
+						if(Next <= ByteIndex || NameCursor.m_X - NameOffset > NameLength - FontSize * 0.6f)
+							break;
+						ColorRGBA LetterColor = GameClient()->m_Visuals.NameShimmerColor(CharIndex);
+						LetterColor.a = NameColor.a;
+						TextRender()->TextColor(LetterColor);
+						TextRender()->TextEx(&NameCursor, aBuf + ByteIndex, Next - ByteIndex);
+						ByteIndex = Next;
+						CharIndex++;
+					}
+					TextRender()->TextColor(TextRender()->DefaultTextColor());
 				}
-				Player.m_Name.Render(TextRender(), vec2(NameOffset, TextY), NameColor);
+				else
+				{
+					Player.m_Name.Render(TextRender(), vec2(NameOffset, TextY), NameColor);
+				}
 
 				// ready / watching
 				if(Client()->IsSixup() && Client()->m_TranslationContext.m_aClients[pInfo->m_ClientId].m_PlayerFlags7 & protocol7::PLAYERFLAG_READY)

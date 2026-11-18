@@ -1511,6 +1511,7 @@ void CGameClient::ProcessEvents()
 		{
 			const CNetEvent_Death *pEvent = (const CNetEvent_Death *)Item.m_pData;
 			m_Effects.PlayerDeath(vec2(pEvent->m_X, pEvent->m_Y), pEvent->m_ClientId, Alpha);
+			m_Visuals.OnDeath(vec2(pEvent->m_X, pEvent->m_Y), pEvent->m_ClientId);
 		}
 		else if(Item.m_Type == NETEVENTTYPE_SOUNDWORLD)
 		{
