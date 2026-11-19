@@ -1,5 +1,6 @@
 #include "gameclient.h"
 
+#include <base/mem.h>
 #include <base/str.h>
 
 #include <engine/graphics.h>
