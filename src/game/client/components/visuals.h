@@ -231,6 +231,8 @@ class CVisuals : public CComponent
 	void SpawnStar(vec2 Pos, vec2 Vel, float Life, float Size, float AlphaScale, ColorRGBA Color, float Gravity = 0.0f);
 	void RenderAurora(const CScreenRect &View) const;
 	void UpdateAutoSkin(float DeltaTime);
+	int m_AutoSkinIndex = -1;
+	float m_AutoHue = 0.0f;
 	void DrawFlatCircle(IGraphics::CTextureHandle Texture, vec2 Center, float Radius, float Angle, float Squash, ColorRGBA Color) const;
 	void DrawWavy(IGraphics::CTextureHandle Texture, vec2 Center, float Width, float Height, float Rotation, bool Flip, ColorRGBA Color, float WaveAmp, float WaveSpeed, float Phase) const;
 	void SpawnGlow(vec2 Pos, vec2 Vel, float Life, float Size, float Grow, float AlphaScale, ColorRGBA Color, float Gravity = 0.0f);
@@ -271,6 +273,12 @@ public:
 	void OnHookRendered(vec2 Pos, vec2 HookPos);
 	// called when a kill message arrives
 	void OnKill(int Killer, int Victim);
+	// puts back the skin and colors you had before the automatic changes
+	void RestoreSkin();
+	// remembers the current skin and colors as your own
+	void SaveOriginalSkin();
+	// color for the rainbow mode of your own tee, hook and weapon
+	ColorRGBA MeColor(float Offset) const;
 };
 
 #endif

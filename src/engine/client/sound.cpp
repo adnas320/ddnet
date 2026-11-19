@@ -804,6 +804,26 @@ int CSound::LoadWVFromMem(const void *pData, unsigned DataSize, bool ForceLoad, 
 	return pSample->m_Index;
 }
 
+int CSound::LoadPCM(short *pData, int NumFrames, int Channels, int Rate)
+{
+	CSample *pSample = AllocSample();
+	if(!pSample || NumFrames <= 0 || Channels < 1 || Channels > 2 || Rate <= 0)
+	{
+		if(pSample)
+			UnloadSample(pSample->m_Index);
+		free(pData);
+		return -1;
+	}
+	pSample->m_pData = pData;
+	pSample->m_NumFrames = NumFrames;
+	pSample->m_Rate = Rate;
+	pSample->m_Channels = Channels;
+	pSample->m_LoopStart = 0;
+	pSample->m_PausedAt = 0;
+	RateConvert(*pSample);
+	return pSample->m_Index;
+}
+
 void CSound::UnloadSample(int SampleId)
 {
 	if(SampleId == -1)

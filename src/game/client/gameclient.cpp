@@ -149,11 +149,13 @@ void CGameClient::OnConsoleInit()
 					      &m_Particles.m_RenderGeneral,
 					      &m_FreezeBars,
 					      &m_DamageInd,
+					      &m_Paint,
 					      &m_Visuals, // falling snow and weapon snow bursts, drawn below the hud
 					      &m_Hud,
 					      &m_Spectator,
 					      &m_Emoticon,
 					      &m_BindWheel,
+					      &m_MusicPlayer,
 					      &m_InfoMessages,
 					      &m_Chat,
 					      &m_Broadcast,

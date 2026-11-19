@@ -541,7 +541,10 @@ void CPlayers::RenderHook(
 	Graphics()->QuadsSetRotation(angle(Dir) + pi);
 	// render head
 	int QuadOffset = NUM_WEAPONS * 2 + 2;
-	Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
+	// rainbow mode: the own hook shimmers
+	const bool RainbowHook = g_Config.m_ClRainbowHook && ClientId == GameClient()->m_Snap.m_LocalClientId;
+	const ColorRGBA HookColor = RainbowHook ? GameClient()->m_Visuals.MeColor(0.2f).WithAlpha(Alpha) : ColorRGBA(1.0f, 1.0f, 1.0f, Alpha);
+	Graphics()->SetColor(HookColor);
 	Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, HookPos.x, HookPos.y);
 
 	// render chain
@@ -556,6 +559,7 @@ void CPlayers::RenderHook(
 		s_aHookChainRenderInfo[HookChainCount].m_Scale = 1;
 		s_aHookChainRenderInfo[HookChainCount].m_Rotation = angle(Dir) + pi;
 	}
+	Graphics()->SetColor(HookColor);
 	Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteHookChain);
 	Graphics()->RenderQuadContainerAsSpriteMultiple(m_WeaponEmoteQuadContainerIndex, QuadOffset, HookChainCount, s_aHookChainRenderInfo);
 
@@ -588,6 +592,14 @@ void CPlayers::RenderPlayer(
 		return;
 
 	CTeeRenderInfo RenderInfo = *pRenderInfo;
+	// rainbow mode: only your own tee shimmers
+	const bool RainbowMe = ClientId == GameClient()->m_Snap.m_LocalClientId && ClientId >= 0;
+	if(RainbowMe && g_Config.m_ClRainbowTee)
+	{
+		RenderInfo.m_CustomColoredSkin = true;
+		RenderInfo.m_ColorBody = GameClient()->m_Visuals.MeColor(0.0f);
+		RenderInfo.m_ColorFeet = GameClient()->m_Visuals.MeColor(0.15f);
+	}
 
 	const bool Paused = GameClient()->IsWorldPaused() || GameClient()->IsDemoPlaybackPaused();
 	bool Local = GameClient()->m_Snap.m_LocalClientId == ClientId;
@@ -692,7 +704,10 @@ void CPlayers::RenderPlayer(
 	{
 		if(!(RenderInfo.m_TeeRenderFlags & TEE_NO_WEAPON))
 		{
-			Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
+			if(RainbowMe && g_Config.m_ClRainbowWeapon)
+				Graphics()->SetColor(GameClient()->m_Visuals.MeColor(0.1f).WithAlpha(Alpha));
+			else
+				Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
 
 			// normal weapons
 			int CurrentWeapon = std::clamp(Player.m_Weapon, 0, NUM_WEAPONS - 1);

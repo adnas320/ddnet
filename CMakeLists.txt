@@ -988,7 +988,10 @@ add_library(json EXCLUDE_FROM_ALL OBJECT ${DEP_JSON_SRC})
 set_src(DEP_MD5_SRC GLOB src/engine/external/md5 md5.c md5.h)
 add_library(md5 EXCLUDE_FROM_ALL OBJECT ${DEP_MD5_SRC})
 
-list(APPEND TARGETS_DEP json md5)
+set_src(DEP_MINIMP3_SRC GLOB src/engine/external/minimp3 minimp3.c minimp3.h minimp3_ex.h)
+add_library(minimp3 EXCLUDE_FROM_ALL OBJECT ${DEP_MINIMP3_SRC})
+
+list(APPEND TARGETS_DEP json md5 minimp3)
 set(DEP_JSON $<TARGET_OBJECTS:json>)
 set(DEP_MD5)
 if(NOT CRYPTO_FOUND)
@@ -2727,6 +2730,7 @@ if(CLIENT)
     components/menus_settings_controls.h
     components/menus_settings_credits.cpp
     components/menus_settings_ddnet.cpp
+    components/menus_settings_extra.cpp
     components/menus_settings_general.cpp
     components/menus_settings_graphics.cpp
     components/menus_settings_language.cpp
@@ -2740,8 +2744,12 @@ if(CLIENT)
     components/menus_start.h
     components/motd.cpp
     components/motd.h
+    components/musicplayer.cpp
+    components/musicplayer.h
     components/nameplates.cpp
     components/nameplates.h
+    components/paint.cpp
+    components/paint.h
     components/particles.cpp
     components/particles.h
     components/players.cpp
@@ -2936,7 +2944,7 @@ if(CLIENT)
   )
   set(CLIENT_SRC ${ENGINE_CLIENT} ${PLATFORM_CLIENT} ${GAME_CLIENT} ${GAME_EDITOR} ${GAME_MAP} ${GAME_GENERATED_CLIENT})
 
-  set(DEPS_CLIENT ${DEPS} ${GLEW_DEP})
+  set(DEPS_CLIENT ${DEPS} $<TARGET_OBJECTS:minimp3> ${GLEW_DEP})
 
   # Libraries
   set(LIBS_CLIENT

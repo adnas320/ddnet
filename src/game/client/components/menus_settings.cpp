@@ -54,13 +54,17 @@ void CMenus::RenderSettings(CUIRect MainView)
 		"Визуалы",
 		"Профили",
 		"Бой",
-		"Колесо биндов"};
+		"Колесо биндов",
+		"Скин и цвета",
+		"Ганпаки",
+		"Рисование",
+		"Музыка"};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
 	for(int i = 0; i < SETTINGS_LENGTH; i++)
 	{
-		TabBar.HSplitTop(10.0f, nullptr, &TabBar);
-		TabBar.HSplitTop(26.0f, &Button, &TabBar);
+		TabBar.HSplitTop(4.0f, nullptr, &TabBar);
+		TabBar.HSplitTop(24.0f, &Button, &TabBar);
 		if(DoButton_MenuTab(&s_aTabButtons[i], apTabs[i], g_Config.m_UiSettingsPage == i, &Button, IGraphics::CORNER_R, &m_aAnimatorsSettingsTab[i]))
 			g_Config.m_UiSettingsPage = i;
 	}
@@ -137,6 +141,26 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
 		RenderSettingsBindWheel(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_SKIN)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
+		RenderSettingsSkin(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_GUNPACK)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
+		RenderSettingsGunpack(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_PAINT)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
+		RenderSettingsPaint(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_MUSIC)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
+		RenderSettingsMusic(MainView);
 	}
 	else
 	{

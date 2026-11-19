@@ -570,6 +570,10 @@ protected:
 	void RenderSettingsProfiles(CUIRect MainView);
 	void RenderSettingsCombat(CUIRect MainView);
 	void RenderSettingsBindWheel(CUIRect MainView);
+	void RenderSettingsSkin(CUIRect MainView);
+	void RenderSettingsGunpack(CUIRect MainView);
+	void RenderSettingsPaint(CUIRect MainView);
+	void RenderSettingsMusic(CUIRect MainView);
 
 	// found in menus_settings_appearance.cpp
 	void RenderSettingsAppearance(CUIRect MainView);
@@ -724,6 +728,10 @@ public:
 		SETTINGS_PROFILES,
 		SETTINGS_COMBAT,
 		SETTINGS_BINDWHEEL,
+		SETTINGS_SKIN,
+		SETTINGS_GUNPACK,
+		SETTINGS_PAINT,
+		SETTINGS_MUSIC,
 
 		SETTINGS_LENGTH,
 	};

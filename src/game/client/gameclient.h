@@ -68,6 +68,8 @@
 #include "components/statboard.h"
 #include "components/touch_controls.h"
 #include "components/bindwheel.h"
+#include "components/musicplayer.h"
+#include "components/paint.h"
 #include "components/visuals.h"
 #include "components/voting.h"
 
@@ -179,6 +181,8 @@ public:
 	CDamageInd m_DamageInd;
 	CVisuals m_Visuals;
 	CBindWheel m_BindWheel;
+	CMusicPlayer m_MusicPlayer;
+	CPaint m_Paint;
 	CTouchControls m_TouchControls;
 	CVoting m_Voting;
 	CSpectator m_Spectator;
@@ -739,6 +743,8 @@ public:
 	protocol7::CNetObjHandler *GetNetObjHandler7() override;
 
 	void LoadGameSkin(const char *pPath, bool AsDir = false);
+	// replaces parts of the game skin with the same parts of the second gunpack (cl_gunpack_second)
+	void MixGunpack(CImageInfo &Base) const;
 	void LoadEmoticonsSkin(const char *pPath, bool AsDir = false);
 	void LoadParticlesSkin(const char *pPath, bool AsDir = false);
 	void LoadHudSkin(const char *pPath, bool AsDir = false);

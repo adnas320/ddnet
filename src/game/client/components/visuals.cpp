@@ -1328,39 +1328,100 @@ void CVisuals::RenderAurora(const CScreenRect &View) const
 	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
+void CVisuals::SaveOriginalSkin()
+{
+	str_copy(g_Config.m_ClVisualsOrigSkin, g_Config.m_ClPlayerSkin);
+	g_Config.m_ClVisualsOrigCustom = g_Config.m_ClPlayerUseCustomColor;
+	g_Config.m_ClVisualsOrigBody = (int)g_Config.m_ClPlayerColorBody;
+	g_Config.m_ClVisualsOrigFeet = (int)g_Config.m_ClPlayerColorFeet;
+	g_Config.m_ClVisualsOrigSaved = 1;
+}
+
+void CVisuals::RestoreSkin()
+{
+	if(g_Config.m_ClVisualsOrigSaved)
+	{
+		str_copy(g_Config.m_ClPlayerSkin, g_Config.m_ClVisualsOrigSkin);
+		g_Config.m_ClPlayerUseCustomColor = g_Config.m_ClVisualsOrigCustom;
+		g_Config.m_ClPlayerColorBody = (unsigned)g_Config.m_ClVisualsOrigBody;
+		g_Config.m_ClPlayerColorFeet = (unsigned)g_Config.m_ClVisualsOrigFeet;
+		g_Config.m_ClVisualsOrigSaved = 0;
+		if(Client()->State() == IClient::STATE_ONLINE)
+			GameClient()->SendInfo(false);
+	}
+}
+
 void CVisuals::UpdateAutoSkin(float DeltaTime)
 {
 	if(!g_Config.m_ClVisualsAutoSkin)
 	{
+		// switched off: everything is as it was before
 		m_AutoSkinTimer = 0.0f;
+		RestoreSkin();
 		return;
 	}
+	if(!g_Config.m_ClVisualsOrigSaved)
+		SaveOriginalSkin();
+	if(Client()->State() != IClient::STATE_ONLINE)
+		return;
 	m_AutoSkinTimer += DeltaTime;
 	if(m_AutoSkinTimer < (float)g_Config.m_ClVisualsAutoSkinInterval)
 		return;
 	m_AutoSkinTimer = 0.0f;
 
-	if(g_Config.m_ClVisualsAutoSkin == 2)
+	// the next skin of the list (up to five)
+	if(g_Config.m_ClVisualsAutoSkinList)
 	{
-		// whole skin: random skin with random colors
-		GameClient()->m_Skins.RandomizeSkin(0);
+		const char *apSkins[5] = {g_Config.m_ClVisualsAutoSkin1, g_Config.m_ClVisualsAutoSkin2, g_Config.m_ClVisualsAutoSkin3, g_Config.m_ClVisualsAutoSkin4, g_Config.m_ClVisualsAutoSkin5};
+		for(int Try = 0; Try < 5; Try++)
+		{
+			m_AutoSkinIndex = (m_AutoSkinIndex + 1) % 5;
+			if(apSkins[m_AutoSkinIndex][0] != '\0')
+			{
+				str_copy(g_Config.m_ClPlayerSkin, apSkins[m_AutoSkinIndex]);
+				break;
+			}
+		}
 	}
-	else
+
+	if(g_Config.m_ClVisualsAutoSkinColors == 1)
 	{
-		// only the colors of the current skin
-		ColorHSLA Body;
-		Body.h = random_float();
-		Body.s = random_float(0.6f, 1.0f);
-		Body.l = random_float(0.3f, 0.7f);
-		ColorHSLA Feet;
-		Feet.h = std::fmod(Body.h + random_float(0.25f, 0.75f), 1.0f);
-		Feet.s = random_float(0.6f, 1.0f);
-		Feet.l = random_float(0.3f, 0.7f);
+		// smooth rainbow: the hue moves a bit further with every step
+		m_AutoHue = std::fmod(m_AutoHue + 0.07f, 1.0f);
 		g_Config.m_ClPlayerUseCustomColor = 1;
-		g_Config.m_ClPlayerColorBody = Body.Pack(false);
-		g_Config.m_ClPlayerColorFeet = Feet.Pack(false);
+		g_Config.m_ClPlayerColorBody = ColorHSLA(m_AutoHue, 1.0f, 0.5f).Pack(false);
+		g_Config.m_ClPlayerColorFeet = ColorHSLA(std::fmod(m_AutoHue + 0.5f, 1.0f), 1.0f, 0.5f).Pack(false);
+	}
+	else if(g_Config.m_ClVisualsAutoSkinColors == 2)
+	{
+		// random jumps
+		g_Config.m_ClPlayerUseCustomColor = 1;
+		g_Config.m_ClPlayerColorBody = ColorHSLA(random_float(), random_float(0.6f, 1.0f), random_float(0.3f, 0.7f)).Pack(false);
+		g_Config.m_ClPlayerColorFeet = ColorHSLA(random_float(), random_float(0.6f, 1.0f), random_float(0.3f, 0.7f)).Pack(false);
 	}
 	GameClient()->SendInfo(false);
+}
+
+// color of your tee, hook and weapon for the rainbow mode
+ColorRGBA CVisuals::MeColor(float Offset) const
+{
+	const float Speed = g_Config.m_ClRainbowSpeed * 0.12f;
+	const float T = (float)std::fmod(Client()->LocalTime() * Speed + Offset, 1.0);
+	if(g_Config.m_ClRainbowStyle == 0)
+		return color_cast<ColorRGBA>(ColorHSLA(T, 1.0f, 0.6f));
+	const ColorRGBA aColors[3] = {
+		color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClRainbowColor1)),
+		color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClRainbowColor2)),
+		color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClRainbowColor3))};
+	const float Position = T * 3.0f;
+	const int Index = std::min((int)Position, 2);
+	if(g_Config.m_ClRainbowStyle == 2)
+		return aColors[Index];
+	const float Fraction = Position - Index;
+	const float Smooth = Fraction * Fraction * (3.0f - 2.0f * Fraction);
+	const ColorRGBA &From = aColors[Index];
+	const ColorRGBA &To = aColors[(Index + 1) % 3];
+	return ColorRGBA(From.r + (To.r - From.r) * Smooth, From.g + (To.g - From.g) * Smooth, From.b + (To.b - From.b) * Smooth, 1.0f);
 }
 
 void CVisuals::OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun)

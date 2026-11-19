@@ -4,6 +4,7 @@
 
 #include <engine/graphics.h>
 #include <engine/image.h>
+#include <engine/shared/config.h>
 #include <engine/storage.h>
 
 #include <generated/client_data.h>
@@ -35,6 +36,76 @@ CGameClient::CImageAsset CGameClient::LoadAssetFromPath(const char *pPath, bool 
 			LoadedAsset.m_FallbackImageInfo = std::move(ImgDefaultInfo);
 	}
 	return LoadedAsset;
+}
+
+void CGameClient::MixGunpack(CImageInfo &Base) const
+{
+	// parts of the game skin in grid cells (the game skin has a grid of 32x16): mask bit, x, y, width, height
+	struct SRegion
+	{
+		int m_Mask;
+		int m_X, m_Y, m_W, m_H;
+	};
+	static const SRegion s_aRegions[] = {
+		// weapons
+		{1, 2, 1, 4, 3}, {1, 2, 4, 4, 2}, {1, 2, 6, 8, 2}, {1, 2, 8, 7, 2}, {1, 2, 10, 8, 2}, {1, 2, 12, 7, 3},
+		// cursors
+		{2, 0, 0, 2, 2}, {2, 0, 4, 2, 2}, {2, 0, 6, 2, 2}, {2, 0, 8, 2, 2}, {2, 0, 10, 2, 2}, {2, 0, 12, 2, 2},
+		// projectiles
+		{4, 6, 4, 2, 2}, {4, 10, 6, 2, 2}, {4, 10, 8, 2, 2}, {4, 10, 12, 2, 2},
+		// muzzle flashes
+		{8, 8, 4, 12, 2}, {8, 12, 6, 12, 2}, {8, 25, 0, 7, 12},
+		// hook
+		{16, 2, 0, 1, 1}, {16, 3, 0, 2, 1},
+		// pickups, hearts, armor and flags
+		{32, 10, 2, 4, 2}, {32, 6, 2, 2, 2}, {32, 15, 2, 6, 2}, {32, 10, 10, 2, 2}, {32, 21, 0, 4, 4}, {32, 12, 8, 8, 8},
+		// stars and particles
+		{64, 15, 0, 6, 2}, {64, 6, 0, 9, 2}};
+
+	const int Mask = g_Config.m_ClGunpackMask;
+	if(Mask == 0 || g_Config.m_ClGunpackSecond[0] == '\0' || Base.m_Format != CImageInfo::FORMAT_RGBA || Base.m_Width == 0 || Base.m_Height == 0)
+		return;
+
+	CImageInfo Other;
+	bool Loaded;
+	char aPath[IO_MAX_PATH_LENGTH];
+	if(str_comp(g_Config.m_ClGunpackSecond, "default") == 0)
+	{
+		Loaded = Graphics()->LoadPng(Other, g_pData->m_aImages[IMAGE_GAME].m_pFilename, IStorage::TYPE_ALL);
+	}
+	else
+	{
+		str_format(aPath, sizeof(aPath), "assets/game/%s.png", g_Config.m_ClGunpackSecond);
+		Loaded = Graphics()->LoadPng(Other, aPath, IStorage::TYPE_ALL);
+		if(!Loaded)
+		{
+			str_format(aPath, sizeof(aPath), "assets/game/%s/%s", g_Config.m_ClGunpackSecond, g_pData->m_aImages[IMAGE_GAME].m_pFilename);
+			Loaded = Graphics()->LoadPng(Other, aPath, IStorage::TYPE_ALL);
+		}
+	}
+	if(!Loaded || Other.m_Format != CImageInfo::FORMAT_RGBA || Other.m_Width == 0 || Other.m_Height == 0)
+		return;
+
+	constexpr int GRID_X = 32;
+	constexpr int GRID_Y = 16;
+	for(const SRegion &Region : s_aRegions)
+	{
+		if(!(Mask & Region.m_Mask))
+			continue;
+		const size_t X0 = Region.m_X * Base.m_Width / GRID_X;
+		const size_t X1 = (Region.m_X + Region.m_W) * Base.m_Width / GRID_X;
+		const size_t Y0 = Region.m_Y * Base.m_Height / GRID_Y;
+		const size_t Y1 = (Region.m_Y + Region.m_H) * Base.m_Height / GRID_Y;
+		for(size_t Y = Y0; Y < Y1 && Y < Base.m_Height; Y++)
+		{
+			const size_t SourceY = Y * Other.m_Height / Base.m_Height;
+			for(size_t X = X0; X < X1 && X < Base.m_Width; X++)
+			{
+				const size_t SourceX = X * Other.m_Width / Base.m_Width;
+				mem_copy(&Base.m_pData[(Y * Base.m_Width + X) * 4], &Other.m_pData[(SourceY * Other.m_Width + SourceX) * 4], 4);
+			}
+		}
+	}
 }
 
 void CGameClient::LoadGameSkin(const char *pPath, bool AsDir)
@@ -139,6 +210,7 @@ void CGameClient::LoadGameSkin(const char *pPath, bool AsDir)
 	}
 	else if(LoadedAsset.IsLoaded() && Graphics()->CheckImageDivisibility(LoadedAsset.m_aPath, ImgInfo, g_pData->m_aSprites[SPRITE_HEALTH_FULL].m_pSet->m_Gridx, g_pData->m_aSprites[SPRITE_HEALTH_FULL].m_pSet->m_Gridy, true) && Graphics()->IsImageFormatRgba(LoadedAsset.m_aPath, ImgInfo))
 	{
+		MixGunpack(ImgInfo);
 		m_GameSkin.m_SpriteHealthFull = Graphics()->LoadSpriteTexture(ImgInfo, FallbackImgInfo, &g_pData->m_aSprites[SPRITE_HEALTH_FULL]);
 		m_GameSkin.m_SpriteHealthEmpty = Graphics()->LoadSpriteTexture(ImgInfo, FallbackImgInfo, &g_pData->m_aSprites[SPRITE_HEALTH_EMPTY]);
 		m_GameSkin.m_SpriteArmorFull = Graphics()->LoadSpriteTexture(ImgInfo, FallbackImgInfo, &g_pData->m_aSprites[SPRITE_ARMOR_FULL]);
