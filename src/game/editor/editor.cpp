@@ -4206,8 +4206,8 @@ void CEditor::UpdateGenerator()
 	{
 		m_GeneratorDragging = false;
 		m_GeneratorActive = false;
-		GenerateGameplay(minimum(m_GeneratorStart.x, m_GeneratorEnd.x), minimum(m_GeneratorStart.y, m_GeneratorEnd.y),
-			maximum(m_GeneratorStart.x, m_GeneratorEnd.x), maximum(m_GeneratorStart.y, m_GeneratorEnd.y));
+		GenerateGameplay(std::min(m_GeneratorStart.x, m_GeneratorEnd.x), std::min(m_GeneratorStart.y, m_GeneratorEnd.y),
+			std::max(m_GeneratorStart.x, m_GeneratorEnd.x), std::max(m_GeneratorStart.y, m_GeneratorEnd.y));
 	}
 }
 
@@ -4222,8 +4222,8 @@ void CEditor::RenderGeneratorOverlay()
 
 	if(m_GeneratorDragging)
 	{
-		const int X0 = minimum(m_GeneratorStart.x, m_GeneratorEnd.x), X1 = maximum(m_GeneratorStart.x, m_GeneratorEnd.x) + 1;
-		const int Y0 = minimum(m_GeneratorStart.y, m_GeneratorEnd.y), Y1 = maximum(m_GeneratorStart.y, m_GeneratorEnd.y) + 1;
+		const int X0 = std::min(m_GeneratorStart.x, m_GeneratorEnd.x), X1 = std::max(m_GeneratorStart.x, m_GeneratorEnd.x) + 1;
+		const int Y0 = std::min(m_GeneratorStart.y, m_GeneratorEnd.y), Y1 = std::max(m_GeneratorStart.y, m_GeneratorEnd.y) + 1;
 		CUIRect Zone;
 		Zone.x = ToUiX(X0);
 		Zone.y = ToUiY(Y0);
