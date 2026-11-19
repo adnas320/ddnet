@@ -887,6 +887,7 @@ void CPlayers::RenderPlayer(
 	if(Local)
 	{
 		// the aura is only shown on your own tee and has to be behind it
+		GameClient()->m_Visuals.RenderCape(Position, BodyPos, TeeBaseSize, Alpha, Direction, Vel, InAir);
 		GameClient()->m_Visuals.RenderBehindTee(BodyPos, TeeBaseSize, Alpha, RenderInfo.m_ColorBody);
 		// faded copies of the tee that are left behind when moving fast
 		if(g_Config.m_ClVisualsEcho)

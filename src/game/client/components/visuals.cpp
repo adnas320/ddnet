@@ -50,9 +50,8 @@ void CVisuals::OnInit()
 	m_StarTexture = Graphics()->LoadTexture("visuals/star.png", IStorage::TYPE_ALL);
 	m_CircleTexture = Graphics()->LoadTexture("visuals/circle.png", IStorage::TYPE_ALL);
 	m_SoulTexture = Graphics()->LoadTexture("visuals/soul.png", IStorage::TYPE_ALL);
-	m_PetWingTexture = Graphics()->LoadTexture("visuals/pet_dragon_wing.png", IStorage::TYPE_ALL);
-	static const char *s_apPetFiles[4] = {"visuals/pet_cat.png", "visuals/pet_dragon.png", "visuals/pet_fox.png", "visuals/pet_jelly.png"};
-	for(int i = 0; i < 4; i++)
+	static const char *s_apPetFiles[5] = {"visuals/pet_bunny.png", "visuals/pet_frog.png", "visuals/pet_duck.png", "visuals/pet_slime.png", "visuals/pet_cat.png"};
+	for(int i = 0; i < 5; i++)
 		m_aPetTextures[i] = Graphics()->LoadTexture(s_apPetFiles[i], IStorage::TYPE_ALL);
 }
 
@@ -219,6 +218,134 @@ void CVisuals::GetEcho(int Index, vec2 &Pos, float &Alpha) const
 	Alpha = std::clamp(Echo.m_Life / Echo.m_MaxLife, 0.0f, 1.0f) * 0.4f;
 }
 
+void CVisuals::RenderCape(vec2 Position, vec2 BodyPos, float TeeSize, float Alpha, vec2 LookDir, vec2 Vel, bool InAir)
+{
+	const int Type = g_Config.m_ClVisualsCape;
+	if(Type == 0)
+		return;
+	const float Time = Client()->LocalTime();
+	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.05f);
+
+	// the cape trails behind the movement and flutters up when falling
+	const float TargetSway = std::clamp(-Vel.x * 3.0f, -0.55f * TeeSize, 0.55f * TeeSize);
+	m_CapeSway += (TargetSway - m_CapeSway) * std::min(1.0f, DeltaTime * 7.0f);
+	const float TargetLift = InAir ? std::clamp(Vel.y * 0.035f, -0.2f, 0.35f) : 0.0f;
+	m_CapeLift += (TargetLift - m_CapeLift) * std::min(1.0f, DeltaTime * 6.0f);
+
+	const bool Dark = Type == 3;
+	const float TopY = BodyPos.y - 0.1f * TeeSize;
+	const float FloorY = Position.y + 15.0f - (Dark ? 0.07f * TeeSize : 0.0f);
+	const float Height = (FloorY - TopY) * (1.0f - m_CapeLift);
+	const float CenterX = BodyPos.x - LookDir.x * 0.04f * TeeSize;
+	const float TopHalf = 0.27f * TeeSize;
+	const float HemHalf = 0.5f * TeeSize;
+	constexpr int SLICES = 24;
+	constexpr int HEM_SLICES = 2;
+
+	const auto Mix = [](const ColorRGBA &A, const ColorRGBA &B, float T) {
+		return ColorRGBA(A.r + (B.r - A.r) * T, A.g + (B.g - A.g) * T, A.b + (B.b - A.b) * T, 1.0f);
+	};
+	const auto Brighten = [](ColorRGBA Color, float Amount) {
+		return ColorRGBA(std::clamp(Color.r + Amount, 0.0f, 1.0f), std::clamp(Color.g + Amount, 0.0f, 1.0f), std::clamp(Color.b + Amount, 0.0f, 1.0f), Color.a);
+	};
+	// color of the cloth at a place: T is 0 at the shoulders and 1 at the hem, Side is -1, 0 or 1 across
+	const auto Cloth = [&](float T, float Side) {
+		ColorRGBA Color;
+		if(Type == 1)
+			Color = Mix(ColorRGBA(0.82f, 0.09f, 0.18f, 1.0f), ColorRGBA(0.42f, 0.02f, 0.11f, 1.0f), T);
+		else if(Type == 2)
+			Color = color_cast<ColorRGBA>(ColorHSLA(std::fmod(Time * 0.3f + T * 0.55f + Side * 0.08f + 1.0f, 1.0f), 1.0f, 0.55f));
+		else
+			Color = Mix(ColorRGBA(0.17f, 0.17f, 0.22f, 1.0f), ColorRGBA(0.05f, 0.05f, 0.08f, 1.0f), T);
+		// folds: the middle catches more light than the sides
+		Color = Brighten(Color, Side == 0.0f ? 0.07f : -0.05f);
+		Color.a = Alpha;
+		return Color;
+	};
+	ColorRGBA Trim;
+	if(Type == 1)
+		Trim = ColorRGBA(1.0f, 0.82f, 0.25f, Alpha);
+	else if(Type == 2)
+		Trim = ColorRGBA(1.0f, 1.0f, 1.0f, Alpha);
+	else
+		Trim = ColorRGBA(0.45f, 0.42f, 0.6f, Alpha);
+
+	struct SPoint
+	{
+		float m_Left, m_Mid, m_Right, m_Y;
+	};
+	SPoint aPoints[SLICES + 1];
+	for(int i = 0; i <= SLICES; i++)
+	{
+		const float T = (float)i / SLICES;
+		const float Half = TopHalf + (HemHalf - TopHalf) * std::pow(T, 0.8f) + std::fabs(m_CapeSway) * 0.25f * T;
+		const float Wave = m_CapeSway * std::pow(T, 1.6f) + std::sin(Time * 3.2f + T * 5.0f) * 0.035f * TeeSize * T * (1.0f + std::fabs(m_CapeSway) / TeeSize * 2.0f);
+		const float X = CenterX + Wave;
+		aPoints[i] = {X - Half, X, X + Half, TopY + Height * T};
+	}
+
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	const auto DrawQuad = [&](vec2 TL, vec2 TR, vec2 BL, vec2 BR, ColorRGBA CTL, ColorRGBA CTR, ColorRGBA CBL, ColorRGBA CBR) {
+		Graphics()->SetColor4(CTL, CTR, CBL, CBR);
+		const IGraphics::CFreeformItem Item(TL, TR, BL, BR);
+		Graphics()->QuadsDrawFreeform(&Item, 1);
+	};
+	const float EdgeWidth = 0.05f * TeeSize;
+	for(int i = 0; i < SLICES; i++)
+	{
+		const float T0 = (float)i / SLICES;
+		const float T1 = (float)(i + 1) / SLICES;
+		const SPoint &A = aPoints[i];
+		const SPoint &B = aPoints[i + 1];
+		const bool Hem = !Dark && i >= SLICES - HEM_SLICES;
+		const ColorRGBA L0 = Hem ? Trim : Cloth(T0, -1.0f), M0 = Hem ? Trim : Cloth(T0, 0.0f), R0 = Hem ? Trim : Cloth(T0, 1.0f);
+		const ColorRGBA L1 = Hem ? Trim : Cloth(T1, -1.0f), M1 = Hem ? Trim : Cloth(T1, 0.0f), R1 = Hem ? Trim : Cloth(T1, 1.0f);
+		DrawQuad(vec2(A.m_Left, A.m_Y), vec2(A.m_Mid, A.m_Y), vec2(B.m_Left, B.m_Y), vec2(B.m_Mid, B.m_Y), L0, M0, L1, M1);
+		DrawQuad(vec2(A.m_Mid, A.m_Y), vec2(A.m_Right, A.m_Y), vec2(B.m_Mid, B.m_Y), vec2(B.m_Right, B.m_Y), M0, R0, M1, R1);
+		// trim along both edges
+		DrawQuad(vec2(A.m_Left, A.m_Y), vec2(A.m_Left + EdgeWidth, A.m_Y), vec2(B.m_Left, B.m_Y), vec2(B.m_Left + EdgeWidth, B.m_Y), Trim, Trim, Trim, Trim);
+		DrawQuad(vec2(A.m_Right - EdgeWidth, A.m_Y), vec2(A.m_Right, A.m_Y), vec2(B.m_Right - EdgeWidth, B.m_Y), vec2(B.m_Right, B.m_Y), Trim, Trim, Trim, Trim);
+	}
+	if(Dark)
+	{
+		// ragged hem with pointed ends
+		const SPoint &End = aPoints[SLICES];
+		constexpr int TEETH = 5;
+		const float ToothWidth = (End.m_Right - End.m_Left) / TEETH;
+		const ColorRGBA Hem = Cloth(1.0f, 0.0f);
+		for(int Tooth = 0; Tooth < TEETH; Tooth++)
+		{
+			const vec2 BaseLeft(End.m_Left + Tooth * ToothWidth, End.m_Y);
+			const vec2 BaseRight(End.m_Left + (Tooth + 1) * ToothWidth, End.m_Y);
+			const vec2 Tip((BaseLeft.x + BaseRight.x) / 2.0f + std::sin(Time * 4.0f + Tooth) * 0.02f * TeeSize, End.m_Y + 0.12f * TeeSize);
+			DrawQuad(BaseLeft, BaseRight, Tip, Tip, Hem, Hem, Hem, Hem);
+		}
+	}
+
+	// collar at the neck
+	const SPoint &Neck = aPoints[0];
+	if(Type == 1)
+	{
+		// ermine: white fur with black tails
+		const float CollarY = TopY + 0.03f * TeeSize;
+		const float CollarHalf = (Neck.m_Right - Neck.m_Left) / 2.0f + 0.07f * TeeSize;
+		const ColorRGBA Fur(0.98f, 0.97f, 0.95f, Alpha);
+		DrawQuad(vec2(Neck.m_Mid - CollarHalf, CollarY - 0.07f * TeeSize), vec2(Neck.m_Mid + CollarHalf, CollarY - 0.07f * TeeSize), vec2(Neck.m_Mid - CollarHalf, CollarY + 0.07f * TeeSize), vec2(Neck.m_Mid + CollarHalf, CollarY + 0.07f * TeeSize), Fur, Fur, Fur, Fur);
+		Graphics()->SetColor(Fur);
+		Graphics()->DrawCircle(Neck.m_Mid - CollarHalf, CollarY, 0.07f * TeeSize, 12);
+		Graphics()->DrawCircle(Neck.m_Mid + CollarHalf, CollarY, 0.07f * TeeSize, 12);
+		Graphics()->SetColor(0.08f, 0.08f, 0.1f, Alpha);
+		for(int Spot = -2; Spot <= 2; Spot++)
+			Graphics()->DrawCircle(Neck.m_Mid + Spot * CollarHalf * 0.4f, CollarY + (Spot % 2 == 0 ? 0.0f : 0.02f) * TeeSize, 0.022f * TeeSize, 8);
+	}
+	// clasp
+	Graphics()->SetColor(Type == 1 ? ColorRGBA(1.0f, 0.82f, 0.25f, Alpha) : ColorRGBA(0.9f, 0.9f, 1.0f, Alpha));
+	Graphics()->DrawCircle(Neck.m_Mid, TopY + 0.13f * TeeSize, 0.045f * TeeSize, 12);
+	Graphics()->QuadsEnd();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
 void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA TeeColor)
 {
 	const float Time = Client()->LocalTime();
@@ -317,6 +444,32 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.05f);
 	const vec2 Feet = Position + vec2(0.0f, 14.0f);
 	const ColorRGBA RingColor = Lighten(TeeColor, 0.5f);
+
+	// dark cape: a mask over the eyes (the cape itself is drawn behind the tee)
+	if(g_Config.m_ClVisualsCape == 3)
+	{
+		const float EyeSeparation = (0.075f - 0.010f * std::fabs(LookDir.x)) * TeeSize;
+		const vec2 EyeCenter = BodyPos + vec2(LookDir.x * 0.125f, -0.05f + LookDir.y * 0.10f) * TeeSize;
+		const float Radius = 0.15f * TeeSize;
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(0.07f, 0.07f, 0.1f, Alpha);
+		Graphics()->DrawCircle(EyeCenter.x - EyeSeparation * 1.5f, EyeCenter.y, Radius, 16);
+		Graphics()->DrawCircle(EyeCenter.x + EyeSeparation * 1.5f, EyeCenter.y, Radius, 16);
+		const ColorRGBA Mask(0.07f, 0.07f, 0.1f, Alpha);
+		const IGraphics::CFreeformItem Band(
+			vec2(EyeCenter.x - EyeSeparation * 1.5f, EyeCenter.y - Radius * 0.85f), vec2(EyeCenter.x + EyeSeparation * 1.5f, EyeCenter.y - Radius * 0.85f),
+			vec2(EyeCenter.x - EyeSeparation * 1.5f, EyeCenter.y + Radius * 0.85f), vec2(EyeCenter.x + EyeSeparation * 1.5f, EyeCenter.y + Radius * 0.85f));
+		Graphics()->SetColor(Mask);
+		Graphics()->QuadsDrawFreeform(&Band, 1);
+		// narrow light slits to look through
+		Graphics()->SetColor(0.95f, 0.95f, 1.0f, Alpha);
+		const vec2 Slit = vec2(LookDir.x, LookDir.y) * 0.02f * TeeSize;
+		Graphics()->DrawCircle(EyeCenter.x - EyeSeparation + Slit.x, EyeCenter.y + Slit.y, 0.045f * TeeSize, 10);
+		Graphics()->DrawCircle(EyeCenter.x + EyeSeparation + Slit.x, EyeCenter.y + Slit.y, 0.045f * TeeSize, 10);
+		Graphics()->QuadsEnd();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+	}
 
 	// landing: snow flies up from the ground
 	if(InAir)
@@ -598,41 +751,23 @@ void CVisuals::UpdatePet(vec2 BodyPos, float TeeSize, vec2 LookDir, float DeltaT
 void CVisuals::DrawPet(int Type, vec2 Center, float Size, float Facing, float Alpha, vec2 Vel) const
 {
 	const float Time = Client()->LocalTime();
-	const int Index = std::clamp(Type, 1, 4) - 1;
-	const float Tilt = std::clamp(Vel.x * 0.0012f, -0.25f, 0.25f);
-	const ColorRGBA White(1.0f, 1.0f, 1.0f, Alpha);
-	// the pet turns its tail away from the tee
-	const bool Flip = Facing > 0.0f;
+	const int Index = std::clamp(Type, 1, 5) - 1;
+	const float Tilt = std::clamp(Vel.x * 0.0012f, -0.2f, 0.2f);
 
+	// soft light under the pet
 	Graphics()->BlendAdditive();
-	DrawSprite(m_GlowTexture, Center, Size * 1.7f, Size * 1.7f, 0.0f, false, ColorRGBA(0.6f, 0.5f, 1.0f, 0.22f * Alpha));
+	DrawSprite(m_GlowTexture, Center, Size * 1.5f, Size * 1.5f, 0.0f, false, ColorRGBA(1.0f, 0.85f, 1.0f, 0.18f * Alpha));
 	Graphics()->BlendNormal();
 
-	if(Type == 2)
-	{
-		// dragon: two wings that flap behind the body
-		const float WingSize = Size * 0.8f;
-		const float FlapAngle = -0.45f + 0.55f * std::sin(Time * 9.0f);
-		for(int Side = -1; Side <= 1; Side += 2)
-		{
-			const vec2 Attach = Center + vec2(Side * 0.18f * Size, -0.1f * Size);
-			const vec2 Dir(Side * std::cos(FlapAngle), std::sin(FlapAngle));
-			DrawSprite(m_PetWingTexture, Attach + Dir * 0.42f * WingSize, WingSize, WingSize, Side * FlapAngle, Side < 0, ColorRGBA(1.0f, 1.0f, 1.0f, 0.95f * Alpha));
-		}
-	}
-
-	if(Type == 4)
-	{
-		// jellyfish: pulsing bell and waving tentacles
-		const float Pulse = std::sin(Time * 2.4f);
-		DrawWavy(m_aPetTextures[Index], Center + vec2(0.0f, -Pulse * 0.05f * Size), Size * (1.0f - 0.05f * Pulse), Size * (1.0f + 0.06f * Pulse), Tilt, false, White, 0.09f, 7.0f, Time * 4.0f);
-	}
-	else
-	{
-		// breathing and a gentle tilt in the direction of movement
-		const float Breath = std::sin(Time * 3.2f);
-		DrawSprite(m_aPetTextures[Index], Center + vec2(0.0f, Breath * 0.015f * Size), Size * (1.0f - 0.02f * Breath), Size * (1.0f + 0.03f * Breath), Tilt + std::sin(Time * 1.7f) * 0.03f, Flip, White);
-	}
+	// small hops with a squash when it lands
+	const float HopPhase = std::fmod(Time * 1.6f + Index * 0.37f, 1.0f);
+	const float Hop = std::sin(HopPhase * pi) * 0.14f * Size;
+	const float Squash = HopPhase > 0.85f ? (HopPhase - 0.85f) / 0.15f : 0.0f;
+	const float Width = Size * (1.0f + 0.06f * Squash);
+	const float Height = Size * (1.0f - 0.06f * Squash + 0.03f * std::sin(HopPhase * pi));
+	// the duckling looks to the right, so it turns with the tee
+	const bool Flip = Index == 2 && Facing < 0.0f;
+	DrawSprite(m_aPetTextures[Index], Center + vec2(0.0f, -Hop), Width, Height, Tilt, Flip, ColorRGBA(1.0f, 1.0f, 1.0f, Alpha));
 }
 
 ColorRGBA CVisuals::NameShimmerColor(int CharIndex) const

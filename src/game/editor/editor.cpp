@@ -671,9 +671,9 @@ void CEditor::DoToolbarLayers(CUIRect ToolBar)
 			}
 		}
 
-		// Color pipette and palette
+		// Generator button and color palette
 		{
-			const float PipetteButtonWidth = 30.0f;
+			const float PipetteButtonWidth = 70.0f;
 			const float ColorPickerButtonWidth = 20.0f;
 			const float Spacing = 2.0f;
 			const size_t NumColorsShown = std::clamp<int>(round_to_int((ToolbarTop.w - PipetteButtonWidth - 40.0f) / (ColorPickerButtonWidth + Spacing)), 1, std::size(m_aSavedColors));
@@ -681,14 +681,14 @@ void CEditor::DoToolbarLayers(CUIRect ToolBar)
 			CUIRect ColorPalette;
 			ToolbarTop.VSplitRight(NumColorsShown * (ColorPickerButtonWidth + Spacing) + PipetteButtonWidth, &ToolbarTop, &ColorPalette);
 
-			// Pipette button
+			// Generate button
 			static char s_PipetteButton;
 			ColorPalette.VSplitLeft(PipetteButtonWidth, &Button, &ColorPalette);
 			ColorPalette.VSplitLeft(Spacing, nullptr, &ColorPalette);
-			if(DoButton_FontIcon(&s_PipetteButton, FontIcon::EYE_DROPPER, m_QuickActionPipette.Active(), &Button, BUTTONFLAG_LEFT, m_QuickActionPipette.Description(), IGraphics::CORNER_ALL) ||
-				(CLineInput::GetActiveInput() == nullptr && ModPressed && ShiftPressed && Input()->KeyPress(KEY_C)))
+			if(DoButton_Editor(&s_PipetteButton, "Generate", m_QuickActionGenerate.Active(), &Button, BUTTONFLAG_LEFT, m_QuickActionGenerate.Description()) ||
+				(CLineInput::GetActiveInput() == nullptr && ModPressed && ShiftPressed && Input()->KeyPress(KEY_G)))
 			{
-				m_QuickActionPipette.Call();
+				m_QuickActionGenerate.Call();
 			}
 
 			// Palette color pickers
@@ -4044,16 +4044,17 @@ void CEditor::Render()
 
 	MapView()->UpdateZoom();
 
-	// Cancel color pipette with escape before closing popup menus with escape
-	if(m_ColorPipetteActive && Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE))
+	// Cancel the generator with escape before closing popup menus with escape
+	if(m_GeneratorActive && Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE))
 	{
-		m_ColorPipetteActive = false;
+		m_GeneratorActive = false;
+		m_GeneratorDragging = false;
 	}
 
 	Ui()->RenderPopupMenus();
 	FreeDynamicPopupMenus();
 
-	UpdateColorPipette();
+	UpdateGenerator();
 
 	if(m_Dialog == DIALOG_NONE && !m_PopupEventActivated && Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE))
 	{
@@ -4066,6 +4067,7 @@ void CEditor::Render()
 		RenderTooltip(TooltipRect);
 
 	Ui()->RenderBackButton();
+	RenderGeneratorOverlay();
 	RenderMousePointer();
 }
 
@@ -4157,55 +4159,101 @@ void CEditor::FreeDynamicPopupMenus()
 	}
 }
 
-void CEditor::UpdateColorPipette()
+void CEditor::UpdateGenerator()
 {
-	if(!m_ColorPipetteActive)
+	if(!m_GeneratorActive)
 		return;
-
-	static char s_PipetteScreenButton;
-	if(Ui()->HotItem() == &s_PipetteScreenButton)
+	if(!Map()->m_pGameLayer || !Map()->m_pGameGroup)
 	{
-		// Read color one pixel to the top and left as we would otherwise not read the correct
-		// color due to the cursor sprite being rendered over the current mouse position.
-		const int PixelX = std::clamp<int>(round_to_int((Ui()->MouseX() - 1.0f) / Ui()->Screen()->w * Graphics()->ScreenWidth()), 0, Graphics()->ScreenWidth() - 1);
-		const int PixelY = std::clamp<int>(round_to_int((Ui()->MouseY() - 1.0f) / Ui()->Screen()->h * Graphics()->ScreenHeight()), 0, Graphics()->ScreenHeight() - 1);
-		Graphics()->ReadPixel(ivec2(PixelX, PixelY), &m_PipetteColor);
+		m_GeneratorActive = false;
+		return;
 	}
 
-	// Simulate button overlaying the entire screen to intercept all clicks for color pipette.
-	const int ButtonResult = DoButtonLogic(&s_PipetteScreenButton, 0, Ui()->Screen(), BUTTONFLAG_ALL, "Left click to pick a color from the screen. Right click to cancel pipette mode.");
-	// Don't handle clicks if we are panning, so the pipette stays active while panning.
-	// Checking m_pContainerPanned alone is not enough, as this variable is reset when
-	// panning ends before this function is called.
-	if(m_pContainerPanned == nullptr && m_pContainerPannedLast == nullptr)
-	{
-		if(ButtonResult == 1)
-		{
-			char aClipboard[9];
-			str_format(aClipboard, sizeof(aClipboard), "%08X", m_PipetteColor.PackAlphaLast());
-			Input()->SetClipboardText(aClipboard);
+	// Simulate button overlaying the entire screen to intercept all clicks for the generator.
+	static char s_GeneratorScreenButton;
+	DoButtonLogic(&s_GeneratorScreenButton, 0, Ui()->Screen(), BUTTONFLAG_ALL, "Drag with the left mouse button to select a zone. Right click or escape to cancel.");
 
-			// Check if any of the saved colors is equal to the picked color and
-			// bring it to the front of the list instead of adding a duplicate.
-			int ShiftEnd = (int)std::size(m_aSavedColors) - 1;
-			for(int i = 0; i < (int)std::size(m_aSavedColors); ++i)
-			{
-				if(m_aSavedColors[i].Pack() == m_PipetteColor.Pack())
-				{
-					ShiftEnd = i;
-					break;
-				}
-			}
-			for(int i = ShiftEnd; i > 0; --i)
-			{
-				m_aSavedColors[i] = m_aSavedColors[i - 1];
-			}
-			m_aSavedColors[0] = m_PipetteColor;
-		}
-		if(ButtonResult > 0)
+	if(Ui()->MouseButton(1))
+	{
+		m_GeneratorActive = false;
+		m_GeneratorDragging = false;
+		return;
+	}
+	if(m_pContainerPanned != nullptr || m_pContainerPannedLast != nullptr)
+		return;
+
+	// tile under the mouse, relative to the game group
+	const CScreenRect Rect = Map()->m_pGameGroup->Mapping();
+	const vec2 Mouse = Ui()->UpdatedMousePos();
+	const float WorldX = Rect.m_TopLeft.x + Rect.Width() * (Mouse.x / Graphics()->WindowWidth());
+	const float WorldY = Rect.m_TopLeft.y + Rect.Height() * (Mouse.y / Graphics()->WindowHeight());
+	const ivec2 Tile((int)std::floor(WorldX / 32.0f), (int)std::floor(WorldY / 32.0f));
+
+	if(!m_GeneratorDragging)
+	{
+		if(Ui()->HotItem() == &s_GeneratorScreenButton && Ui()->MouseButtonClicked(0))
 		{
-			m_ColorPipetteActive = false;
+			m_GeneratorDragging = true;
+			m_GeneratorStart = Tile;
+			m_GeneratorEnd = Tile;
 		}
+	}
+	else if(Ui()->MouseButton(0))
+	{
+		m_GeneratorEnd = Tile;
+	}
+	else
+	{
+		m_GeneratorDragging = false;
+		m_GeneratorActive = false;
+		GenerateGameplay(minimum(m_GeneratorStart.x, m_GeneratorEnd.x), minimum(m_GeneratorStart.y, m_GeneratorEnd.y),
+			maximum(m_GeneratorStart.x, m_GeneratorEnd.x), maximum(m_GeneratorStart.y, m_GeneratorEnd.y));
+	}
+}
+
+void CEditor::RenderGeneratorOverlay()
+{
+	if(!m_GeneratorActive || !Map()->m_pGameGroup)
+		return;
+
+	const CScreenRect Rect = Map()->m_pGameGroup->Mapping();
+	const auto ToUiX = [&](float TileX) { return (TileX * 32.0f - Rect.m_TopLeft.x) / Rect.Width() * Ui()->Screen()->w; };
+	const auto ToUiY = [&](float TileY) { return (TileY * 32.0f - Rect.m_TopLeft.y) / Rect.Height() * Ui()->Screen()->h; };
+
+	if(m_GeneratorDragging)
+	{
+		const int X0 = minimum(m_GeneratorStart.x, m_GeneratorEnd.x), X1 = maximum(m_GeneratorStart.x, m_GeneratorEnd.x) + 1;
+		const int Y0 = minimum(m_GeneratorStart.y, m_GeneratorEnd.y), Y1 = maximum(m_GeneratorStart.y, m_GeneratorEnd.y) + 1;
+		CUIRect Zone;
+		Zone.x = ToUiX(X0);
+		Zone.y = ToUiY(Y0);
+		Zone.w = ToUiX(X1) - Zone.x;
+		Zone.h = ToUiY(Y1) - Zone.y;
+		// mint highlight with a brighter border
+		Zone.Draw(ColorRGBA(0.45f, 1.0f, 0.75f, 0.30f), IGraphics::CORNER_NONE, 0.0f);
+		CUIRect Edge = Zone;
+		Edge.HSplitTop(1.5f, &Edge, nullptr);
+		Edge.Draw(ColorRGBA(0.45f, 1.0f, 0.75f, 0.95f), IGraphics::CORNER_NONE, 0.0f);
+		Edge = Zone;
+		Edge.HSplitBottom(1.5f, nullptr, &Edge);
+		Edge.Draw(ColorRGBA(0.45f, 1.0f, 0.75f, 0.95f), IGraphics::CORNER_NONE, 0.0f);
+		Edge = Zone;
+		Edge.VSplitLeft(1.5f, &Edge, nullptr);
+		Edge.Draw(ColorRGBA(0.45f, 1.0f, 0.75f, 0.95f), IGraphics::CORNER_NONE, 0.0f);
+		Edge = Zone;
+		Edge.VSplitRight(1.5f, nullptr, &Edge);
+		Edge.Draw(ColorRGBA(0.45f, 1.0f, 0.75f, 0.95f), IGraphics::CORNER_NONE, 0.0f);
+
+		char aText[64];
+		str_format(aText, sizeof(aText), "%d x %d tiles", X1 - X0, Y1 - Y0);
+		CUIRect Label = {Zone.x, Zone.y - 14.0f, 120.0f, 12.0f};
+		Ui()->DoLabel(&Label, aText, 10.0f, TEXTALIGN_ML);
+	}
+	else
+	{
+		CUIRect Hint = {Ui()->MouseX() + 18.0f, Ui()->MouseY() + 18.0f, 200.0f, 14.0f};
+		Hint.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.6f), IGraphics::CORNER_ALL, 3.0f);
+		Ui()->DoLabel(&Hint, "Drag to select the zone to generate", 10.0f, TEXTALIGN_MC);
 	}
 }
 
@@ -4242,30 +4290,6 @@ void CEditor::RenderMousePointer()
 	Graphics()->QuadsDrawTL(&QuadItem, 1);
 	Graphics()->QuadsEnd();
 	Graphics()->WrapNormal();
-
-	// Pipette color
-	if(m_ColorPipetteActive)
-	{
-		CUIRect PipetteRect = {Ui()->MouseX() + CursorSize, Ui()->MouseY() + CursorSize, 80.0f, 20.0f};
-		if(PipetteRect.x + PipetteRect.w + 2.0f > Ui()->Screen()->w)
-		{
-			PipetteRect.x = Ui()->MouseX() - PipetteRect.w - CursorSize / 2.0f;
-		}
-		if(PipetteRect.y + PipetteRect.h + 2.0f > Ui()->Screen()->h)
-		{
-			PipetteRect.y = Ui()->MouseY() - PipetteRect.h - CursorSize / 2.0f;
-		}
-		PipetteRect.Draw(ColorRGBA(0.2f, 0.2f, 0.2f, 0.7f), IGraphics::CORNER_ALL, 3.0f);
-
-		CUIRect Pipette, Label;
-		PipetteRect.VSplitLeft(PipetteRect.h, &Pipette, &Label);
-		Pipette.Margin(2.0f, &Pipette);
-		Pipette.Draw(m_PipetteColor, IGraphics::CORNER_ALL, 3.0f);
-
-		char aLabel[8];
-		str_format(aLabel, sizeof(aLabel), "#%06X", m_PipetteColor.PackAlphaLast(false));
-		Ui()->DoLabel(&Label, aLabel, 10.0f, TEXTALIGN_MC);
-	}
 }
 
 void CEditor::RenderIngameEntities(const CLayerGroup &Group, const CLayerTiles &TilesLayer)
@@ -4954,7 +4978,8 @@ void CEditor::OnWindowResize()
 
 void CEditor::OnClose()
 {
-	m_ColorPipetteActive = false;
+	m_GeneratorActive = false;
+	m_GeneratorDragging = false;
 
 	if(m_ToolbarPreviewSound >= 0 && Sound()->IsPlaying(m_ToolbarPreviewSound))
 		Sound()->Pause(m_ToolbarPreviewSound);

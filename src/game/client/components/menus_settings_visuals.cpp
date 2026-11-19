@@ -94,15 +94,26 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClVisualsMagicCircle, "Магический круг под ногами");
 	DoToggle(Card, g_Config.m_ClVisualsDust, "Пыль при беге", true);
 
+	Card = BeginCard(Middle, "Плащ", 1);
+	{
+		static CButtonContainer s_CapeButton;
+		const char *apCapes[4] = {"Выключен", "Королевский", "RGB", "Тёмный с маской"};
+		char aText[64];
+		str_format(aText, sizeof(aText), "Плащ: %s", apCapes[std::clamp(g_Config.m_ClVisualsCape, 0, 3)]);
+		CUIRect Button = NextRow(Card, true);
+		if(DoButton_Menu(&s_CapeButton, aText, 0, &Button))
+			g_Config.m_ClVisualsCape = (g_Config.m_ClVisualsCape + 1) % 4;
+	}
+
 	Card = BeginCard(Middle, "Питомец", 1);
 	{
 		static CButtonContainer s_PetButton;
-		const char *apPetNames[5] = {"Выключен", "Котик", "Дракончик", "Лисёнок", "Медуза"};
+		const char *apPetNames[6] = {"Выключен", "Зайка", "Лягушонок", "Утёнок", "Слайм", "Рыжий кот"};
 		char aText[64];
-		str_format(aText, sizeof(aText), "Питомец: %s", apPetNames[std::clamp(g_Config.m_ClVisualsPet, 0, 4)]);
+		str_format(aText, sizeof(aText), "Питомец: %s", apPetNames[std::clamp(g_Config.m_ClVisualsPet, 0, 5)]);
 		CUIRect Button = NextRow(Card, true);
 		if(DoButton_Menu(&s_PetButton, aText, 0, &Button))
-			g_Config.m_ClVisualsPet = (g_Config.m_ClVisualsPet + 1) % 5;
+			g_Config.m_ClVisualsPet = (g_Config.m_ClVisualsPet + 1) % 6;
 	}
 
 	Card = BeginCard(Middle, "Автосмена скина", 2);

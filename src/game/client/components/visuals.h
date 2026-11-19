@@ -173,8 +173,7 @@ class CVisuals : public CComponent
 	IGraphics::CTextureHandle m_StarTexture;
 	IGraphics::CTextureHandle m_CircleTexture;
 	IGraphics::CTextureHandle m_SoulTexture;
-	IGraphics::CTextureHandle m_PetWingTexture;
-	IGraphics::CTextureHandle m_aPetTextures[4];
+	IGraphics::CTextureHandle m_aPetTextures[5];
 
 	CFlake m_aFlakes[NUM_FLAKES];
 	CFlake m_aPetals[NUM_PETALS];
@@ -195,6 +194,8 @@ class CVisuals : public CComponent
 	int m_NextRecentLaser = 0;
 	float m_MeteorTimer = 1.0f;
 	float m_AutoSkinTimer = 0.0f;
+	float m_CapeSway = 0.0f;
+	float m_CapeLift = 0.0f;
 	float m_CircleAngle = 0.0f;
 
 	// state of the hat animation, all springs are integrated in small fixed steps
@@ -254,6 +255,8 @@ public:
 	// Only called for the own tee. Position is the tee position, BodyPos the center of the tee body.
 	// Called every frame (also when all effects are off) so that the state stays in sync.
 	// Aura and sparkle trail are drawn behind the tee, so this has to be called before the tee is rendered.
+	// long cape behind the tee, reaching the floor and waving when moving
+	void RenderCape(vec2 Position, vec2 BodyPos, float TeeSize, float Alpha, vec2 LookDir, vec2 Vel, bool InAir);
 	void RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA TeeColor);
 	// Hat, pet and effect spawning, drawn on top of the tee. LookDir is the aim direction,
 	// Vel the velocity of the tee in units per tick.

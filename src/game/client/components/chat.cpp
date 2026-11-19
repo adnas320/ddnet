@@ -979,7 +979,13 @@ void CChat::OnPrepareLines(float y)
 		if(Now > Line.m_Time + 16 * time_freq() && !m_PrevShowChat)
 			break;
 
-		if(Line.m_TextContainerIndex.Valid() && !ForceRecreate)
+		// own name shimmers, so those lines are rebuilt 20 times per second
+		const bool OwnShimmer = g_Config.m_ClVisualsNameShimmer && Line.m_ClientId >= 0 && Line.m_ClientId == GameClient()->m_Snap.m_LocalClientId && Line.m_aName[0] != '\0';
+		const int ShimmerStamp = OwnShimmer ? (int)(Client()->LocalTime() * 20.0f) : 0;
+		const bool ShimmerChanged = OwnShimmer && ShimmerStamp != Line.m_ShimmerStamp;
+		Line.m_ShimmerStamp = ShimmerStamp;
+
+		if(Line.m_TextContainerIndex.Valid() && !ForceRecreate && !ShimmerChanged)
 			continue;
 
 		TextRender()->DeleteTextContainer(Line.m_TextContainerIndex);
@@ -1109,7 +1115,19 @@ void CChat::OnPrepareLines(float y)
 
 		TextRender()->TextColor(NameColor);
 		TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &LineCursor, aClientId);
-		TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &LineCursor, Line.m_aName);
+		if(g_Config.m_ClVisualsNameShimmer && Line.m_ClientId >= 0 && Line.m_ClientId == GameClient()->m_Snap.m_LocalClientId && Line.m_aName[0] != '\0')
+		{
+			// own name: baked colors, the line is rebuilt regularly by the shimmer refresh in OnRender
+			size_t Size = 0, Count = 0;
+			str_utf8_stats(Line.m_aName, sizeof(Line.m_aName), sizeof(Line.m_aName), &Size, &Count);
+			for(int i = 0; i < (int)Count; i++)
+				LineCursor.m_vColorSplits.emplace_back(i, 1, GameClient()->m_Visuals.NameShimmerColor(i));
+			TextRender()->TextColor(1.0f, 1.0f, 1.0f, NameColor.a);
+			TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &LineCursor, Line.m_aName);
+			LineCursor.m_vColorSplits.clear();
+		}
+		else
+			TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &LineCursor, Line.m_aName);
 
 		if(Line.m_TimesRepeated > 0)
 		{

@@ -448,13 +448,13 @@ REGISTER_QUICK_ACTION(
 	DEFAULT_BTN,
 	"Delete the layer.")
 REGISTER_QUICK_ACTION(
-	Pipette,
-	"Pipette",
-	[&]() { m_ColorPipetteActive = !m_ColorPipetteActive; },
-	ALWAYS_FALSE,
-	[&]() -> bool { return m_ColorPipetteActive; },
+	Generate,
+	"Generate",
+	[&]() { m_GeneratorActive = !m_GeneratorActive; m_GeneratorDragging = false; },
+	[&]() -> bool { return !Map()->m_pGameLayer; },
+	[&]() -> bool { return m_GeneratorActive; },
 	DEFAULT_BTN,
-	"[Ctrl+Shift+C] Color pipette. Pick a color from the screen by clicking on it.")
+	"[Ctrl+Shift+G] Generate DDRace gameplay. Drag a zone with the mouse and a race course is generated inside it.")
 REGISTER_QUICK_ACTION(
 	MapDetails,
 	"Map details",

@@ -309,7 +309,9 @@ public:
 	void RenderPressedKeys(CUIRect View);
 	void RenderSavingIndicator(CUIRect View);
 	void FreeDynamicPopupMenus();
-	void UpdateColorPipette();
+	void UpdateGenerator();
+	void RenderGeneratorOverlay();
+	void GenerateGameplay(int X0, int Y0, int X1, int Y1);
 	void RenderMousePointer();
 	void RenderIngameEntities(const CLayerGroup &Group, const CLayerTiles &TilesLayer);
 
@@ -418,10 +420,13 @@ public:
 	bool m_ShowPicker = false;
 	bool m_ShowPickerToggle = false;
 
-	// Color palette and pipette
+	// Color palette and map generator
 	ColorRGBA m_aSavedColors[8];
-	ColorRGBA m_PipetteColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
-	bool m_ColorPipetteActive = false;
+	bool m_GeneratorActive = false;
+	bool m_GeneratorDragging = false;
+	ivec2 m_GeneratorStart = ivec2(0, 0);
+	ivec2 m_GeneratorEnd = ivec2(0, 0);
+	unsigned m_GeneratorSeed = 1;
 
 	IGraphics::CTextureHandle m_CheckerTexture;
 

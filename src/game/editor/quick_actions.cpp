@@ -6,6 +6,9 @@
 #include <game/client/gameclient.h>
 #include <game/mapitems.h>
 
+#include <algorithm>
+#include <random>
+
 void CEditor::FillGameTiles(EGameTileOp FillTile) const
 {
 	std::shared_ptr<CLayerTiles> pTileLayer = std::static_pointer_cast<CLayerTiles>(Map()->SelectedLayerType(0, LAYERTYPE_TILES));
@@ -19,6 +22,212 @@ bool CEditor::CanFillGameTiles() const
 	if(pTileLayer)
 		return pTileLayer->CanFillGameTiles();
 	return false;
+}
+
+// Generates a DDRace course in a zone of the game layer: a winding tunnel from a start room with the
+// start line to a finish room with the finish line. Between them the tunnel is made of floor with
+// freeze, freeze pits, hanging and standing pillars, squeezes, unhookable ceilings and steps.
+void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
+{
+	std::shared_ptr<CLayerTiles> pGameLayer = Map()->m_pGameLayer;
+	if(!pGameLayer || !Map()->m_pGameGroup)
+		return;
+
+	// clip to the layer
+	X0 = std::max(X0, 0);
+	Y0 = std::max(Y0, 0);
+	X1 = std::min(X1, pGameLayer->m_Width - 1);
+	Y1 = std::min(Y1, pGameLayer->m_Height - 1);
+	const int W = X1 - X0 + 1;
+	const int H = Y1 - Y0 + 1;
+	if(W < 24 || H < 12)
+	{
+		ShowFileDialogError("The zone is too small. It has to be at least 24 x 12 tiles.");
+		return;
+	}
+
+	std::mt19937 Rng(m_GeneratorSeed++ * 2654435761u + (unsigned)time_get());
+	const auto Rand = [&](int Min, int Max) { return std::uniform_int_distribution<int>(Min, Max)(Rng); };
+
+	// local buffer, everything is solid at the start
+	std::vector<unsigned char> vBuf((size_t)W * H, TILE_SOLID);
+	const auto At = [&](int x, int y) -> unsigned char & { return vBuf[(size_t)y * W + x]; };
+	const auto Inside = [&](int x, int y) { return x >= 1 && x < W - 1 && y >= 1 && y < H - 1; };
+	const auto Carve = [&](int x, int Top, int Bottom) {
+		for(int y = Top; y <= Bottom; y++)
+			if(Inside(x, y))
+				At(x, y) = TILE_AIR;
+	};
+
+	// the tunnel is between Top and Bottom (both air rows)
+	const int MinTop = 3, MaxBottom = H - 4;
+	int Top = std::clamp(H / 2 - 3, MinTop, MaxBottom - 5);
+	int Bottom = Top + 5;
+	int x = 2;
+
+	// start room
+	for(int i = 0; i < 8; i++, x++)
+		Carve(x, Top - 1, Bottom);
+	At(4, Bottom) = (unsigned char)(ENTITY_OFFSET + ENTITY_SPAWN);
+	for(int y = Top - 1; y <= Bottom; y++)
+		if(Inside(x - 1, y))
+			At(x - 1, y) = TILE_START;
+
+	const int FinishRoomStart = W - 10;
+	while(x < FinishRoomStart)
+	{
+		const int Pattern = Rand(0, 8);
+		const int Len = Rand(7, 13);
+		const int End = std::min(x + Len, FinishRoomStart);
+		const int Height = Bottom - Top + 1;
+		switch(Pattern)
+		{
+		case 0: // plain corridor, the height changes a bit
+		{
+			const int Change = Rand(-1, 1);
+			for(; x < End; x++)
+				Carve(x, Top, Bottom);
+			if(Change != 0 && Bottom - Top + Change >= 4 && Bottom - Top + Change <= 8)
+			{
+				Top -= Change;
+				Bottom += Change;
+				Top = std::max(Top, MinTop);
+				Bottom = std::min(Bottom, MaxBottom);
+				Carve(x, Top, Bottom);
+			}
+			break;
+		}
+		case 1: // step up or down
+		case 2:
+		{
+			const int Delta = (Rand(0, 1) ? 1 : -1) * Rand(2, 4);
+			const int NewTop = std::clamp(Top + Delta, MinTop, MaxBottom - (Height - 1));
+			const int NewBottom = NewTop + Height - 1;
+			for(; x < End - 2; x++)
+				Carve(x, Top, Bottom);
+			// connection between the two heights
+			for(int i = 0; i < 3; i++, x++)
+				Carve(x, std::min(Top, NewTop), std::max(Bottom, NewBottom));
+			Top = NewTop;
+			Bottom = NewBottom;
+			break;
+		}
+		case 3: // freeze floor
+			for(; x < End; x++)
+			{
+				Carve(x, Top, Bottom);
+				if(x > End - 2 || x < End - Len + 1)
+					continue;
+				At(x, Bottom) = TILE_FREEZE;
+			}
+			break;
+		case 4: // freeze pit in the floor
+		{
+			const int PitWidth = Rand(3, 5);
+			const int PitStart = x + Rand(2, 4);
+			for(; x < End + PitWidth; x++)
+			{
+				Carve(x, Top, Bottom);
+				if(x >= PitStart && x < PitStart + PitWidth)
+				{
+					for(int y = Bottom; y <= Bottom + 2; y++)
+						if(Inside(x, y))
+							At(x, y) = TILE_FREEZE;
+				}
+			}
+			break;
+		}
+		case 5: // hanging and standing pillars
+		{
+			bool FromTop = Rand(0, 1) != 0;
+			for(; x < End; x++)
+			{
+				Carve(x, Top, Bottom);
+				if((x - End) % 3 == 0)
+				{
+					const int PillarLen = std::max(1, Height - 4);
+					for(int i = 0; i < PillarLen; i++)
+					{
+						const int y = FromTop ? Top + i : Bottom - i;
+						if(Inside(x, y))
+							At(x, y) = TILE_SOLID;
+					}
+					// freeze tip
+					const int TipY = FromTop ? Top + PillarLen : Bottom - PillarLen;
+					if(Inside(x, TipY))
+						At(x, TipY) = TILE_FREEZE;
+					FromTop = !FromTop;
+				}
+			}
+			break;
+		}
+		case 6: // squeeze with freeze on both sides
+		{
+			const int Squeeze = Rand(3, 4);
+			const int Mid = (Top + Bottom) / 2;
+			for(; x < End; x++)
+			{
+				Carve(x, Top, Bottom);
+				if(x < End - 1 && x > End - Len + 1)
+				{
+					for(int y = Top; y <= Bottom; y++)
+					{
+						if(y < Mid - Squeeze / 2 || y > Mid + Squeeze / 2)
+							At(x, y) = (y == Mid - Squeeze / 2 - 1 || y == Mid + Squeeze / 2 + 1) ? TILE_FREEZE : TILE_SOLID;
+					}
+				}
+			}
+			break;
+		}
+		case 7: // unhookable ceiling and floor
+			for(; x < End; x++)
+			{
+				Carve(x, Top, Bottom);
+				if(Inside(x, Top - 1))
+					At(x, Top - 1) = TILE_NOHOOK;
+				if(Inside(x, Bottom + 1))
+					At(x, Bottom + 1) = TILE_NOHOOK;
+			}
+			break;
+		default: // freeze ceiling
+			for(; x < End; x++)
+			{
+				Carve(x, Top, Bottom);
+				if(x > End - Len + 1 && x < End - 1)
+					At(x, Top) = TILE_FREEZE;
+			}
+			break;
+		}
+	}
+
+	// finish room
+	for(; x < W - 2; x++)
+		Carve(x, Top - 1, Bottom);
+	for(int y = Top - 1; y <= Bottom; y++)
+		if(Inside(W - 6, y))
+			At(W - 6, y) = TILE_FINISH;
+
+	// remember the border: the outermost ring stays solid
+	// apply to the game layer and record the changes for undo
+	EditorTileStateChangeHistory<STileStateChange> Changes;
+	for(int y = 0; y < H; y++)
+	{
+		for(int xx = 0; xx < W; xx++)
+		{
+			CTile &Tile = pGameLayer->m_pTiles[(Y0 + y) * pGameLayer->m_Width + X0 + xx];
+			const CTile Previous = Tile;
+			CTile New{};
+			New.m_Index = At(xx, y);
+			if(Previous.m_Index == New.m_Index && Previous.m_Flags == 0)
+				continue;
+			Tile = New;
+			Changes[Y0 + y][X0 + xx] = STileStateChange{true, Previous, New};
+		}
+	}
+
+	const int GameGroupIndex = std::find(Map()->m_vpGroups.begin(), Map()->m_vpGroups.end(), Map()->m_pGameGroup) - Map()->m_vpGroups.begin();
+	const int GameLayerIndex = std::find(Map()->m_pGameGroup->m_vpLayers.begin(), Map()->m_pGameGroup->m_vpLayers.end(), std::static_pointer_cast<CLayer>(pGameLayer)) - Map()->m_pGameGroup->m_vpLayers.begin();
+	Map()->m_EditorHistory.RecordAction(std::make_shared<CEditorActionTileChanges>(Map(), GameGroupIndex, GameLayerIndex, "Generate DDRace gameplay", Changes));
 }
 
 void CEditor::AddQuadOrSound()

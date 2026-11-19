@@ -58,6 +58,7 @@ class CChat : public CComponent
 		std::shared_ptr<CManagedTeeRenderInfo> m_pManagedTeeRenderInfo;
 
 		float m_TextYOffset;
+		int m_ShimmerStamp = 0;
 
 		int m_TimesRepeated;
 	};

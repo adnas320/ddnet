@@ -61,12 +61,50 @@ void CMenus::RenderSettings(CUIRect MainView)
 		"Музыка"};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
-	for(int i = 0; i < SETTINGS_LENGTH; i++)
+	// two groups: "Sparki" (everything added by this client) and "DDNet" (the original pages)
+	const bool InSparki = g_Config.m_UiSettingsPage >= SETTINGS_VISUALS;
+	static int s_LastSparkiPage = SETTINGS_VISUALS;
+	static int s_LastDDNetPage = SETTINGS_GENERAL;
+	(InSparki ? s_LastSparkiPage : s_LastDDNetPage) = g_Config.m_UiSettingsPage;
 	{
-		TabBar.HSplitTop(4.0f, nullptr, &TabBar);
-		TabBar.HSplitTop(24.0f, &Button, &TabBar);
-		if(DoButton_MenuTab(&s_aTabButtons[i], apTabs[i], g_Config.m_UiSettingsPage == i, &Button, IGraphics::CORNER_R, &m_aAnimatorsSettingsTab[i]))
-			g_Config.m_UiSettingsPage = i;
+		static CButtonContainer s_aGroupButtons[2];
+		static SUIAnimator s_aGroupAnimators[2];
+		const char *apGroups[2] = {"Sparki", "DDNet"};
+		for(int Group = 0; Group < 2; Group++)
+		{
+			const bool Selected = (Group == 0) == InSparki;
+			TabBar.HSplitTop(4.0f, nullptr, &TabBar);
+			TabBar.HSplitTop(30.0f, &Button, &TabBar);
+			if(DoButton_MenuTab(&s_aGroupButtons[Group], apGroups[Group], Selected, &Button, IGraphics::CORNER_R, &s_aGroupAnimators[Group]) && !Selected)
+				g_Config.m_UiSettingsPage = Group == 0 ? s_LastSparkiPage : s_LastDDNetPage;
+		}
+	}
+
+	// the pages of the selected group as a grid of buttons above the page
+	{
+		const int First = InSparki ? SETTINGS_VISUALS : SETTINGS_LANGUAGE;
+		const int Count = InSparki ? SETTINGS_LENGTH - SETTINGS_VISUALS : SETTINGS_ASSETS + 1;
+		const int PerRow = 5;
+		const int Rows = (Count + PerRow - 1) / PerRow;
+		CUIRect SubBar;
+		MainView.HSplitTop(Rows * 26.0f, &SubBar, &MainView);
+		MainView.HSplitTop(8.0f, nullptr, &MainView);
+		for(int Row = 0; Row < Rows; Row++)
+		{
+			CUIRect RowRect;
+			SubBar.HSplitTop(26.0f, &RowRect, &SubBar);
+			const float Width = RowRect.w / PerRow;
+			for(int Column = 0; Column < PerRow; Column++)
+			{
+				const int Index = Row * PerRow + Column;
+				if(Index >= Count)
+					break;
+				const int Page = First + Index;
+				CUIRect Tab(RowRect.x + Column * Width + 2.0f, RowRect.y, Width - 4.0f, 22.0f);
+				if(DoButton_MenuTab(&s_aTabButtons[Page], apTabs[Page], g_Config.m_UiSettingsPage == Page, &Tab, IGraphics::CORNER_ALL, &m_aAnimatorsSettingsTab[Page]))
+					g_Config.m_UiSettingsPage = Page;
+			}
+		}
 	}
 
 	if(g_Config.m_UiSettingsPage == SETTINGS_LANGUAGE)
