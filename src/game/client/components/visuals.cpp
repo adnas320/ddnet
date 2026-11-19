@@ -30,8 +30,8 @@ constexpr float PETAL_TILE_WIDTH = 1300.0f;
 constexpr float PETAL_TILE_HEIGHT = 900.0f;
 constexpr float BUBBLE_TILE_WIDTH = 1200.0f;
 constexpr float BUBBLE_TILE_HEIGHT = 900.0f;
-constexpr float BUTTERFLY_TILE_WIDTH = 1400.0f;
-constexpr float BUTTERFLY_TILE_HEIGHT = 900.0f;
+constexpr float STAR_TILE_WIDTH = 1500.0f;
+constexpr float STAR_TILE_HEIGHT = 1000.0f;
 constexpr float FIREFLY_TILE_WIDTH = 1100.0f;
 constexpr float FIREFLY_TILE_HEIGHT = 800.0f;
 
@@ -47,6 +47,13 @@ void CVisuals::OnInit()
 {
 	m_HatTexture = Graphics()->LoadTexture("visuals/winter_hat.png", IStorage::TYPE_ALL);
 	m_GlowTexture = Graphics()->LoadTexture("visuals/glow.png", IStorage::TYPE_ALL);
+	m_StarTexture = Graphics()->LoadTexture("visuals/star.png", IStorage::TYPE_ALL);
+	m_CircleTexture = Graphics()->LoadTexture("visuals/circle.png", IStorage::TYPE_ALL);
+	m_SoulTexture = Graphics()->LoadTexture("visuals/soul.png", IStorage::TYPE_ALL);
+	m_PetWingTexture = Graphics()->LoadTexture("visuals/pet_dragon_wing.png", IStorage::TYPE_ALL);
+	static const char *s_apPetFiles[4] = {"visuals/pet_cat.png", "visuals/pet_dragon.png", "visuals/pet_fox.png", "visuals/pet_jelly.png"};
+	for(int i = 0; i < 4; i++)
+		m_aPetTextures[i] = Graphics()->LoadTexture(s_apPetFiles[i], IStorage::TYPE_ALL);
 }
 
 void CVisuals::OnReset()
@@ -57,8 +64,10 @@ void CVisuals::OnReset()
 	m_vRings.clear();
 	m_vGlows.clear();
 	m_vSouls.clear();
+	m_vBlackHoles.clear();
 	m_vMeteors.clear();
 	m_vEchoes.clear();
+	m_AutoSkinTimer = 0.0f;
 	m_PetInitialized = false;
 	m_JumpedInitialized = false;
 	m_FlakesInitialized = false;
@@ -109,6 +118,70 @@ void CVisuals::SpawnGlow(vec2 Pos, vec2 Vel, float Life, float Size, float Grow,
 	m_vGlows.push_back(Glow);
 }
 
+void CVisuals::SpawnStar(vec2 Pos, vec2 Vel, float Life, float Size, float AlphaScale, ColorRGBA Color, float Gravity)
+{
+	if(m_vGlows.size() >= MAX_GLOWS)
+		return;
+	SpawnGlow(Pos, Vel, Life, Size, -0.5f, AlphaScale, Color, Gravity);
+	CSparkle &Star = m_vGlows.back();
+	Star.m_Star = true;
+	Star.m_Angle = random_float(0.0f, 2.0f * pi);
+	Star.m_Spin = random_float(-3.0f, 3.0f);
+}
+
+// a texture drawn as a flat tilted disc, rotating around its own axis
+void CVisuals::DrawFlatCircle(IGraphics::CTextureHandle Texture, vec2 Center, float Radius, float Angle, float Squash, ColorRGBA Color) const
+{
+	if(!Texture.IsValid())
+		return;
+	const float SinAngle = std::sin(Angle);
+	const float CosAngle = std::cos(Angle);
+	const auto Point = [&](float X, float Y) {
+		return Center + vec2((X * CosAngle - Y * SinAngle) * Radius, (X * SinAngle + Y * CosAngle) * Radius * Squash);
+	};
+	Graphics()->TextureSet(Texture);
+	Graphics()->QuadsBegin();
+	Graphics()->SetColor(Color);
+	Graphics()->QuadsSetSubsetFree(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+	const IGraphics::CFreeformItem Item(Point(-1.0f, -1.0f), Point(1.0f, -1.0f), Point(-1.0f, 1.0f), Point(1.0f, 1.0f));
+	Graphics()->QuadsDrawFreeform(&Item, 1);
+	Graphics()->QuadsEnd();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+// a sprite cut into thin horizontal slices that sway sideways: the lower the slice the stronger the sway.
+// Smooth waving of soft bodies (jellyfish tentacles, ghost hem) without any visible parts.
+void CVisuals::DrawWavy(IGraphics::CTextureHandle Texture, vec2 Center, float Width, float Height, float Rotation, bool Flip, ColorRGBA Color, float WaveAmp, float WaveSpeed, float Phase) const
+{
+	if(!Texture.IsValid())
+		return;
+	constexpr int SLICES = 16;
+	const float SinRot = std::sin(Rotation);
+	const float CosRot = std::cos(Rotation);
+	const auto Point = [&](float X, float Y) {
+		return Center + vec2(X * CosRot - Y * SinRot, X * SinRot + Y * CosRot);
+	};
+	const float UL = Flip ? 1.0f : 0.0f;
+	const float UR = Flip ? 0.0f : 1.0f;
+	Graphics()->TextureSet(Texture);
+	Graphics()->QuadsBegin();
+	Graphics()->SetColor(Color);
+	for(int i = 0; i < SLICES; i++)
+	{
+		const float V0 = (float)i / SLICES;
+		const float V1 = (float)(i + 1) / SLICES;
+		const float Y0 = (V0 - 0.5f) * Height;
+		const float Y1 = (V1 - 0.5f) * Height;
+		const float O0 = std::sin(Phase + V0 * WaveSpeed) * WaveAmp * Width * V0 * V0;
+		const float O1 = std::sin(Phase + V1 * WaveSpeed) * WaveAmp * Width * V1 * V1;
+		Graphics()->QuadsSetSubsetFree(UL, V0, UR, V0, UL, V1, UR, V1);
+		const IGraphics::CFreeformItem Item(Point(-Width / 2.0f + O0, Y0), Point(Width / 2.0f + O0, Y0), Point(-Width / 2.0f + O1, Y1), Point(Width / 2.0f + O1, Y1));
+		Graphics()->QuadsDrawFreeform(&Item, 1);
+	}
+	Graphics()->QuadsEnd();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
 // moves and draws glowing particles, the caller has to enable additive blending
 void CVisuals::StepGlows(std::vector<CSparkle> &vGlows, float DeltaTime)
 {
@@ -128,7 +201,13 @@ void CVisuals::StepGlows(std::vector<CSparkle> &vGlows, float DeltaTime)
 		ColorRGBA Color = Glow.m_Color;
 		Color.a = Remaining * Glow.m_AlphaScale;
 		const float Size = Glow.m_Size * std::max(0.2f, 1.0f + Glow.m_Grow * (1.0f - Remaining));
-		DrawSprite(m_GlowTexture, Glow.m_Pos, Size, Size, 0.0f, false, Color);
+		if(Glow.m_Star)
+		{
+			Glow.m_Angle += Glow.m_Spin * DeltaTime;
+			DrawSprite(m_StarTexture, Glow.m_Pos, Size * 1.7f, Size * 1.7f, Glow.m_Angle, false, Color);
+		}
+		else
+			DrawSprite(m_GlowTexture, Glow.m_Pos, Size, Size, 0.0f, false, Color);
 		i++;
 	}
 }
@@ -168,6 +247,17 @@ void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRG
 	{
 		const float Pulse = 0.85f + 0.15f * std::sin(Time * 2.2f);
 		DrawSprite(m_GlowTexture, BodyPos, 2.8f * TeeSize * Pulse, 2.8f * TeeSize * Pulse, 0.0f, false, ColorRGBA(Light.r, Light.g, Light.b, 0.6f * Alpha));
+	}
+
+	// magic circle under the feet: two rotating RGB runes, flat like on the ground
+	if(g_Config.m_ClVisualsMagicCircle)
+	{
+		m_CircleAngle = std::fmod(m_CircleAngle + DeltaTime * 0.8f, 2.0f * pi);
+		const vec2 FeetCenter = BodyPos + vec2(0.0f, 0.55f * TeeSize);
+		const ColorRGBA Outer = Rainbow(0.0f);
+		const ColorRGBA Inner = Rainbow(0.5f);
+		DrawFlatCircle(m_CircleTexture, FeetCenter, 1.6f * TeeSize, m_CircleAngle, 0.3f, ColorRGBA(Outer.r, Outer.g, Outer.b, 0.8f * Alpha));
+		DrawFlatCircle(m_CircleTexture, FeetCenter, 1.0f * TeeSize, -m_CircleAngle * 1.7f, 0.3f, ColorRGBA(Inner.r, Inner.g, Inner.b, 0.6f * Alpha));
 	}
 
 	// sparkle trail and dust puffs, drawn behind the tee
@@ -314,14 +404,11 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 	else
 		m_EchoTimer = 0.045f;
 
-	if(g_Config.m_ClVisualsStars)
-		DrawConstellation(BodyPos, TeeSize, Alpha);
-
 	// pet
 	if(g_Config.m_ClVisualsPet > 0)
 	{
 		UpdatePet(BodyPos, TeeSize, LookDir, DeltaTime);
-		DrawPet(g_Config.m_ClVisualsPet, m_PetPos, 0.32f * TeeSize, m_PetFacing, Alpha);
+		DrawPet(g_Config.m_ClVisualsPet, m_PetPos, 0.95f * TeeSize, m_PetFacing, Alpha, m_PetVel);
 	}
 	else
 		m_PetInitialized = false;
@@ -414,15 +501,14 @@ void CVisuals::InitFlakes()
 			Firefly.m_Amp *= 1.5f;
 		}
 	}
-	for(CButterfly &Butterfly : m_aButterflies)
+	for(CStar &Star : m_aStars)
 	{
-		Butterfly.m_Base = vec2(random_float(0.0f, BUTTERFLY_TILE_WIDTH), random_float(0.0f, BUTTERFLY_TILE_HEIGHT));
-		Butterfly.m_Amp = vec2(random_float(80.0f, 170.0f), random_float(60.0f, 120.0f));
-		Butterfly.m_Freq = vec2(random_float(0.2f, 0.5f), random_float(0.25f, 0.6f));
-		Butterfly.m_Phase = vec2(random_float(0.0f, 2.0f * pi), random_float(0.0f, 2.0f * pi));
-		Butterfly.m_Size = random_float(9.0f, 15.0f);
-		Butterfly.m_FlapFreq = random_float(6.0f, 11.0f);
-		Butterfly.m_Type = std::min((int)(random_float() * 3.0f), 2);
+		Star.m_Base = vec2(random_float(0.0f, STAR_TILE_WIDTH), random_float(0.0f, STAR_TILE_HEIGHT));
+		Star.m_Size = random_float(14.0f, 34.0f);
+		Star.m_TwinkleFreq = random_float(0.5f, 1.8f);
+		Star.m_TwinklePhase = random_float(0.0f, 2.0f * pi);
+		Star.m_Spin = random_float(-0.3f, 0.3f);
+		Star.m_Type = std::min((int)(random_float() * 4.0f), 3);
 	}
 	m_FlakesInitialized = true;
 }
@@ -483,51 +569,6 @@ void CVisuals::DrawFlake(vec2 Center, float Size, float Angle, int Type) const
 	}
 }
 
-void CVisuals::DrawGhost(vec2 Center, float Size, ColorRGBA Color, float Phase, float EyeShift) const
-{
-	// has to be called while untextured quads are being drawn
-	Graphics()->SetColor(Color);
-	Graphics()->DrawCircle(Center.x, Center.y - 0.2f * Size, 0.8f * Size, 20);
-	const IGraphics::CFreeformItem Body(
-		Center.x - 0.8f * Size, Center.y - 0.2f * Size,
-		Center.x + 0.8f * Size, Center.y - 0.2f * Size,
-		Center.x - 0.8f * Size, Center.y + 0.6f * Size,
-		Center.x + 0.8f * Size, Center.y + 0.6f * Size);
-	Graphics()->QuadsDrawFreeform(&Body, 1);
-	for(int i = -1; i <= 1; i++)
-		Graphics()->DrawCircle(Center.x + i * 0.53f * Size, Center.y + 0.6f * Size + std::sin(Phase + i * 1.3f) * 0.08f * Size, 0.27f * Size, 10);
-	Graphics()->SetColor(0.1f, 0.1f, 0.15f, Color.a);
-	Graphics()->DrawCircle(Center.x - 0.28f * Size + EyeShift * Size, Center.y - 0.2f * Size, 0.12f * Size, 10);
-	Graphics()->DrawCircle(Center.x + 0.28f * Size + EyeShift * Size, Center.y - 0.2f * Size, 0.12f * Size, 10);
-}
-
-void CVisuals::DrawButterfly(vec2 Center, float Size, float Flap, ColorRGBA Color) const
-{
-	// has to be called while untextured quads are being drawn
-	const auto Diamond = [&](float X, float Y, float HalfWidth, float HalfHeight) {
-		const IGraphics::CFreeformItem Item(
-			Center.x + X - HalfWidth, Center.y + Y,
-			Center.x + X, Center.y + Y - HalfHeight,
-			Center.x + X, Center.y + Y + HalfHeight,
-			Center.x + X + HalfWidth, Center.y + Y);
-		Graphics()->QuadsDrawFreeform(&Item, 1);
-	};
-	for(int Side = -1; Side <= 1; Side += 2)
-	{
-		Graphics()->SetColor(Color);
-		Diamond(Side * 0.6f * Size * Flap, -0.3f * Size, 0.6f * Size * Flap, 0.5f * Size);
-		Graphics()->SetColor(Color.r * 0.8f, Color.g * 0.8f, Color.b * 0.8f, Color.a);
-		Diamond(Side * 0.45f * Size * Flap, 0.3f * Size, 0.45f * Size * Flap, 0.38f * Size);
-	}
-	Graphics()->SetColor(0.15f, 0.1f, 0.1f, Color.a);
-	const IGraphics::CFreeformItem Body(
-		Center.x - 0.05f * Size, Center.y - 0.5f * Size,
-		Center.x + 0.05f * Size, Center.y - 0.5f * Size,
-		Center.x - 0.05f * Size, Center.y + 0.6f * Size,
-		Center.x + 0.05f * Size, Center.y + 0.6f * Size);
-	Graphics()->QuadsDrawFreeform(&Body, 1);
-}
-
 void CVisuals::UpdatePet(vec2 BodyPos, float TeeSize, vec2 LookDir, float DeltaTime)
 {
 	if(LookDir.x > 0.2f)
@@ -537,7 +578,7 @@ void CVisuals::UpdatePet(vec2 BodyPos, float TeeSize, vec2 LookDir, float DeltaT
 
 	// the pet hovers behind the shoulder of the tee and follows it on a soft spring
 	const float Time = Client()->LocalTime();
-	const vec2 Target = BodyPos + vec2(-m_PetFacing * 1.15f * TeeSize, -0.85f * TeeSize + std::sin(Time * 3.0f) * 0.1f * TeeSize);
+	const vec2 Target = BodyPos + vec2(-m_PetFacing * 1.4f * TeeSize, -1.0f * TeeSize + std::sin(Time * 2.6f) * 0.1f * TeeSize);
 	if(!m_PetInitialized || distance(m_PetPos, Target) > 700.0f)
 	{
 		m_PetInitialized = true;
@@ -554,121 +595,44 @@ void CVisuals::UpdatePet(vec2 BodyPos, float TeeSize, vec2 LookDir, float DeltaT
 	}
 }
 
-void CVisuals::DrawPet(int Type, vec2 Center, float Size, float Facing, float Alpha) const
+void CVisuals::DrawPet(int Type, vec2 Center, float Size, float Facing, float Alpha, vec2 Vel) const
 {
 	const float Time = Client()->LocalTime();
-	Graphics()->TextureClear();
-	Graphics()->QuadsBegin();
-	if(Type == 1)
+	const int Index = std::clamp(Type, 1, 4) - 1;
+	const float Tilt = std::clamp(Vel.x * 0.0012f, -0.25f, 0.25f);
+	const ColorRGBA White(1.0f, 1.0f, 1.0f, Alpha);
+	// the pet turns its tail away from the tee
+	const bool Flip = Facing > 0.0f;
+
+	Graphics()->BlendAdditive();
+	DrawSprite(m_GlowTexture, Center, Size * 1.7f, Size * 1.7f, 0.0f, false, ColorRGBA(0.6f, 0.5f, 1.0f, 0.22f * Alpha));
+	Graphics()->BlendNormal();
+
+	if(Type == 2)
 	{
-		// ghost
-		DrawGhost(Center, Size, ColorRGBA(1.0f, 1.0f, 1.0f, 0.85f * Alpha), Time * 5.0f, Facing * 0.08f);
-	}
-	else if(Type == 2)
-	{
-		// cat
-		const ColorRGBA Fur(1.0f, 0.65f, 0.25f, Alpha);
-		Graphics()->SetColor(Fur);
-		Graphics()->DrawCircle(Center.x, Center.y, 0.85f * Size, 20);
+		// dragon: two wings that flap behind the body
+		const float WingSize = Size * 0.8f;
+		const float FlapAngle = -0.45f + 0.55f * std::sin(Time * 9.0f);
 		for(int Side = -1; Side <= 1; Side += 2)
 		{
-			const IGraphics::CFreeformItem Ear(
-				Center.x + Side * 0.85f * Size, Center.y - 0.2f * Size,
-				Center.x + Side * 0.65f * Size, Center.y - 1.0f * Size,
-				Center.x + Side * 0.15f * Size, Center.y - 0.7f * Size,
-				Center.x + Side * 0.15f * Size, Center.y - 0.7f * Size);
-			Graphics()->QuadsDrawFreeform(&Ear, 1);
+			const vec2 Attach = Center + vec2(Side * 0.18f * Size, -0.1f * Size);
+			const vec2 Dir(Side * std::cos(FlapAngle), std::sin(FlapAngle));
+			DrawSprite(m_PetWingTexture, Attach + Dir * 0.42f * WingSize, WingSize, WingSize, Side * FlapAngle, Side < 0, ColorRGBA(1.0f, 1.0f, 1.0f, 0.95f * Alpha));
 		}
-		// tail swings behind
-		for(int i = 0; i < 3; i++)
-			Graphics()->DrawCircle(Center.x - Facing * (1.0f + 0.22f * i) * Size, Center.y + (0.3f - 0.3f * i + std::sin(Time * 5.0f + i) * 0.12f) * Size, (0.2f - 0.03f * i) * Size, 8);
-		Graphics()->SetColor(0.15f, 0.1f, 0.1f, Alpha);
-		Graphics()->DrawCircle(Center.x - 0.32f * Size + Facing * 0.1f * Size, Center.y - 0.1f * Size, 0.12f * Size, 10);
-		Graphics()->DrawCircle(Center.x + 0.32f * Size + Facing * 0.1f * Size, Center.y - 0.1f * Size, 0.12f * Size, 10);
-		Graphics()->SetColor(1.0f, 0.5f, 0.6f, Alpha);
-		Graphics()->DrawCircle(Center.x + Facing * 0.1f * Size, Center.y + 0.12f * Size, 0.08f * Size, 8);
+	}
+
+	if(Type == 4)
+	{
+		// jellyfish: pulsing bell and waving tentacles
+		const float Pulse = std::sin(Time * 2.4f);
+		DrawWavy(m_aPetTextures[Index], Center + vec2(0.0f, -Pulse * 0.05f * Size), Size * (1.0f - 0.05f * Pulse), Size * (1.0f + 0.06f * Pulse), Tilt, false, White, 0.09f, 7.0f, Time * 4.0f);
 	}
 	else
 	{
-		// bat with flapping wings
-		const float Flap = std::sin(Time * 14.0f);
-		Graphics()->SetColor(0.38f, 0.22f, 0.55f, Alpha);
-		for(int Side = -1; Side <= 1; Side += 2)
-		{
-			const IGraphics::CFreeformItem Wing(
-				Center.x + Side * 0.4f * Size, Center.y,
-				Center.x + Side * 1.7f * Size, Center.y - 0.9f * Size * Flap,
-				Center.x + Side * 1.1f * Size, Center.y + 0.6f * Size,
-				Center.x + Side * 1.1f * Size, Center.y + 0.6f * Size);
-			Graphics()->QuadsDrawFreeform(&Wing, 1);
-			const IGraphics::CFreeformItem Ear(
-				Center.x + Side * 0.55f * Size, Center.y - 0.3f * Size,
-				Center.x + Side * 0.4f * Size, Center.y - 0.95f * Size,
-				Center.x + Side * 0.1f * Size, Center.y - 0.5f * Size,
-				Center.x + Side * 0.1f * Size, Center.y - 0.5f * Size);
-			Graphics()->QuadsDrawFreeform(&Ear, 1);
-		}
-		Graphics()->DrawCircle(Center.x, Center.y, 0.65f * Size, 16);
-		Graphics()->SetColor(1.0f, 0.25f, 0.25f, Alpha);
-		Graphics()->DrawCircle(Center.x - 0.25f * Size, Center.y - 0.08f * Size, 0.1f * Size, 8);
-		Graphics()->DrawCircle(Center.x + 0.25f * Size, Center.y - 0.08f * Size, 0.1f * Size, 8);
+		// breathing and a gentle tilt in the direction of movement
+		const float Breath = std::sin(Time * 3.2f);
+		DrawSprite(m_aPetTextures[Index], Center + vec2(0.0f, Breath * 0.015f * Size), Size * (1.0f - 0.02f * Breath), Size * (1.0f + 0.03f * Breath), Tilt + std::sin(Time * 1.7f) * 0.03f, Flip, White);
 	}
-	Graphics()->QuadsEnd();
-	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-}
-
-void CVisuals::DrawConstellation(vec2 BodyPos, float TeeSize, float Alpha) const
-{
-	// a small constellation above the tee: stars joined by thin lines, slowly swaying and twinkling
-	static const vec2 s_aStars[7] = {
-		vec2(-1.5f, -0.5f), vec2(-1.0f, -1.2f), vec2(-0.3f, -1.5f), vec2(0.5f, -1.25f),
-		vec2(1.1f, -1.7f), vec2(1.6f, -0.9f), vec2(1.45f, -0.1f)};
-	const float Time = Client()->LocalTime();
-	const float Sway = std::sin(Time * 0.5f) * 0.12f;
-	const float SinSway = std::sin(Sway);
-	const float CosSway = std::cos(Sway);
-	vec2 aPositions[7];
-	for(int i = 0; i < 7; i++)
-	{
-		const vec2 Local = s_aStars[i] + vec2(0.0f, std::sin(Time * 1.2f + i) * 0.05f);
-		aPositions[i] = BodyPos + vec2(Local.x * CosSway - Local.y * SinSway, Local.x * SinSway + Local.y * CosSway) * TeeSize;
-	}
-
-	Graphics()->BlendAdditive();
-	Graphics()->TextureClear();
-	Graphics()->QuadsBegin();
-	Graphics()->SetColor(0.7f, 0.85f, 1.0f, 0.35f * Alpha);
-	for(int i = 0; i < 6; i++)
-	{
-		const vec2 A = aPositions[i];
-		const vec2 B = aPositions[i + 1];
-		const float Length = distance(A, B);
-		if(Length < 0.01f)
-			continue;
-		const vec2 Perp = vec2(-(B.y - A.y), B.x - A.x) / Length * 0.5f;
-		const IGraphics::CFreeformItem Item(A - Perp, A + Perp, B - Perp, B + Perp);
-		Graphics()->QuadsDrawFreeform(&Item, 1);
-	}
-	Graphics()->QuadsEnd();
-
-	for(int i = 0; i < 7; i++)
-	{
-		const float Twinkle = 0.5f + 0.5f * std::sin(Time * 2.5f + i * 1.7f);
-		const float Size = (0.1f + 0.05f * (i % 3)) * TeeSize * (0.6f + 0.4f * Twinkle);
-		const vec2 Pos = aPositions[i];
-		DrawSprite(m_GlowTexture, Pos, Size * 5.0f, Size * 5.0f, 0.0f, false, ColorRGBA(0.7f, 0.85f, 1.0f, 0.55f * Twinkle * Alpha));
-		Graphics()->TextureClear();
-		Graphics()->QuadsBegin();
-		Graphics()->SetColor(1.0f, 0.98f, 0.85f, (0.5f + 0.5f * Twinkle) * Alpha);
-		// two crossed thin diamonds make a four-pointed star
-		const IGraphics::CFreeformItem Horizontal(Pos.x - Size * 1.6f, Pos.y, Pos.x, Pos.y - 0.2f * Size, Pos.x, Pos.y + 0.2f * Size, Pos.x + Size * 1.6f, Pos.y);
-		const IGraphics::CFreeformItem Vertical(Pos.x - 0.2f * Size, Pos.y, Pos.x, Pos.y - Size * 1.6f, Pos.x, Pos.y + Size * 1.6f, Pos.x + 0.2f * Size, Pos.y);
-		Graphics()->QuadsDrawFreeform(&Horizontal, 1);
-		Graphics()->QuadsDrawFreeform(&Vertical, 1);
-		Graphics()->QuadsEnd();
-	}
-	Graphics()->BlendNormal();
-	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 ColorRGBA CVisuals::NameShimmerColor(int CharIndex) const
@@ -700,19 +664,23 @@ void CVisuals::OnRender()
 		m_vRings.clear();
 		m_vGlows.clear();
 		m_vSouls.clear();
+		m_vBlackHoles.clear();
 		m_vMeteors.clear();
 		m_vEchoes.clear();
 		return;
 	}
+
+	UpdateAutoSkin(std::min(Client()->RenderFrameTime(), 0.1f));
 
 	const bool Snow = g_Config.m_ClVisualsSnow;
 	const bool Fireflies = g_Config.m_ClVisualsFireflies;
 	const bool Predict = g_Config.m_ClCombatPredict;
 	const bool Petals = g_Config.m_ClVisualsPetals;
 	const bool Bubbles = g_Config.m_ClVisualsBubbles;
-	const bool Butterflies = g_Config.m_ClVisualsButterflies;
+	const bool Starfield = g_Config.m_ClVisualsStarfield;
+	const bool Aurora = g_Config.m_ClVisualsAurora;
 	const bool Meteors = g_Config.m_ClVisualsMeteors;
-	if(!Snow && !Fireflies && !Predict && !Petals && !Bubbles && !Butterflies && !Meteors && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty() && m_vMeteors.empty())
+	if(!Snow && !Fireflies && !Predict && !Petals && !Bubbles && !Starfield && !Aurora && !Meteors && m_vBlackHoles.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty() && m_vMeteors.empty())
 		return;
 
 	// The game world is still mapped to the screen here, so everything below is drawn in world coordinates.
@@ -825,42 +793,6 @@ void CVisuals::OnRender()
 		}
 	}
 
-	// butterflies flutter around on soft curves
-	if(Butterflies)
-	{
-		static const ColorRGBA s_aButterflyColors[3] = {ColorRGBA(1.0f, 0.6f, 0.2f, 0.9f), ColorRGBA(0.4f, 0.7f, 1.0f, 0.9f), ColorRGBA(1.0f, 0.6f, 0.85f, 0.9f)};
-		for(const CButterfly &Butterfly : m_aButterflies)
-		{
-			const float PosX = Butterfly.m_Base.x + std::sin((float)std::fmod(Time * Butterfly.m_Freq.x, 2.0 * pi) + Butterfly.m_Phase.x) * Butterfly.m_Amp.x;
-			const float PosY = Butterfly.m_Base.y + std::cos((float)std::fmod(Time * Butterfly.m_Freq.y, 2.0 * pi) + Butterfly.m_Phase.y) * Butterfly.m_Amp.y;
-			const float Flap = 0.3f + 0.7f * std::abs(std::sin((float)std::fmod(Time * Butterfly.m_FlapFreq, 2.0 * pi) + Butterfly.m_Phase.x));
-			const float Size = Butterfly.m_Size * FieldScale;
-			const ColorRGBA Color = s_aButterflyColors[Butterfly.m_Type];
-			ForEachTile(PosX, PosY, BUTTERFLY_TILE_WIDTH, BUTTERFLY_TILE_HEIGHT, Size * 2.0f + 200.0f, [&](vec2 Center) {
-				DrawButterfly(Center, Size, Flap, Color);
-			});
-		}
-	}
-
-	// souls of tees that died rise up
-	for(size_t i = 0; i < m_vSouls.size();)
-	{
-		CSoul &Soul = m_vSouls[i];
-		Soul.m_Life -= DeltaTime;
-		if(Soul.m_Life <= 0.0f)
-		{
-			Soul = m_vSouls.back();
-			m_vSouls.pop_back();
-			continue;
-		}
-		Soul.m_Pos.y -= 45.0f * DeltaTime;
-		Soul.m_Pos.x += std::sin(Soul.m_Phase + Soul.m_Life * 3.0f) * 20.0f * DeltaTime;
-		const float Remaining = std::clamp(Soul.m_Life / Soul.m_MaxLife, 0.0f, 1.0f);
-		const ColorRGBA Color(Soul.m_Color.r, Soul.m_Color.g, Soul.m_Color.b, std::min(1.0f, Remaining * 1.5f) * 0.7f);
-		DrawGhost(Soul.m_Pos, Soul.m_Size, Color, (float)Time * 5.0f + Soul.m_Phase, 0.0f);
-		i++;
-	}
-
 	for(size_t i = 0; i < m_vBurstFlakes.size();)
 	{
 		CBurstFlake &Flake = m_vBurstFlakes[i];
@@ -898,14 +830,15 @@ void CVisuals::OnRender()
 			}
 			const float Progress = 1.0f - std::clamp(Ring.m_Life / Ring.m_MaxLife, 0.0f, 1.0f);
 			const float Radius = Ring.m_MaxRadius * (1.0f - (1.0f - Progress) * (1.0f - Progress));
-			const float HalfWidth = 1.6f;
+			const float HalfWidth = Ring.m_Flat ? 1.6f : 2.4f;
+			const float Squash = Ring.m_Flat ? 0.35f : 1.0f;
 			Graphics()->SetColor(Ring.m_Color.r, Ring.m_Color.g, Ring.m_Color.b, (1.0f - Progress) * 0.85f);
 			for(int Segment = 0; Segment < SEGMENTS; Segment++)
 			{
 				const float A0 = 2.0f * pi * Segment / SEGMENTS;
 				const float A1 = 2.0f * pi * (Segment + 1) / SEGMENTS;
-				const vec2 Dir0(std::cos(A0), std::sin(A0) * 0.35f);
-				const vec2 Dir1(std::cos(A1), std::sin(A1) * 0.35f);
+				const vec2 Dir0(std::cos(A0), std::sin(A0) * Squash);
+				const vec2 Dir1(std::cos(A1), std::sin(A1) * Squash);
 				const vec2 In0 = Ring.m_Pos + Dir0 * (Radius - HalfWidth);
 				const vec2 In1 = Ring.m_Pos + Dir1 * (Radius - HalfWidth);
 				const vec2 Out0 = Ring.m_Pos + Dir0 * (Radius + HalfWidth);
@@ -943,7 +876,68 @@ void CVisuals::OnRender()
 		Graphics()->BlendNormal();
 	}
 
-	// glowing particles of weapon trails, sparks and fireworks
+	// ghosts that rise where a tee was killed: one smooth sprite whose hem waves
+	for(size_t i = 0; i < m_vSouls.size();)
+	{
+		CSoul &Soul = m_vSouls[i];
+		Soul.m_Life -= DeltaTime;
+		if(Soul.m_Life <= 0.0f)
+		{
+			Soul = m_vSouls.back();
+			m_vSouls.pop_back();
+			continue;
+		}
+		Soul.m_Pos.y -= 40.0f * DeltaTime;
+		Soul.m_Pos.x += std::sin(Soul.m_Phase + (float)Time * 2.0f) * 14.0f * DeltaTime;
+		const float Remaining = std::clamp(Soul.m_Life / Soul.m_MaxLife, 0.0f, 1.0f);
+		const float Age = 1.0f - Remaining;
+		const float Alpha = std::min(1.0f, Age * 6.0f) * std::min(1.0f, Remaining * 2.2f) * 0.9f;
+		const float Scale = 0.75f + 0.35f * std::min(1.0f, Age * 2.5f) + std::sin((float)Time * 3.0f + Soul.m_Phase) * 0.03f;
+		DrawWavy(m_SoulTexture, Soul.m_Pos, Soul.m_Size * Scale, Soul.m_Size * Scale, std::sin((float)Time * 2.2f + Soul.m_Phase) * 0.1f, false,
+			ColorRGBA(Soul.m_Color.r, Soul.m_Color.g, Soul.m_Color.b, Alpha), 0.1f, 7.0f, (float)Time * 5.0f + Soul.m_Phase);
+		i++;
+	}
+
+	// black holes: a dark core, a rotating accretion disc and stars that spiral inwards
+	for(size_t i = 0; i < m_vBlackHoles.size();)
+	{
+		CBlackHole &Hole = m_vBlackHoles[i];
+		Hole.m_Life -= DeltaTime;
+		if(Hole.m_Life <= 0.0f)
+		{
+			for(int Star = 0; Star < 12; Star++)
+			{
+				const float Angle = 2.0f * pi * Star / 12.0f;
+				SpawnStar(Hole.m_Pos, vec2(std::cos(Angle), std::sin(Angle)) * random_float(120.0f, 260.0f), random_float(0.6f, 1.0f), random_float(14.0f, 22.0f), 0.95f,
+					color_cast<ColorRGBA>(ColorHSLA(std::fmod(Hole.m_Hue + Star / 12.0f, 1.0f), 1.0f, 0.6f)));
+			}
+			SpawnFlash(Hole.m_Pos, 120.0f, 0.3f);
+			Hole = m_vBlackHoles.back();
+			m_vBlackHoles.pop_back();
+			continue;
+		}
+		const float Progress = 1.0f - std::clamp(Hole.m_Life / Hole.m_MaxLife, 0.0f, 1.0f);
+		const float Radius = 40.0f * std::sin(pi * Progress);
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(0.0f, 0.0f, 0.05f, 0.92f);
+		Graphics()->DrawCircle(Hole.m_Pos.x, Hole.m_Pos.y, Radius * 0.55f, 24);
+		Graphics()->QuadsEnd();
+		Graphics()->BlendAdditive();
+		const ColorRGBA DiscColor = color_cast<ColorRGBA>(ColorHSLA(std::fmod(Hole.m_Hue + (float)Time * 0.3f, 1.0f), 1.0f, 0.6f));
+		DrawFlatCircle(m_CircleTexture, Hole.m_Pos, Radius * 1.9f, (float)Time * 2.5f, 1.0f, ColorRGBA(DiscColor.r, DiscColor.g, DiscColor.b, 0.85f));
+		for(int Star = 0; Star < 10; Star++)
+		{
+			const float Angle = (float)Time * 7.0f * (1.0f + Progress) + Star * 2.0f * pi / 10.0f;
+			const float Dist = Radius * 0.7f + 120.0f * (1.0f - Progress) * (0.4f + 0.6f * (Star % 3) / 2.0f);
+			const ColorRGBA StarColor = color_cast<ColorRGBA>(ColorHSLA(std::fmod(Hole.m_Hue + Star / 10.0f, 1.0f), 1.0f, 0.65f));
+			DrawSprite(m_StarTexture, Hole.m_Pos + vec2(std::cos(Angle), std::sin(Angle)) * Dist, 16.0f, 16.0f, Angle, false, StarColor);
+		}
+		Graphics()->BlendNormal();
+		i++;
+	}
+
+	// glowing particles of weapon trails, sparks and stars
 	if(!m_vGlows.empty())
 	{
 		Graphics()->BlendAdditive();
@@ -951,21 +945,23 @@ void CVisuals::OnRender()
 		Graphics()->BlendNormal();
 	}
 
-	// shooting stars
+	// blue shooting stars that fall, shed embers and burn up
 	if(Meteors)
 	{
 		m_MeteorTimer -= DeltaTime;
 		if(m_MeteorTimer <= 0.0f && m_vMeteors.size() < MAX_METEORS)
 		{
-			m_MeteorTimer = random_float(2.0f, 5.0f);
+			m_MeteorTimer = random_float(2.5f, 6.0f);
 			const vec2 ViewSize = View.Size();
+			const float Side = random_float() < 0.5f ? -1.0f : 1.0f;
 			CMeteor Meteor;
-			Meteor.m_Pos = View.m_TopLeft + vec2(random_float(0.1f, 1.0f) * ViewSize.x, random_float(0.0f, 0.35f) * ViewSize.y);
-			Meteor.m_Vel = normalize(vec2(0.8f, 0.45f)) * random_float(600.0f, 900.0f) * FieldScale;
-			Meteor.m_MaxLife = random_float(0.8f, 1.3f);
+			Meteor.m_Pos = View.m_TopLeft + vec2(random_float(0.1f, 0.9f) * ViewSize.x, random_float(-0.05f, 0.12f) * ViewSize.y);
+			Meteor.m_Vel = normalize(vec2(Side * random_float(0.25f, 0.55f), 1.0f)) * random_float(380.0f, 520.0f) * FieldScale;
+			Meteor.m_MaxLife = random_float(1.6f, 2.3f);
 			Meteor.m_Life = Meteor.m_MaxLife;
-			Meteor.m_Length = random_float(120.0f, 220.0f) * FieldScale;
-			Meteor.m_Size = random_float(2.0f, 3.5f) * FieldScale;
+			Meteor.m_Length = random_float(170.0f, 250.0f) * FieldScale;
+			Meteor.m_Size = random_float(3.0f, 4.5f) * FieldScale;
+			Meteor.m_EmberTimer = 0.0f;
 			m_vMeteors.push_back(Meteor);
 		}
 	}
@@ -974,30 +970,54 @@ void CVisuals::OnRender()
 		Graphics()->BlendAdditive();
 		Graphics()->TextureClear();
 		Graphics()->QuadsBegin();
-		constexpr int TAIL_SEGMENTS = 8;
+		constexpr int TAIL_SEGMENTS = 10;
 		for(size_t i = 0; i < m_vMeteors.size();)
 		{
 			CMeteor &Meteor = m_vMeteors[i];
 			Meteor.m_Life -= DeltaTime;
 			if(Meteor.m_Life <= 0.0f)
 			{
+				// it has burned up completely: a last blue flash and a few sparks
+				SpawnGlow(Meteor.m_Pos, vec2(0.0f, 0.0f), 0.4f, Meteor.m_Size * 14.0f, 0.8f, 0.8f, ColorRGBA(0.35f, 0.6f, 1.0f, 1.0f));
+				for(int Spark = 0; Spark < 7; Spark++)
+					SpawnStar(Meteor.m_Pos, vec2(random_float(-70.0f, 70.0f), random_float(-60.0f, 60.0f)), random_float(0.5f, 0.9f), random_float(8.0f, 14.0f) * FieldScale, 0.9f, ColorRGBA(0.5f, 0.75f, 1.0f, 1.0f), 50.0f);
 				Meteor = m_vMeteors.back();
 				m_vMeteors.pop_back();
 				continue;
 			}
 			Meteor.m_Pos += Meteor.m_Vel * DeltaTime;
-			const float Fade = std::min(1.0f, std::clamp(Meteor.m_Life / Meteor.m_MaxLife, 0.0f, 1.0f) * 3.0f);
+			Meteor.m_Vel *= std::exp(-0.25f * DeltaTime);
+			const float Remaining = std::clamp(Meteor.m_Life / Meteor.m_MaxLife, 0.0f, 1.0f);
+			const float Progress = 1.0f - Remaining;
+			const float Burn = Progress * Progress;
+			const float Fade = std::min(1.0f, Remaining * 4.0f);
+			const float TailLength = Meteor.m_Length * (1.0f - 0.55f * Progress);
+			const float HeadScale = 1.0f - 0.75f * Burn;
 			const vec2 Dir = normalize(Meteor.m_Vel);
 			const vec2 Perp(-Dir.y, Dir.x);
+
+			// embers break off and fall down while it burns
+			Meteor.m_EmberTimer -= DeltaTime;
+			while(Meteor.m_EmberTimer <= 0.0f)
+			{
+				Meteor.m_EmberTimer += 0.03f - 0.02f * Burn;
+				SpawnGlow(Meteor.m_Pos - Dir * random_float(0.0f, TailLength * 0.5f) + Perp * random_float(-1.0f, 1.0f) * Meteor.m_Size,
+					Perp * random_float(-25.0f, 25.0f) - Dir * random_float(10.0f, 40.0f), random_float(0.4f, 0.9f), Meteor.m_Size * random_float(1.2f, 2.4f), -0.8f, 0.85f * Fade,
+					ColorRGBA(0.45f, 0.7f + random_float(0.0f, 0.3f), 1.0f, 1.0f), 70.0f);
+			}
+
 			for(int Segment = 0; Segment < TAIL_SEGMENTS; Segment++)
 			{
 				const float T0 = (float)Segment / TAIL_SEGMENTS;
 				const float T1 = (float)(Segment + 1) / TAIL_SEGMENTS;
-				const vec2 A = Meteor.m_Pos - Dir * Meteor.m_Length * T0;
-				const vec2 B = Meteor.m_Pos - Dir * Meteor.m_Length * T1;
-				const float WidthA = Meteor.m_Size * 0.6f * (1.0f - T0);
-				const float WidthB = Meteor.m_Size * 0.6f * (1.0f - T1);
-				Graphics()->SetColor(0.85f, 0.92f, 1.0f, (1.0f - T0) * 0.8f * Fade);
+				const vec2 A = Meteor.m_Pos - Dir * TailLength * T0;
+				const vec2 B = Meteor.m_Pos - Dir * TailLength * T1;
+				const float WidthA = Meteor.m_Size * 0.9f * HeadScale * (1.0f - T0);
+				const float WidthB = Meteor.m_Size * 0.9f * HeadScale * (1.0f - T1);
+				// white-blue at the head, deep blue at the end of the tail
+				const ColorRGBA ColorA(0.75f - 0.55f * T0, 0.88f - 0.5f * T0, 1.0f, std::pow(1.0f - T0, 1.5f) * 0.9f * Fade);
+				const ColorRGBA ColorB(0.75f - 0.55f * T1, 0.88f - 0.5f * T1, 1.0f, std::pow(1.0f - T1, 1.5f) * 0.9f * Fade);
+				Graphics()->SetColor4(ColorA, ColorA, ColorB, ColorB);
 				const IGraphics::CFreeformItem Item(A - Perp * WidthA, A + Perp * WidthA, B - Perp * WidthB, B + Perp * WidthB);
 				Graphics()->QuadsDrawFreeform(&Item, 1);
 			}
@@ -1006,12 +1026,44 @@ void CVisuals::OnRender()
 		Graphics()->QuadsEnd();
 		for(const CMeteor &Meteor : m_vMeteors)
 		{
-			const float Fade = std::min(1.0f, std::clamp(Meteor.m_Life / Meteor.m_MaxLife, 0.0f, 1.0f) * 3.0f);
-			DrawSprite(m_GlowTexture, Meteor.m_Pos, Meteor.m_Size * 6.0f, Meteor.m_Size * 6.0f, 0.0f, false, ColorRGBA(0.9f, 0.95f, 1.0f, 0.9f * Fade));
+			const float Remaining = std::clamp(Meteor.m_Life / Meteor.m_MaxLife, 0.0f, 1.0f);
+			const float Burn = (1.0f - Remaining) * (1.0f - Remaining);
+			const float Fade = std::min(1.0f, Remaining * 4.0f);
+			const float HeadScale = 1.0f - 0.75f * Burn;
+			DrawSprite(m_GlowTexture, Meteor.m_Pos, Meteor.m_Size * 8.0f * HeadScale, Meteor.m_Size * 8.0f * HeadScale, 0.0f, false, ColorRGBA(0.3f, 0.55f, 1.0f, 0.9f * Fade));
+			DrawSprite(m_StarTexture, Meteor.m_Pos, Meteor.m_Size * 7.0f * HeadScale, Meteor.m_Size * 7.0f * HeadScale, (float)Time * 3.0f, false, ColorRGBA(0.8f, 0.92f, 1.0f, Fade));
 		}
 		Graphics()->BlendNormal();
 		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}
+
+	// cosmic stars that twinkle in the world
+	if(Starfield)
+	{
+		static const ColorRGBA s_aStarColors[4] = {ColorRGBA(0.8f, 0.9f, 1.0f, 1.0f), ColorRGBA(0.75f, 0.6f, 1.0f, 1.0f), ColorRGBA(1.0f, 0.7f, 0.9f, 1.0f), ColorRGBA(0.5f, 1.0f, 1.0f, 1.0f)};
+		Graphics()->BlendAdditive();
+		Graphics()->TextureSet(m_StarTexture);
+		Graphics()->QuadsBegin();
+		for(const CStar &Star : m_aStars)
+		{
+			const float Twinkle = 0.5f + 0.5f * std::sin((float)std::fmod(Time * Star.m_TwinkleFreq, 2.0 * pi) + Star.m_TwinklePhase);
+			const ColorRGBA Color = s_aStarColors[Star.m_Type];
+			Graphics()->SetColor(Color.r, Color.g, Color.b, 0.25f + 0.7f * Twinkle);
+			Graphics()->QuadsSetRotation((float)std::fmod(Time * Star.m_Spin, 2.0 * pi));
+			const float Size = Star.m_Size * FieldScale * (0.7f + 0.3f * Twinkle);
+			ForEachTile(Star.m_Base.x, Star.m_Base.y, STAR_TILE_WIDTH, STAR_TILE_HEIGHT, Size, [&](vec2 Center) {
+				IGraphics::CQuadItem Item(Center.x, Center.y, Size, Size);
+				Graphics()->QuadsDraw(&Item, 1);
+			});
+		}
+		Graphics()->QuadsSetRotation(0.0f);
+		Graphics()->QuadsEnd();
+		Graphics()->BlendNormal();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	if(Aurora)
+		RenderAurora(View);
 
 	// fireflies
 	if(Fireflies)
@@ -1215,7 +1267,7 @@ void CVisuals::SpawnBurst(vec2 Pos, vec2 Dir, float Spread, int Num, float MinSp
 	}
 }
 
-void CVisuals::SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color)
+void CVisuals::SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color, bool Flat)
 {
 	if(m_vRings.size() >= MAX_RINGS)
 		return;
@@ -1223,6 +1275,7 @@ void CVisuals::SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color)
 	Ring.m_Pos = Pos;
 	Ring.m_MaxRadius = MaxRadius;
 	Ring.m_Color = Color;
+	Ring.m_Flat = Flat;
 	Ring.m_MaxLife = 0.45f;
 	Ring.m_Life = Ring.m_MaxLife;
 	m_vRings.push_back(Ring);
@@ -1236,6 +1289,78 @@ void CVisuals::SpawnFlash(vec2 Pos, float Size, float Life)
 	Flash.m_MaxLife = Life;
 	Flash.m_Life = Life;
 	m_vFlashes.push_back(Flash);
+}
+
+void CVisuals::RenderAurora(const CScreenRect &View) const
+{
+	const float Time = Client()->LocalTime();
+	constexpr int COLUMNS = 64;
+	const float Width = View.Size().x;
+	const float Height = View.Size().y;
+	const float ColumnWidth = Width / COLUMNS;
+	const float Top = View.m_TopLeft.y;
+	Graphics()->BlendAdditive();
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	for(int i = 0; i < COLUMNS; i++)
+	{
+		const float X0 = View.m_TopLeft.x + i * ColumnWidth;
+		const float X1 = X0 + ColumnWidth * 1.02f;
+		const float U = (float)i / COLUMNS;
+		const float Wave = std::sin(U * 7.0f + Time * 0.5f) * 0.5f + std::sin(U * 13.0f - Time * 0.8f) * 0.25f;
+		const float Peak = Top + Height * (0.10f + 0.04f * Wave);
+		const float Bottom = Peak + Height * (0.13f + 0.05f * Wave);
+		// from green over cyan to violet, slowly drifting
+		const float Hue = 0.36f + 0.28f * (0.5f + 0.5f * std::sin(U * 4.0f + Time * 0.3f));
+		const ColorRGBA Base = color_cast<ColorRGBA>(ColorHSLA(Hue, 1.0f, 0.55f));
+		const float Alpha = 0.17f + 0.06f * std::sin(U * 9.0f + Time * 1.3f);
+		const ColorRGBA Clear(Base.r, Base.g, Base.b, 0.0f);
+		const ColorRGBA Full(Base.r, Base.g, Base.b, Alpha);
+		Graphics()->SetColor4(Clear, Clear, Full, Full);
+		const IGraphics::CFreeformItem Upper(X0, Top, X1, Top, X0, Peak, X1, Peak);
+		Graphics()->QuadsDrawFreeform(&Upper, 1);
+		Graphics()->SetColor4(Full, Full, Clear, Clear);
+		const IGraphics::CFreeformItem Lower(X0, Peak, X1, Peak, X0, Bottom, X1, Bottom);
+		Graphics()->QuadsDrawFreeform(&Lower, 1);
+	}
+	Graphics()->QuadsEnd();
+	Graphics()->BlendNormal();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+void CVisuals::UpdateAutoSkin(float DeltaTime)
+{
+	if(!g_Config.m_ClVisualsAutoSkin)
+	{
+		m_AutoSkinTimer = 0.0f;
+		return;
+	}
+	m_AutoSkinTimer += DeltaTime;
+	if(m_AutoSkinTimer < (float)g_Config.m_ClVisualsAutoSkinInterval)
+		return;
+	m_AutoSkinTimer = 0.0f;
+
+	if(g_Config.m_ClVisualsAutoSkin == 2)
+	{
+		// whole skin: random skin with random colors
+		GameClient()->m_Skins.RandomizeSkin(0);
+	}
+	else
+	{
+		// only the colors of the current skin
+		ColorHSLA Body;
+		Body.h = random_float();
+		Body.s = random_float(0.6f, 1.0f);
+		Body.l = random_float(0.3f, 0.7f);
+		ColorHSLA Feet;
+		Feet.h = std::fmod(Body.h + random_float(0.25f, 0.75f), 1.0f);
+		Feet.s = random_float(0.6f, 1.0f);
+		Feet.l = random_float(0.3f, 0.7f);
+		g_Config.m_ClPlayerUseCustomColor = 1;
+		g_Config.m_ClPlayerColorBody = Body.Pack(false);
+		g_Config.m_ClPlayerColorFeet = Feet.Pack(false);
+	}
+	GameClient()->SendInfo(false);
 }
 
 void CVisuals::OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun)
@@ -1253,13 +1378,12 @@ void CVisuals::OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun)
 		return;
 	const vec2 Dir = (To - From) / Length;
 
-	// electric sparks jump off the beam
-	if(g_Config.m_ClVisualsLaserSparks && random_float() < 0.7f)
+	// stardust drifts off the beam in all colors of the rainbow
+	if(g_Config.m_ClVisualsLaserSparks && random_float() < 0.5f)
 	{
 		const vec2 Perp(-Dir.y, Dir.x);
 		const vec2 Pos = From + (To - From) * random_float();
-		SpawnGlow(Pos, Perp * random_float(-60.0f, 60.0f) + Dir * random_float(-20.0f, 20.0f), random_float(0.15f, 0.3f), random_float(6.0f, 11.0f), -0.7f, 0.9f,
-			Shotgun ? ColorRGBA(1.0f, 0.8f, 0.4f, 1.0f) : ColorRGBA(0.6f, 0.9f, 1.0f, 1.0f));
+		SpawnStar(Pos, Perp * random_float(-45.0f, 45.0f) + Dir * random_float(-15.0f, 15.0f), random_float(0.5f, 0.9f), random_float(7.0f, 13.0f), 0.9f, Rainbow(random_float(0.0f, 0.4f)));
 	}
 
 	if(!g_Config.m_ClVisualsSnowWeapons)
@@ -1275,12 +1399,18 @@ void CVisuals::OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun)
 	m_aRecentLasers[m_NextRecentLaser].m_To = To;
 	m_NextRecentLaser = (m_NextRecentLaser + 1) % NUM_RECENT_LASERS;
 
-	// only when the laser ends in a wall
+	// only when the laser ends in a wall: an RGB ring and a few stars
 	if(!Collision()->CheckPoint(To + Dir * 8.0f))
 		return;
 
-	SpawnBurst(To - Dir * 2.0f, -Dir, 1.2f, Shotgun ? 8 : 5, 30.0f, 90.0f);
-	SpawnFlash(To - Dir * 2.0f, Shotgun ? 38.0f : 30.0f, 0.2f);
+	const vec2 Hit = To - Dir * 2.0f;
+	SpawnRing(Hit, Shotgun ? 38.0f : 30.0f, Rainbow(0.0f), false);
+	for(int i = 0; i < (Shotgun ? 5 : 4); i++)
+	{
+		const float Angle = std::atan2(-Dir.y, -Dir.x) + random_float(-1.1f, 1.1f);
+		SpawnStar(Hit, vec2(std::cos(Angle), std::sin(Angle)) * random_float(40.0f, 120.0f), random_float(0.4f, 0.8f), random_float(9.0f, 15.0f), 0.95f, Rainbow(random_float(0.0f, 1.0f)));
+	}
+	SpawnFlash(Hit, Shotgun ? 34.0f : 26.0f, 0.2f);
 }
 
 void CVisuals::OnProjectileRendered(vec2 Pos, vec2 Vel, int Weapon, float Alpha)
@@ -1289,26 +1419,23 @@ void CVisuals::OnProjectileRendered(vec2 Pos, vec2 Vel, int Weapon, float Alpha)
 		return;
 	if(Weapon == WEAPON_GRENADE)
 	{
-		// a tail of fire
+		// a plasma tail in changing RGB colors with the odd star
 		if(!g_Config.m_ClVisualsGrenadeTrail)
 			return;
 		for(int i = 0; i < 2; i++)
-			SpawnGlow(Pos + vec2(random_float(-3.0f, 3.0f), random_float(-3.0f, 3.0f)), vec2(random_float(-15.0f, 15.0f), random_float(-25.0f, 5.0f)), random_float(0.3f, 0.55f), random_float(10.0f, 18.0f), -0.8f, 0.85f * Alpha,
-				ColorRGBA(1.0f, random_float(0.4f, 0.75f), 0.1f, 1.0f));
+			SpawnGlow(Pos + vec2(random_float(-3.0f, 3.0f), random_float(-3.0f, 3.0f)), vec2(random_float(-12.0f, 12.0f), random_float(-12.0f, 12.0f)), random_float(0.35f, 0.6f), random_float(11.0f, 18.0f), -0.8f, 0.8f * Alpha,
+				Rainbow(random_float(0.0f, 0.15f)));
+		if(random_float() < 0.15f)
+			SpawnStar(Pos, vec2(random_float(-30.0f, 30.0f), random_float(-30.0f, 30.0f)), random_float(0.5f, 0.8f), random_float(8.0f, 13.0f), 0.9f * Alpha, Rainbow(random_float(0.0f, 0.5f)));
 	}
 	else if(Weapon == WEAPON_GUN || Weapon == WEAPON_SHOTGUN)
 	{
-		// two glowing beads that wind around the bullet like a spiral
+		// a thin comet thread that shifts through the RGB colors
 		if(!g_Config.m_ClVisualsBulletTrail)
 			return;
-		const float Length = length(Vel);
-		if(Length < 0.00001f)
-			return;
-		const vec2 Dir = Vel / Length;
-		const vec2 Perp(-Dir.y, Dir.x);
-		const float Offset = std::sin(Client()->LocalTime() * 28.0f) * 4.0f;
-		SpawnGlow(Pos + Perp * Offset, vec2(0.0f, 0.0f), random_float(0.25f, 0.4f), random_float(7.0f, 9.0f), -0.7f, 0.9f * Alpha, ColorRGBA(0.4f, 0.9f, 1.0f, 1.0f));
-		SpawnGlow(Pos - Perp * Offset, vec2(0.0f, 0.0f), random_float(0.25f, 0.4f), random_float(7.0f, 9.0f), -0.7f, 0.9f * Alpha, ColorRGBA(1.0f, 0.5f, 0.9f, 1.0f));
+		SpawnGlow(Pos, vec2(0.0f, 0.0f), random_float(0.25f, 0.4f), random_float(8.0f, 11.0f), -0.7f, 0.9f * Alpha, Rainbow(0.0f));
+		if(random_float() < 0.12f)
+			SpawnStar(Pos, vec2(random_float(-20.0f, 20.0f), random_float(-20.0f, 20.0f)), random_float(0.4f, 0.7f), random_float(6.0f, 10.0f), 0.9f * Alpha, Rainbow(0.5f));
 	}
 }
 
@@ -1321,49 +1448,79 @@ void CVisuals::OnHookRendered(vec2 Pos, vec2 HookPos)
 		return;
 	const vec2 Dir = (HookPos - Pos) / Length;
 	const vec2 Perp(-Dir.y, Dir.x);
-	// sparks run along the chain
-	if(random_float() < 0.7f)
-		SpawnGlow(Pos + (HookPos - Pos) * random_float(), Perp * random_float(-35.0f, 35.0f), random_float(0.2f, 0.35f), random_float(6.0f, 10.0f), -0.6f, 0.85f, ColorRGBA(0.5f, 0.8f, 1.0f, 1.0f));
+	// stars run along the astral chain
+	if(random_float() < 0.5f)
+		SpawnStar(Pos + (HookPos - Pos) * random_float(), Perp * random_float(-25.0f, 25.0f), random_float(0.3f, 0.6f), random_float(7.0f, 12.0f), 0.85f, Rainbow(random_float(0.0f, 0.5f)));
 	// and the head of the hook glows
-	SpawnGlow(HookPos, vec2(0.0f, 0.0f), 0.12f, 18.0f, -0.5f, 0.6f, ColorRGBA(0.6f, 0.85f, 1.0f, 1.0f));
+	SpawnGlow(HookPos, vec2(0.0f, 0.0f), 0.12f, 20.0f, -0.5f, 0.6f, Rainbow(0.0f));
 }
 
-void CVisuals::OnDeath(vec2 Pos, int ClientId)
+void CVisuals::OnKill(int Killer, int Victim)
 {
-	if(Client()->State() != IClient::STATE_ONLINE)
+	const int Effect = g_Config.m_ClVisualsKillEffect;
+	if(Effect == 0 || Client()->State() != IClient::STATE_ONLINE || !in_range(Victim, MAX_CLIENTS - 1))
 		return;
+	if(g_Config.m_ClVisualsKillOwnOnly && (Killer < 0 || (Killer != GameClient()->m_aLocalIds[0] && Killer != GameClient()->m_aLocalIds[1])))
+		return;
+	const auto &Info = GameClient()->m_aClients[Victim];
+	if(!Info.m_Active)
+		return;
+	const vec2 Pos = Info.m_RenderPos;
 
-	if(g_Config.m_ClVisualsDeathSoul && m_vSouls.size() < MAX_SOULS)
+	if(Effect == 1)
+	{
+		// astral burst: two RGB rings and a circle of spinning stars
+		SpawnRing(Pos, 90.0f, Rainbow(0.0f), false);
+		SpawnRing(Pos, 55.0f, Rainbow(0.5f), false);
+		for(int i = 0; i < 16; i++)
+		{
+			const float Angle = 2.0f * pi * i / 16.0f + random_float(-0.1f, 0.1f);
+			SpawnStar(Pos, vec2(std::cos(Angle), std::sin(Angle)) * random_float(120.0f, 260.0f), random_float(0.8f, 1.2f), random_float(14.0f, 24.0f), 0.95f, Rainbow(i / 16.0f));
+		}
+		SpawnFlash(Pos, 100.0f, 0.3f);
+	}
+	else if(Effect == 2)
+	{
+		// supernova: a blinding flash, three shock waves and a cloud of hot sparks
+		SpawnFlash(Pos, 190.0f, 0.45f);
+		SpawnRing(Pos, 110.0f, ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), false);
+		SpawnRing(Pos, 160.0f, ColorRGBA(1.0f, 0.8f, 0.4f, 1.0f), false);
+		SpawnRing(Pos, 220.0f, ColorRGBA(0.4f, 0.6f, 1.0f, 1.0f), false);
+		for(int i = 0; i < 30; i++)
+		{
+			const float Angle = random_float(0.0f, 2.0f * pi);
+			const float Mix = random_float();
+			SpawnGlow(Pos, vec2(std::cos(Angle), std::sin(Angle)) * random_float(150.0f, 420.0f), random_float(0.6f, 1.2f), random_float(12.0f, 22.0f), -0.6f, 0.95f,
+				ColorRGBA(1.0f - 0.6f * Mix, 0.9f - 0.3f * Mix, 0.6f + 0.4f * Mix, 1.0f));
+		}
+		for(int i = 0; i < 8; i++)
+		{
+			const float Angle = random_float(0.0f, 2.0f * pi);
+			SpawnStar(Pos, vec2(std::cos(Angle), std::sin(Angle)) * random_float(60.0f, 200.0f), random_float(0.8f, 1.3f), random_float(22.0f, 34.0f), 0.95f, ColorRGBA(1.0f, 0.95f, 0.8f, 1.0f));
+		}
+	}
+	else if(Effect == 3)
+	{
+		CBlackHole Hole;
+		Hole.m_Pos = Pos;
+		Hole.m_MaxLife = 1.4f;
+		Hole.m_Life = Hole.m_MaxLife;
+		Hole.m_Hue = random_float();
+		m_vBlackHoles.push_back(Hole);
+	}
+	else if(Effect == 4 && m_vSouls.size() < MAX_SOULS)
 	{
 		ColorRGBA Color(1.0f, 1.0f, 1.0f, 1.0f);
-		if(in_range(ClientId, MAX_CLIENTS - 1))
-		{
-			const auto &RenderInfo = GameClient()->m_aClients[ClientId].m_RenderInfo;
-			if(RenderInfo.m_CustomColoredSkin)
-				Color = Lighten(RenderInfo.m_ColorBody, 0.55f);
-		}
+		if(Info.m_RenderInfo.m_CustomColoredSkin)
+			Color = Lighten(Info.m_RenderInfo.m_ColorBody, 0.6f);
 		CSoul Soul;
 		Soul.m_Pos = Pos;
-		Soul.m_MaxLife = 2.2f;
+		Soul.m_MaxLife = 2.4f;
 		Soul.m_Life = Soul.m_MaxLife;
-		Soul.m_Size = 18.0f;
+		Soul.m_Size = 56.0f;
 		Soul.m_Phase = random_float(0.0f, 2.0f * pi);
 		Soul.m_Color = Color;
 		m_vSouls.push_back(Soul);
-	}
-
-	if(g_Config.m_ClVisualsDeathFirework)
-	{
-		// a burst of colorful sparks with a ring
-		const float Hue = random_float();
-		for(int i = 0; i < 24; i++)
-		{
-			const float Angle = random_float(0.0f, 2.0f * pi);
-			const ColorRGBA Color = color_cast<ColorRGBA>(ColorHSLA(std::fmod(Hue + random_float(-0.08f, 0.08f) + 1.0f, 1.0f), 1.0f, 0.6f));
-			SpawnGlow(Pos, vec2(std::cos(Angle), std::sin(Angle)) * random_float(80.0f, 240.0f), random_float(0.6f, 1.1f), random_float(9.0f, 16.0f), -0.6f, 0.95f, Color, 160.0f);
-		}
-		SpawnRing(Pos, 70.0f, color_cast<ColorRGBA>(ColorHSLA(Hue, 1.0f, 0.7f)));
-		SpawnFlash(Pos, 70.0f, 0.25f);
 	}
 }
 
@@ -1371,6 +1528,13 @@ void CVisuals::OnExplosion(vec2 Pos)
 {
 	if(!g_Config.m_ClVisualsSnowWeapons || Client()->State() != IClient::STATE_ONLINE)
 		return;
-	SpawnBurst(Pos, vec2(0.0f, -1.0f), pi, 36, 60.0f, 260.0f);
+	// RGB rings and stars flying out of the explosion
+	SpawnRing(Pos, 110.0f, Rainbow(0.0f), false);
+	SpawnRing(Pos, 70.0f, Rainbow(0.5f), false);
+	for(int i = 0; i < 14; i++)
+	{
+		const float Angle = random_float(0.0f, 2.0f * pi);
+		SpawnStar(Pos, vec2(std::cos(Angle), std::sin(Angle)) * random_float(90.0f, 260.0f), random_float(0.5f, 1.0f), random_float(10.0f, 18.0f), 0.95f, Rainbow(random_float(0.0f, 1.0f)));
+	}
 	SpawnFlash(Pos, 110.0f, 0.3f);
 }

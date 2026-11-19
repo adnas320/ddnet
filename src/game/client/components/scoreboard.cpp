@@ -855,9 +855,9 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
 				{
 					NameColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClAuthedPlayerColor));
 				}
-				if(g_Config.m_ClVisualsNameShimmer && pInfo->m_Local)
+				if(g_Config.m_ClVisualsNameShimmer)
 				{
-					// the own name is drawn letter by letter, its colors flow from left to right
+					// every name is drawn letter by letter, its colors flow from left to right
 					CTextCursor NameCursor;
 					NameCursor.m_FontSize = FontSize;
 					NameCursor.SetPosition(vec2(NameOffset, TextY));

@@ -2062,7 +2062,15 @@ set(EXPECTED_DATA
   themes/winter_day.map
   themes/winter_night.map
   touch_controls.json
+  visuals/circle.png
   visuals/glow.png
+  visuals/pet_cat.png
+  visuals/pet_dragon.png
+  visuals/pet_dragon_wing.png
+  visuals/pet_fox.png
+  visuals/pet_jelly.png
+  visuals/soul.png
+  visuals/star.png
   visuals/winter_hat.png
   wordlist.txt
   # tidy-alphabetical-end
@@ -2649,6 +2657,8 @@ if(CLIENT)
     components/background.h
     components/binds.cpp
     components/binds.h
+    components/bindwheel.cpp
+    components/bindwheel.h
     components/broadcast.cpp
     components/broadcast.h
     components/camera.cpp
@@ -2711,6 +2721,7 @@ if(CLIENT)
     components/menus_settings.cpp
     components/menus_settings_appearance.cpp
     components/menus_settings_assets.cpp
+    components/menus_settings_bindwheel.cpp
     components/menus_settings_combat.cpp
     components/menus_settings_controls.cpp
     components/menus_settings_controls.h

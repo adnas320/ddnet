@@ -341,6 +341,8 @@ class CNamePlatePartName : public CNamePlatePartText
 private:
 	char m_aText[std::max((size_t)MAX_NAME_LENGTH, (size_t)protocol7::MAX_NAME_ARRAY_SIZE)] = "";
 	float m_FontSize = -INFINITY;
+	bool m_Shimmer = false;
+	int m_ShimmerStamp = 0;
 
 protected:
 	bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
@@ -348,8 +350,14 @@ protected:
 		m_Visible = Data.m_ShowName;
 		if(!m_Visible)
 			return false;
-		m_Color = Data.m_Color;
-		return m_FontSize != Data.m_FontSize || str_comp(m_aText, Data.m_aName) != 0;
+		const bool Shimmer = g_Config.m_ClVisualsNameShimmer != 0;
+		m_Color = Shimmer ? ColorRGBA(1.0f, 1.0f, 1.0f, Data.m_Color.a) : Data.m_Color;
+		// the shimmering colors flow through the name, so the text is rebuilt 20 times per second
+		const int Stamp = Shimmer ? (int)(This.Client()->LocalTime() * 20.0f) : 0;
+		const bool Changed = Shimmer != m_Shimmer || Stamp != m_ShimmerStamp;
+		m_Shimmer = Shimmer;
+		m_ShimmerStamp = Stamp;
+		return Changed || m_FontSize != Data.m_FontSize || str_comp(m_aText, Data.m_aName) != 0;
 	}
 	void UpdateText(CGameClient &This, const CNamePlateData &Data) override
 	{
@@ -357,6 +365,15 @@ protected:
 		str_copy(m_aText, Data.m_aName);
 		CTextCursor Cursor;
 		Cursor.m_FontSize = m_FontSize;
+		if(m_Shimmer)
+		{
+			size_t Size = 0, Count = 0;
+			str_utf8_stats(m_aText, sizeof(m_aText), sizeof(m_aText), &Size, &Count);
+			const int Length = (int)Count;
+			Cursor.m_vColorSplits.reserve(Length);
+			for(int i = 0; i < Length; i++)
+				Cursor.m_vColorSplits.emplace_back(i, 1, This.m_Visuals.NameShimmerColor(i));
+		}
 		This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, m_aText);
 	}
 

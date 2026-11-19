@@ -153,6 +153,7 @@ void CGameClient::OnConsoleInit()
 					      &m_Hud,
 					      &m_Spectator,
 					      &m_Emoticon,
+					      &m_BindWheel,
 					      &m_InfoMessages,
 					      &m_Chat,
 					      &m_Broadcast,
@@ -176,6 +177,7 @@ void CGameClient::OnConsoleInit()
 						  &m_Motd, // for pressing esc to remove it
 						  &m_Spectator,
 						  &m_Emoticon,
+						  &m_BindWheel,
 						  &m_ImportantAlert,
 						  &m_Menus,
 						  &m_Controls,
@@ -1210,6 +1212,7 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 	else if(MsgId == NETMSGTYPE_SV_KILLMSG)
 	{
 		CNetMsg_Sv_KillMsg *pMsg = (CNetMsg_Sv_KillMsg *)pRawMsg;
+		m_Visuals.OnKill(pMsg->m_Killer, pMsg->m_Victim);
 		// reset character prediction
 		if(!(m_GameWorld.m_WorldConfig.m_IsFNG && pMsg->m_Weapon == WEAPON_LASER))
 		{
@@ -1511,7 +1514,6 @@ void CGameClient::ProcessEvents()
 		{
 			const CNetEvent_Death *pEvent = (const CNetEvent_Death *)Item.m_pData;
 			m_Effects.PlayerDeath(vec2(pEvent->m_X, pEvent->m_Y), pEvent->m_ClientId, Alpha);
-			m_Visuals.OnDeath(vec2(pEvent->m_X, pEvent->m_Y), pEvent->m_ClientId);
 		}
 		else if(Item.m_Type == NETEVENTTYPE_SOUNDWORLD)
 		{

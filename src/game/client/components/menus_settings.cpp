@@ -54,7 +54,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		"Визуалы",
 		"Профили",
 		"Бой",
-		Localize("Credits")};
+		"Колесо биндов"};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
 	for(int i = 0; i < SETTINGS_LENGTH; i++)
@@ -133,10 +133,10 @@ void CMenus::RenderSettings(CUIRect MainView)
 		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_COMBAT);
 		RenderSettingsCombat(MainView);
 	}
-	else if(g_Config.m_UiSettingsPage == SETTINGS_CREDITS)
+	else if(g_Config.m_UiSettingsPage == SETTINGS_BINDWHEEL)
 	{
 		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
-		RenderSettingsCredits(MainView);
+		RenderSettingsBindWheel(MainView);
 	}
 	else
 	{

@@ -569,6 +569,7 @@ protected:
 	void RenderSettingsVisuals(CUIRect MainView);
 	void RenderSettingsProfiles(CUIRect MainView);
 	void RenderSettingsCombat(CUIRect MainView);
+	void RenderSettingsBindWheel(CUIRect MainView);
 
 	// found in menus_settings_appearance.cpp
 	void RenderSettingsAppearance(CUIRect MainView);
@@ -722,7 +723,7 @@ public:
 		SETTINGS_VISUALS,
 		SETTINGS_PROFILES,
 		SETTINGS_COMBAT,
-		SETTINGS_CREDITS,
+		SETTINGS_BINDWHEEL,
 
 		SETTINGS_LENGTH,
 	};

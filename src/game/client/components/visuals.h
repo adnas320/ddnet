@@ -11,8 +11,8 @@
 #include <vector>
 
 // Cosmetic client side effects: winter hat, aura, trails, pets and more on the own tee,
-// fields of snow, petals, bubbles, fireflies and butterflies in the game world,
-// weapon, death and hook effects, and the weapon prediction.
+// fields of snow, petals, bubbles, fireflies and cosmic stars in the game world,
+// cosmic weapon and hook effects, kill effects, an aurora and the weapon prediction.
 class CVisuals : public CComponent
 {
 	enum
@@ -21,11 +21,11 @@ class CVisuals : public CComponent
 		NUM_PETALS = 22, // per tile of the petal field
 		NUM_BUBBLES = 16, // per tile of the bubble field
 		NUM_FIREFLIES = 14, // per tile of the firefly field
-		NUM_BUTTERFLIES = 10, // per tile of the butterfly field
+		NUM_STARS = 40, // per tile of the star field
 		MAX_BURST_FLAKES = 600,
 		MAX_SPARKLES = 300,
 		MAX_GLOWS = 500,
-		MAX_RINGS = 8,
+		MAX_RINGS = 24,
 		MAX_ECHOES = 12,
 		MAX_SOULS = 20,
 		MAX_METEORS = 6,
@@ -82,6 +82,9 @@ class CVisuals : public CComponent
 		float m_AlphaScale;
 		float m_Gravity;
 		ColorRGBA m_Color;
+		bool m_Star = false; // drawn as a spinning four-pointed star instead of a soft glow
+		float m_Angle = 0.0f;
+		float m_Spin = 0.0f;
 	};
 
 	// expanding ring at the feet of the tee
@@ -92,6 +95,7 @@ class CVisuals : public CComponent
 		float m_MaxLife;
 		float m_MaxRadius;
 		ColorRGBA m_Color;
+		bool m_Flat = true; // flat ellipse at the feet or a round ring
 	};
 
 	// glowing dot of the firefly field
@@ -107,19 +111,18 @@ class CVisuals : public CComponent
 		int m_Type; // color and behavior
 	};
 
-	// butterfly of the butterfly field
-	struct CButterfly
+	// star of the star field
+	struct CStar
 	{
 		vec2 m_Base;
-		vec2 m_Amp;
-		vec2 m_Freq;
-		vec2 m_Phase;
 		float m_Size;
-		float m_FlapFreq;
+		float m_TwinkleFreq;
+		float m_TwinklePhase;
+		float m_Spin;
 		int m_Type; // color
 	};
 
-	// ghost that rises from the place where a tee died
+	// ghost that rises from the place where a tee was killed
 	struct CSoul
 	{
 		vec2 m_Pos;
@@ -128,6 +131,15 @@ class CVisuals : public CComponent
 		float m_Size;
 		float m_Phase;
 		ColorRGBA m_Color;
+	};
+
+	// black hole of the kill effect
+	struct CBlackHole
+	{
+		vec2 m_Pos;
+		float m_Life;
+		float m_MaxLife;
+		float m_Hue;
 	};
 
 	// shooting star
@@ -139,6 +151,7 @@ class CVisuals : public CComponent
 		float m_MaxLife;
 		float m_Length;
 		float m_Size;
+		float m_EmberTimer;
 	};
 
 	// faded copy of the own tee that is left behind when moving fast
@@ -157,12 +170,17 @@ class CVisuals : public CComponent
 
 	IGraphics::CTextureHandle m_HatTexture;
 	IGraphics::CTextureHandle m_GlowTexture;
+	IGraphics::CTextureHandle m_StarTexture;
+	IGraphics::CTextureHandle m_CircleTexture;
+	IGraphics::CTextureHandle m_SoulTexture;
+	IGraphics::CTextureHandle m_PetWingTexture;
+	IGraphics::CTextureHandle m_aPetTextures[4];
 
 	CFlake m_aFlakes[NUM_FLAKES];
 	CFlake m_aPetals[NUM_PETALS];
 	CFlake m_aBubbles[NUM_BUBBLES];
 	CFirefly m_aFireflies[NUM_FIREFLIES];
-	CButterfly m_aButterflies[NUM_BUTTERFLIES];
+	CStar m_aStars[NUM_STARS];
 	bool m_FlakesInitialized = false;
 	std::vector<CBurstFlake> m_vBurstFlakes;
 	std::vector<CFlash> m_vFlashes;
@@ -170,11 +188,14 @@ class CVisuals : public CComponent
 	std::vector<CSparkle> m_vGlows; // drawn in the world
 	std::vector<CRing> m_vRings;
 	std::vector<CSoul> m_vSouls;
+	std::vector<CBlackHole> m_vBlackHoles;
 	std::vector<CMeteor> m_vMeteors;
 	std::vector<CEcho> m_vEchoes;
 	CRecentLaser m_aRecentLasers[NUM_RECENT_LASERS];
 	int m_NextRecentLaser = 0;
 	float m_MeteorTimer = 1.0f;
+	float m_AutoSkinTimer = 0.0f;
+	float m_CircleAngle = 0.0f;
 
 	// state of the hat animation, all springs are integrated in small fixed steps
 	bool m_HatInitialized = false;
@@ -201,19 +222,22 @@ class CVisuals : public CComponent
 	vec2 m_PetPos = vec2(0.0f, 0.0f);
 	vec2 m_PetVel = vec2(0.0f, 0.0f);
 	float m_PetFacing = 1.0f;
+	vec2 m_PetSpeedShown = vec2(0.0f, 0.0f);
 
 	void InitFlakes();
 	void SpawnBurst(vec2 Pos, vec2 Dir, float Spread, int Num, float MinSpeed, float MaxSpeed);
 	void SpawnFlash(vec2 Pos, float Size, float Life);
-	void SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color);
+	void SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color, bool Flat = true);
+	void SpawnStar(vec2 Pos, vec2 Vel, float Life, float Size, float AlphaScale, ColorRGBA Color, float Gravity = 0.0f);
+	void RenderAurora(const CScreenRect &View) const;
+	void UpdateAutoSkin(float DeltaTime);
+	void DrawFlatCircle(IGraphics::CTextureHandle Texture, vec2 Center, float Radius, float Angle, float Squash, ColorRGBA Color) const;
+	void DrawWavy(IGraphics::CTextureHandle Texture, vec2 Center, float Width, float Height, float Rotation, bool Flip, ColorRGBA Color, float WaveAmp, float WaveSpeed, float Phase) const;
 	void SpawnGlow(vec2 Pos, vec2 Vel, float Life, float Size, float Grow, float AlphaScale, ColorRGBA Color, float Gravity = 0.0f);
 	void StepGlows(std::vector<CSparkle> &vGlows, float DeltaTime);
 	void DrawSprite(IGraphics::CTextureHandle Texture, vec2 Center, float Width, float Height, float Rotation, bool Flip, ColorRGBA Color) const;
 	void DrawFlake(vec2 Center, float Size, float Angle, int Type) const;
-	void DrawGhost(vec2 Center, float Size, ColorRGBA Color, float Phase, float EyeShift) const;
-	void DrawButterfly(vec2 Center, float Size, float Flap, ColorRGBA Color) const;
-	void DrawPet(int Type, vec2 Center, float Size, float Facing, float Alpha) const;
-	void DrawConstellation(vec2 BodyPos, float TeeSize, float Alpha) const;
+	void DrawPet(int Type, vec2 Center, float Size, float Facing, float Alpha, vec2 Vel) const;
 	void RenderGunPredict(const CScreenRect &View) const;
 	void UpdateHat(vec2 LookDir, vec2 Vel, float DeltaTime);
 	void UpdatePet(vec2 BodyPos, float TeeSize, vec2 LookDir, float DeltaTime);
@@ -229,7 +253,7 @@ public:
 	// Called every frame (also when all effects are off) so that the state stays in sync.
 	// Aura and sparkle trail are drawn behind the tee, so this has to be called before the tee is rendered.
 	void RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRGBA TeeColor);
-	// Hat, pet, constellation and effect spawning, drawn on top of the tee. LookDir is the aim direction,
+	// Hat, pet and effect spawning, drawn on top of the tee. LookDir is the aim direction,
 	// Vel the velocity of the tee in units per tick.
 	void RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, float Alpha, vec2 LookDir, vec2 Vel, bool InAir, int Jumped, ColorRGBA TeeColor);
 
@@ -245,7 +269,8 @@ public:
 	void OnExplosion(vec2 Pos);
 	void OnProjectileRendered(vec2 Pos, vec2 Vel, int Weapon, float Alpha);
 	void OnHookRendered(vec2 Pos, vec2 HookPos);
-	void OnDeath(vec2 Pos, int ClientId);
+	// called when a kill message arrives
+	void OnKill(int Killer, int Victim);
 };
 
 #endif

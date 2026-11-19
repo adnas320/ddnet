@@ -74,49 +74,71 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	CUIRect Card = BeginCard(Left, "Новый год", 4);
 	DoToggle(Card, g_Config.m_ClVisualsWinterHat, "Шапка на вашей тишке");
 	DoToggle(Card, g_Config.m_ClVisualsSnow, "Падающий снег");
-	DoToggle(Card, g_Config.m_ClVisualsSnowWeapons, "Снег при попаданиях");
-	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Снег при приземлении", true);
+	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Снег при приземлении");
+	DoToggle(Card, g_Config.m_ClVisualsSnowWeapons, "Космический взрыв при попадании", true);
 
-	Card = BeginCard(Left, "Мир", 5);
+	Card = BeginCard(Left, "Мир", 6);
 	DoToggle(Card, g_Config.m_ClVisualsFireflies, "Светлячки");
 	DoToggle(Card, g_Config.m_ClVisualsPetals, "Лепестки сакуры");
 	DoToggle(Card, g_Config.m_ClVisualsBubbles, "Мыльные пузыри");
-	DoToggle(Card, g_Config.m_ClVisualsButterflies, "Бабочки");
-	DoToggle(Card, g_Config.m_ClVisualsMeteors, "Падающие звёзды", true);
+	DoToggle(Card, g_Config.m_ClVisualsMeteors, "Синие метеоры");
+	DoToggle(Card, g_Config.m_ClVisualsStarfield, "Звёздное небо");
+	DoToggle(Card, g_Config.m_ClVisualsAurora, "Северное сияние", true);
 
 	// средняя колонка
-	Card = BeginCard(Middle, "Эффекты", 6);
+	Card = BeginCard(Middle, "Эффекты тишки", 6);
 	DoToggle(Card, g_Config.m_ClVisualsAura, "Аура цвета скина");
 	DoToggle(Card, g_Config.m_ClVisualsTrail, "Радужный след");
 	DoToggle(Card, g_Config.m_ClVisualsJumpRings, "Кольца при прыжке");
 	DoToggle(Card, g_Config.m_ClVisualsEcho, "Эхо-силуэты на скорости");
-	DoToggle(Card, g_Config.m_ClVisualsStars, "Созвездие над тишкой");
+	DoToggle(Card, g_Config.m_ClVisualsMagicCircle, "Магический круг под ногами");
 	DoToggle(Card, g_Config.m_ClVisualsDust, "Пыль при беге", true);
 
 	Card = BeginCard(Middle, "Питомец", 1);
 	{
 		static CButtonContainer s_PetButton;
-		const char *apPetNames[4] = {"Выключен", "Призрак", "Котик", "Летучая мышь"};
+		const char *apPetNames[5] = {"Выключен", "Котик", "Дракончик", "Лисёнок", "Медуза"};
 		char aText[64];
-		str_format(aText, sizeof(aText), "Питомец: %s", apPetNames[std::clamp(g_Config.m_ClVisualsPet, 0, 3)]);
+		str_format(aText, sizeof(aText), "Питомец: %s", apPetNames[std::clamp(g_Config.m_ClVisualsPet, 0, 4)]);
 		CUIRect Button = NextRow(Card, true);
 		if(DoButton_Menu(&s_PetButton, aText, 0, &Button))
-			g_Config.m_ClVisualsPet = (g_Config.m_ClVisualsPet + 1) % 4;
+			g_Config.m_ClVisualsPet = (g_Config.m_ClVisualsPet + 1) % 5;
+	}
+
+	Card = BeginCard(Middle, "Автосмена скина", 2);
+	{
+		static CButtonContainer s_AutoSkinButton;
+		const char *apModes[3] = {"Выключена", "Меняет цвета скина", "Меняет весь скин"};
+		char aText[64];
+		str_format(aText, sizeof(aText), "Режим: %s", apModes[std::clamp(g_Config.m_ClVisualsAutoSkin, 0, 2)]);
+		CUIRect Button = NextRow(Card, false);
+		if(DoButton_Menu(&s_AutoSkinButton, aText, 0, &Button))
+			g_Config.m_ClVisualsAutoSkin = (g_Config.m_ClVisualsAutoSkin + 1) % 3;
+		CUIRect Row = NextRow(Card, true);
+		Ui()->DoScrollbarOption(&g_Config.m_ClVisualsAutoSkinInterval, &g_Config.m_ClVisualsAutoSkinInterval, &Row, "Каждые", 5, 120, &CUi::ms_LinearScrollbarScale, 0u, " сек");
 	}
 
 	// правая колонка
-	Card = BeginCard(Right, "Оружие", 4);
-	DoToggle(Card, g_Config.m_ClVisualsGrenadeTrail, "Огонь за гранатой");
-	DoToggle(Card, g_Config.m_ClVisualsBulletTrail, "Спираль за пулями");
-	DoToggle(Card, g_Config.m_ClVisualsLaserSparks, "Искры на лазере");
-	DoToggle(Card, g_Config.m_ClVisualsHookSparks, "Искры на хуке", true);
+	Card = BeginCard(Right, "Космическое оружие (RGB)", 4);
+	DoToggle(Card, g_Config.m_ClVisualsGrenadeTrail, "Плазменный шлейф гранаты");
+	DoToggle(Card, g_Config.m_ClVisualsBulletTrail, "RGB-комета за пулями");
+	DoToggle(Card, g_Config.m_ClVisualsLaserSparks, "Звёздная пыль лазера");
+	DoToggle(Card, g_Config.m_ClVisualsHookSparks, "Астральная цепь хука", true);
 
-	Card = BeginCard(Right, "Смерть", 2);
-	DoToggle(Card, g_Config.m_ClVisualsDeathSoul, "Призрак над местом");
-	DoToggle(Card, g_Config.m_ClVisualsDeathFirework, "Фейерверк", true);
+	Card = BeginCard(Right, "Эффект убийства", 2);
+	{
+		static CButtonContainer s_KillButton;
+		const char *apKills[5] = {"Выключен", "Астральный взрыв", "Сверхновая", "Чёрная дыра", "Призрак"};
+		char aText[64];
+		str_format(aText, sizeof(aText), "Эффект: %s", apKills[std::clamp(g_Config.m_ClVisualsKillEffect, 0, 4)]);
+		CUIRect Button = NextRow(Card, false);
+		if(DoButton_Menu(&s_KillButton, aText, 0, &Button))
+			g_Config.m_ClVisualsKillEffect = (g_Config.m_ClVisualsKillEffect + 1) % 5;
+		DoToggle(Card, g_Config.m_ClVisualsKillOwnOnly, "Только мои убийства", true);
+	}
 
-	Card = BeginCard(Right, "Ник в таблице (Tab)", 5);
-	DoToggle(Card, g_Config.m_ClVisualsNameShimmer, "Переливающийся ник");
+	Card = BeginCard(Right, "Переливающийся ник (в игре и в Tab)", 5);
+	DoToggle(Card, g_Config.m_ClVisualsNameShimmer, "Переливающиеся ники у всех");
 	static CButtonContainer s_Color1Reset, s_Color2Reset, s_Color3Reset;
 	DoColor(Card, s_Color1Reset, g_Config.m_ClVisualsNameColor1, 14942130u, "Цвет 1");
 	DoColor(Card, s_Color2Reset, g_Config.m_ClVisualsNameColor2, 8847270u, "Цвет 2");
