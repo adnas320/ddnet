@@ -7,6 +7,7 @@
 #include <game/mapitems.h>
 
 #include <algorithm>
+#include <chrono>
 #include <random>
 
 void CEditor::FillGameTiles(EGameTileOp FillTile) const
@@ -46,7 +47,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		return;
 	}
 
-	std::mt19937 Rng(m_GeneratorSeed++ * 2654435761u + (unsigned)time_get());
+	std::mt19937 Rng(m_GeneratorSeed++ * 2654435761u + (unsigned)std::chrono::steady_clock::now().time_since_epoch().count());
 	const auto Rand = [&](int Min, int Max) { return std::uniform_int_distribution<int>(Min, Max)(Rng); };
 
 	// local buffer, everything is solid at the start
