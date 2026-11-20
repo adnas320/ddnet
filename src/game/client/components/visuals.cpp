@@ -50,9 +50,6 @@ void CVisuals::OnInit()
 	m_StarTexture = Graphics()->LoadTexture("visuals/star.png", IStorage::TYPE_ALL);
 	m_CircleTexture = Graphics()->LoadTexture("visuals/circle.png", IStorage::TYPE_ALL);
 	m_SoulTexture = Graphics()->LoadTexture("visuals/soul.png", IStorage::TYPE_ALL);
-	static const char *s_apPetFiles[5] = {"visuals/pet_bunny.png", "visuals/pet_frog.png", "visuals/pet_duck.png", "visuals/pet_slime.png", "visuals/pet_cat.png"};
-	for(int i = 0; i < 5; i++)
-		m_aPetTextures[i] = Graphics()->LoadTexture(s_apPetFiles[i], IStorage::TYPE_ALL);
 }
 
 void CVisuals::OnReset()
@@ -67,6 +64,8 @@ void CVisuals::OnReset()
 	m_vMeteors.clear();
 	m_vEchoes.clear();
 	m_AutoSkinTimer = 0.0f;
+	m_vBalloons.clear();
+	m_PetCelebrate = 0.0f;
 	m_PetInitialized = false;
 	m_JumpedInitialized = false;
 	m_FlakesInitialized = false;
@@ -549,8 +548,8 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 	// pet
 	if(g_Config.m_ClVisualsPet > 0)
 	{
-		UpdatePet(BodyPos, TeeSize, LookDir, DeltaTime);
-		DrawPet(g_Config.m_ClVisualsPet, m_PetPos, 0.95f * TeeSize, m_PetFacing, Alpha, m_PetVel);
+		UpdatePet(Position, TeeSize, LookDir, Vel, Jumped, DeltaTime);
+		DrawPanda(m_PetPos, 0.7f * TeeSize, Alpha, m_PetVel);
 	}
 	else
 		m_PetInitialized = false;
@@ -711,52 +710,311 @@ void CVisuals::DrawFlake(vec2 Center, float Size, float Angle, int Type) const
 	}
 }
 
-void CVisuals::UpdatePet(vec2 BodyPos, float TeeSize, vec2 LookDir, float DeltaTime)
+void CVisuals::OnFinish()
 {
-	if(LookDir.x > 0.2f)
-		m_PetFacing = 1.0f;
-	else if(LookDir.x < -0.2f)
-		m_PetFacing = -1.0f;
+	if(g_Config.m_ClVisualsPet <= 0)
+		return;
+	m_PetCelebrate = 20.0f;
+	m_PetSpawnBalloons = true;
+	m_AfkTimer = 0.0f;
+}
 
-	// the pet hovers behind the shoulder of the tee and follows it on a soft spring
+void CVisuals::UpdatePet(vec2 Position, float TeeSize, vec2 LookDir, vec2 Vel, int Jumped, float DeltaTime)
+{
+	// the owner turns around: the panda rolls over to the other side
+	float Desired = m_PetFacing;
+	if(LookDir.x > 0.2f)
+		Desired = 1.0f;
+	else if(LookDir.x < -0.2f)
+		Desired = -1.0f;
+	if(Desired != m_PetFacing)
+	{
+		m_PetFacing = Desired;
+		m_PetRoll = m_PetSleep > 0.5f ? 1.0f : 0.0f;
+	}
+	m_PetRoll = std::min(1.0f, m_PetRoll + DeltaTime / 0.75f);
+	m_PetFacingShown = m_PetRoll < 0.5f ? -m_PetFacing : m_PetFacing;
+	if(m_PetRoll >= 1.0f)
+		m_PetFacingShown = m_PetFacing;
+
+	// afk detection: any movement, aiming or input wakes the panda
+	const CNetObj_PlayerInput &Input = GameClient()->m_Controls.m_aInputData[g_Config.m_ClDummy];
+	const int InputBits = Input.m_Direction * 8 + Input.m_Jump * 2 + Input.m_Hook * 4 + Input.m_Fire * 16 + Jumped * 64;
+	const bool Active = distance(Position, m_AfkLastPos) > 0.5f || distance(LookDir, m_AfkLastLook) > 0.01f || InputBits != m_AfkLastInput || length(Vel) > 0.1f;
+	m_AfkLastPos = Position;
+	m_AfkLastLook = LookDir;
+	m_AfkLastInput = InputBits;
+	if(Active)
+	{
+		if(m_PetSleep > 0.5f)
+			m_PetWake = 1.0f;
+		m_AfkTimer = 0.0f;
+	}
+	else
+		m_AfkTimer += DeltaTime;
+	const float SleepTarget = m_AfkTimer > 300.0f ? 1.0f : 0.0f;
+	m_PetSleep += std::clamp(SleepTarget - m_PetSleep, -DeltaTime / 0.8f, DeltaTime / 1.6f);
+	m_PetWake = std::max(0.0f, m_PetWake - DeltaTime / 0.9f);
+
+	// the panda stands on the ground behind the owner and follows on a soft spring
 	const float Time = Client()->LocalTime();
-	const vec2 Target = BodyPos + vec2(-m_PetFacing * 1.4f * TeeSize, -1.0f * TeeSize + std::sin(Time * 2.6f) * 0.1f * TeeSize);
+	const vec2 Target = vec2(Position.x - m_PetFacing * 1.5f * TeeSize, Position.y + 14.0f);
 	if(!m_PetInitialized || distance(m_PetPos, Target) > 700.0f)
 	{
 		m_PetInitialized = true;
 		m_PetPos = Target;
 		m_PetVel = vec2(0.0f, 0.0f);
-		return;
 	}
-	const int Steps = std::clamp((int)std::ceil(DeltaTime / (1.0f / 120.0f)), 1, 12);
-	const float Step = DeltaTime / Steps;
-	for(int i = 0; i < Steps; i++)
+	else
 	{
-		m_PetVel += ((Target - m_PetPos) * 45.0f - m_PetVel * 9.0f) * Step;
-		m_PetPos += m_PetVel * Step;
+		const int Steps = std::clamp((int)std::ceil(DeltaTime / (1.0f / 120.0f)), 1, 12);
+		const float Step = DeltaTime / Steps;
+		for(int i = 0; i < Steps; i++)
+		{
+			m_PetVel += ((Target - m_PetPos) * 30.0f - m_PetVel * 8.0f) * Step;
+			m_PetPos += m_PetVel * Step;
+		}
 	}
+	m_PetWalk += std::fabs(m_PetVel.x) * DeltaTime * 0.045f;
+
+	// party: balloons fly up next to the panda
+	if(m_PetSpawnBalloons)
+	{
+		m_PetSpawnBalloons = false;
+		static const ColorRGBA s_aColors[6] = {ColorRGBA(1.0f, 0.3f, 0.35f, 1.0f), ColorRGBA(1.0f, 0.8f, 0.2f, 1.0f), ColorRGBA(0.3f, 0.85f, 0.4f, 1.0f), ColorRGBA(0.3f, 0.6f, 1.0f, 1.0f), ColorRGBA(0.8f, 0.4f, 1.0f, 1.0f), ColorRGBA(1.0f, 0.55f, 0.8f, 1.0f)};
+		for(int i = 0; i < 9; i++)
+		{
+			CBalloon Balloon;
+			Balloon.m_Pos = m_PetPos + vec2(random_float(-1.0f, 1.0f) * 0.9f * TeeSize, -0.4f * TeeSize);
+			Balloon.m_Vel = vec2(random_float(-8.0f, 8.0f), -random_float(35.0f, 70.0f));
+			Balloon.m_Life = random_float(5.0f, 8.0f);
+			Balloon.m_Phase = random_float(0.0f, 6.28f);
+			Balloon.m_Color = s_aColors[i % 6];
+			m_vBalloons.push_back(Balloon);
+		}
+		for(int i = 0; i < 14; i++)
+			SpawnGlow(m_PetPos + vec2(0.0f, -0.6f * TeeSize), vec2(random_float(-90.0f, 90.0f), -random_float(60.0f, 160.0f)), 1.2f, 5.0f, -0.5f, 0.9f, s_aColors[i % 6], 220.0f);
+	}
+	for(CBalloon &Balloon : m_vBalloons)
+	{
+		Balloon.m_Life -= DeltaTime;
+		Balloon.m_Pos += Balloon.m_Vel * DeltaTime;
+		Balloon.m_Pos.x += std::sin(Time * 1.7f + Balloon.m_Phase) * 12.0f * DeltaTime;
+	}
+	m_vBalloons.erase(std::remove_if(m_vBalloons.begin(), m_vBalloons.end(), [](const CBalloon &B) { return B.m_Life <= 0.0f; }), m_vBalloons.end());
+	m_PetCelebrate = std::max(0.0f, m_PetCelebrate - DeltaTime);
 }
 
-void CVisuals::DrawPet(int Type, vec2 Center, float Size, float Facing, float Alpha, vec2 Vel) const
+// A panda made of shapes, drawn on four legs. Feet is the point on the ground below the middle of the body.
+void CVisuals::DrawPanda(vec2 Feet, float Size, float Alpha, vec2 Vel) const
 {
 	const float Time = Client()->LocalTime();
-	const int Index = std::clamp(Type, 1, 5) - 1;
-	const float Tilt = std::clamp(Vel.x * 0.0012f, -0.2f, 0.2f);
+	const float Sleep = m_PetSleep;
+	const bool Celebrating = m_PetCelebrate > 0.0f;
+	const float Facing = m_PetFacingShown;
 
-	// soft light under the pet
-	Graphics()->BlendAdditive();
-	DrawSprite(m_GlowTexture, Center, Size * 1.5f, Size * 1.5f, 0.0f, false, ColorRGBA(1.0f, 0.85f, 1.0f, 0.18f * Alpha));
-	Graphics()->BlendNormal();
+	// roll over: a full somersault around the body while the panda hops a bit
+	const float RollT = m_PetRoll;
+	const float RollAngle = RollT < 1.0f ? RollT * 2.0f * pi * (m_PetFacing > 0.0f ? 1.0f : -1.0f) : 0.0f;
+	const float RollHop = RollT < 1.0f ? std::sin(RollT * pi) * 0.45f : 0.0f;
+	// idle: sways from side to side and breathes, the party makes it jump
+	const float Sway = (1.0f - Sleep) * std::sin(Time * 1.7f) * 0.05f;
+	const float Breath = 1.0f + 0.018f * std::sin(Time * (Sleep > 0.5f ? 1.2f : 2.4f));
+	const float Jump = Celebrating ? std::fabs(std::sin(Time * 6.0f)) * 0.32f : 0.0f;
+	const float WakeJump = m_PetWake > 0.0f ? std::sin(m_PetWake * pi) * 0.25f : 0.0f;
+	const float Lift = RollHop + Jump + WakeJump;
+	const float Squash = 1.0f - Sleep * 0.22f;
+	const float Walk = std::min(1.0f, std::fabs(Vel.x) / 120.0f) * (1.0f - Sleep);
 
-	// small hops with a squash when it lands
-	const float HopPhase = std::fmod(Time * 1.6f + Index * 0.37f, 1.0f);
-	const float Hop = std::sin(HopPhase * pi) * 0.14f * Size;
-	const float Squash = HopPhase > 0.85f ? (HopPhase - 0.85f) / 0.15f : 0.0f;
-	const float Width = Size * (1.0f + 0.06f * Squash);
-	const float Height = Size * (1.0f - 0.06f * Squash + 0.03f * std::sin(HopPhase * pi));
-	// the duckling looks to the right, so it turns with the tee
-	const bool Flip = Index == 2 && Facing < 0.0f;
-	DrawSprite(m_aPetTextures[Index], Center + vec2(0.0f, -Hop), Width, Height, Tilt, Flip, ColorRGBA(1.0f, 1.0f, 1.0f, Alpha));
+	const float Rot = RollAngle + Sway;
+	const vec2 Pivot(0.0f, -0.4f);
+	const float CosR = std::cos(Rot), SinR = std::sin(Rot);
+	// local coordinates: x forward, y up is negative, one unit is Size
+	const auto Tr = [&](vec2 P) {
+		P.y *= Squash * Breath;
+		const vec2 D = P - Pivot;
+		const vec2 R(D.x * CosR - D.y * SinR, D.x * SinR + D.y * CosR);
+		const vec2 W = Pivot + R;
+		return Feet + vec2(W.x * Facing * Size, (W.y - Lift) * Size + Sleep * 0.03f * Size);
+	};
+
+	const ColorRGBA White(0.98f, 0.98f, 0.98f, Alpha);
+	const ColorRGBA Black(0.1f, 0.1f, 0.12f, Alpha);
+	const ColorRGBA FarBlack(0.2f, 0.2f, 0.23f, Alpha);
+	const ColorRGBA Pink(1.0f, 0.62f, 0.7f, 0.85f * Alpha);
+
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+
+	const auto Ellipse = [&](vec2 C, float Rx, float Ry, float Angle, ColorRGBA Color) {
+		Graphics()->SetColor(Color);
+		constexpr int N = 18;
+		const float Ca = std::cos(Angle), Sa = std::sin(Angle);
+		vec2 aP[N + 1];
+		for(int i = 0; i <= N; i++)
+		{
+			const float T = 2.0f * pi * i / N;
+			const float X = std::cos(T) * Rx, Y = std::sin(T) * Ry;
+			aP[i] = Tr(C + vec2(X * Ca - Y * Sa, X * Sa + Y * Ca));
+		}
+		const vec2 Center = Tr(C);
+		for(int i = 0; i < N; i++)
+		{
+			const IGraphics::CFreeformItem Item(Center, aP[i], aP[i + 1], aP[i + 1]);
+			Graphics()->QuadsDrawFreeform(&Item, 1);
+		}
+	};
+	const auto Line = [&](vec2 A, vec2 B, float Width, ColorRGBA Color) {
+		Graphics()->SetColor(Color);
+		const vec2 PA = Tr(A), PB = Tr(B);
+		vec2 Dir = PB - PA;
+		const float Len = length(Dir);
+		if(Len < 0.001f)
+			return;
+		Dir /= Len;
+		const vec2 Nrm(-Dir.y, Dir.x);
+		const float W = Width * Size * 0.5f;
+		const IGraphics::CFreeformItem Item(PA + Nrm * W, PA - Nrm * W, PB + Nrm * W, PB - Nrm * W);
+		Graphics()->QuadsDrawFreeform(&Item, 1);
+	};
+	const auto Tri = [&](vec2 A, vec2 B, vec2 C, ColorRGBA Color) {
+		Graphics()->SetColor(Color);
+		const IGraphics::CFreeformItem Item(Tr(A), Tr(B), Tr(C), Tr(C));
+		Graphics()->QuadsDrawFreeform(&Item, 1);
+	};
+
+	// shadow on the ground
+	Graphics()->SetColor(0.0f, 0.0f, 0.0f, 0.18f * Alpha);
+	{
+		constexpr int N = 14;
+		const float Shadow = Size * (0.5f - Lift * 0.3f);
+		vec2 aP[N + 1];
+		for(int i = 0; i <= N; i++)
+			aP[i] = Feet + vec2(std::cos(2.0f * pi * i / N) * Shadow, std::sin(2.0f * pi * i / N) * Shadow * 0.18f);
+		for(int i = 0; i < N; i++)
+		{
+			const IGraphics::CFreeformItem Item(Feet, aP[i], aP[i + 1], aP[i + 1]);
+			Graphics()->QuadsDrawFreeform(&Item, 1);
+		}
+	}
+
+	// legs, the far ones a little lighter. Lying down they fold under the body.
+	const float LegLen = 0.17f * (1.0f - Sleep * 0.7f);
+	const float aLegX[4] = {-0.34f, -0.2f, 0.2f, 0.34f};
+	for(int i = 0; i < 4; i++)
+	{
+		const bool Far = i == 1 || i == 3;
+		const float Swing = std::sin(m_PetWalk * 2.0f * pi + (i == 0 || i == 3 ? 0.0f : pi)) * 0.07f * Walk;
+		const float Up = std::max(0.0f, std::cos(m_PetWalk * 2.0f * pi + (i == 0 || i == 3 ? 0.0f : pi))) * 0.05f * Walk;
+		Ellipse(vec2(aLegX[i] + Swing, -LegLen * 0.8f - Up), 0.085f, LegLen, 0.0f, Far ? FarBlack : Black);
+	}
+
+	// tail
+	const float TailWag = std::sin(Time * 4.0f) * 0.03f * (Celebrating ? 3.0f : 1.0f);
+	Ellipse(vec2(-0.45f, -0.43f + TailWag), 0.07f, 0.065f, 0.0f, White);
+
+	// body with black shoulders and hips
+	const float BodyY = -0.33f - LegLen * 0.1f;
+	Ellipse(vec2(0.0f, BodyY - 0.05f), 0.43f, 0.27f, 0.0f, White);
+	Ellipse(vec2(0.2f, BodyY - 0.03f), 0.11f, 0.2f, 0.0f, Black);
+	Ellipse(vec2(-0.3f, BodyY - 0.02f), 0.1f, 0.17f, 0.0f, Black);
+
+	// head, nodding a little. Asleep it rests low.
+	const float Nod = (1.0f - Sleep) * std::sin(Time * 2.2f + 0.8f) * 0.02f + Sleep * 0.1f;
+	const vec2 Head(0.38f, -0.6f + Nod);
+	// ears (they twitch every now and then)
+	const float Twitch = std::fmod(Time, 4.0f) < 0.25f ? std::sin(std::fmod(Time, 4.0f) * 25.0f) * 0.03f : 0.0f;
+	Ellipse(Head + vec2(-0.14f, -0.22f + Twitch), 0.08f, 0.08f, 0.0f, Black);
+	Ellipse(Head + vec2(0.16f, -0.21f), 0.08f, 0.08f, 0.0f, Black);
+	Ellipse(Head, 0.27f, 0.23f, 0.0f, White);
+	// eye patches
+	Ellipse(Head + vec2(-0.09f, 0.0f), 0.065f, 0.085f, 0.45f, Black);
+	Ellipse(Head + vec2(0.15f, 0.0f), 0.065f, 0.085f, -0.45f, Black);
+	// eyes: they blink, look happy when partying and are closed when asleep
+	const bool Blink = std::fmod(Time + 1.3f, 3.5f) < 0.12f;
+	const vec2 aEye[2] = {Head + vec2(-0.085f, -0.005f), Head + vec2(0.145f, -0.005f)};
+	for(const vec2 &Eye : aEye)
+	{
+		if(Sleep > 0.5f || Blink || Celebrating)
+		{
+			// closed (or happy) eye: a small arc
+			const float Curve = Celebrating && Sleep < 0.5f ? -0.03f : 0.025f;
+			Line(Eye + vec2(-0.035f, 0.0f), Eye + vec2(0.0f, Curve), 0.018f, White);
+			Line(Eye + vec2(0.0f, Curve), Eye + vec2(0.035f, 0.0f), 0.018f, White);
+		}
+		else
+		{
+			Ellipse(Eye, 0.03f, 0.034f, 0.0f, White);
+			Ellipse(Eye + vec2(0.006f, 0.004f), 0.015f, 0.018f, 0.0f, Black);
+		}
+	}
+	// nose, mouth and cheeks
+	Ellipse(Head + vec2(0.1f, 0.09f), 0.04f, 0.028f, 0.0f, Black);
+	Line(Head + vec2(0.1f, 0.115f), Head + vec2(0.1f, 0.135f), 0.012f, Black);
+	Line(Head + vec2(0.06f, 0.15f), Head + vec2(0.1f, 0.14f), 0.012f, Black);
+	Line(Head + vec2(0.1f, 0.14f), Head + vec2(0.14f, 0.15f), 0.012f, Black);
+	Ellipse(Head + vec2(-0.13f, 0.08f), 0.045f, 0.03f, 0.0f, Pink);
+	Ellipse(Head + vec2(0.2f, 0.08f), 0.045f, 0.03f, 0.0f, Pink);
+
+	// party hat on the head
+	if(Celebrating)
+	{
+		const vec2 Base = Head + vec2(0.02f, -0.19f);
+		Tri(Base + vec2(-0.12f, 0.0f), Base + vec2(0.12f, 0.0f), Base + vec2(0.0f, -0.3f), ColorRGBA(1.0f, 0.4f, 0.55f, Alpha));
+		Tri(Base + vec2(-0.06f, -0.1f), Base + vec2(-0.02f, -0.2f), Base + vec2(0.0f, -0.1f), ColorRGBA(1.0f, 0.9f, 0.3f, Alpha));
+		Tri(Base + vec2(0.0f, -0.18f), Base + vec2(0.06f, -0.1f), Base + vec2(0.09f, -0.18f), ColorRGBA(0.4f, 0.8f, 1.0f, Alpha));
+		Ellipse(Base + vec2(0.0f, -0.31f), 0.05f, 0.05f, 0.0f, ColorRGBA(1.0f, 0.95f, 0.5f, Alpha));
+	}
+
+	// sleeping: floating Z letters
+	if(Sleep > 0.5f)
+	{
+		for(int i = 0; i < 3; i++)
+		{
+			const float Phase = std::fmod(Time * 0.45f + i / 3.0f, 1.0f);
+			const float Scale = (0.5f + Phase * 0.7f) * 0.12f;
+			const vec2 Pos(0.55f + Phase * 0.3f, -0.95f - Phase * 0.55f);
+			const float A = std::sin(Phase * pi) * Sleep * Alpha;
+			const ColorRGBA ZColor(0.75f, 0.85f, 1.0f, A);
+			Line(Pos + vec2(-Scale, -Scale), Pos + vec2(Scale, -Scale), Scale * 0.3f, ZColor);
+			Line(Pos + vec2(Scale, -Scale), Pos + vec2(-Scale, Scale), Scale * 0.3f, ZColor);
+			Line(Pos + vec2(-Scale, Scale), Pos + vec2(Scale, Scale), Scale * 0.3f, ZColor);
+		}
+	}
+
+	// balloons of the party, they live in world coordinates
+	for(const CBalloon &Balloon : m_vBalloons)
+	{
+		const float Fade = std::min(1.0f, Balloon.m_Life);
+		const ColorRGBA Color(Balloon.m_Color.r, Balloon.m_Color.g, Balloon.m_Color.b, Fade * Alpha);
+		const float Rx = Size * 0.17f, Ry = Size * 0.21f;
+		Graphics()->SetColor(Color);
+		constexpr int N = 16;
+		vec2 aP[N + 1];
+		for(int i = 0; i <= N; i++)
+			aP[i] = Balloon.m_Pos + vec2(std::cos(2.0f * pi * i / N) * Rx, std::sin(2.0f * pi * i / N) * Ry);
+		for(int i = 0; i < N; i++)
+		{
+			const IGraphics::CFreeformItem Item(Balloon.m_Pos, aP[i], aP[i + 1], aP[i + 1]);
+			Graphics()->QuadsDrawFreeform(&Item, 1);
+		}
+		// highlight, knot and string
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.5f * Fade * Alpha);
+		const vec2 Shine = Balloon.m_Pos + vec2(-Rx * 0.4f, -Ry * 0.4f);
+		const IGraphics::CFreeformItem ShineItem(Shine + vec2(-2.0f, 0.0f), Shine + vec2(0.0f, -2.0f), Shine + vec2(0.0f, 2.0f), Shine + vec2(2.0f, 0.0f));
+		Graphics()->QuadsDrawFreeform(&ShineItem, 1);
+		Graphics()->SetColor(Color);
+		const vec2 Knot = Balloon.m_Pos + vec2(0.0f, Ry);
+		const IGraphics::CFreeformItem KnotItem(Knot, Knot + vec2(-3.0f, 5.0f), Knot + vec2(3.0f, 5.0f), Knot + vec2(3.0f, 5.0f));
+		Graphics()->QuadsDrawFreeform(&KnotItem, 1);
+		Graphics()->SetColor(0.9f, 0.9f, 0.9f, 0.7f * Fade * Alpha);
+		const vec2 StringEnd = Knot + vec2(std::sin(Time * 2.0f + Balloon.m_Phase) * 5.0f, Size * 0.45f);
+		const IGraphics::CFreeformItem StringItem(Knot + vec2(-0.5f, 5.0f), Knot + vec2(0.5f, 5.0f), StringEnd + vec2(-0.5f, 0.0f), StringEnd + vec2(0.5f, 0.0f));
+		Graphics()->QuadsDrawFreeform(&StringItem, 1);
+	}
+
+	Graphics()->QuadsEnd();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 ColorRGBA CVisuals::NameShimmerColor(int CharIndex) const

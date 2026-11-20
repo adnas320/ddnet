@@ -107,12 +107,9 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	Card = BeginCard(Middle, "Питомец", 1);
 	{
 		static CButtonContainer s_PetButton;
-		const char *apPetNames[6] = {"Выключен", "Зайка", "Лягушонок", "Утёнок", "Слайм", "Рыжий кот"};
-		char aText[64];
-		str_format(aText, sizeof(aText), "Питомец: %s", apPetNames[std::clamp(g_Config.m_ClVisualsPet, 0, 5)]);
 		CUIRect Button = NextRow(Card, true);
-		if(DoButton_Menu(&s_PetButton, aText, 0, &Button))
-			g_Config.m_ClVisualsPet = (g_Config.m_ClVisualsPet + 1) % 6;
+		if(DoButton_CheckBox(&s_PetButton, "Панда-питомец (спит при AFK, празднует финиш)", g_Config.m_ClVisualsPet != 0, &Button))
+			g_Config.m_ClVisualsPet = g_Config.m_ClVisualsPet != 0 ? 0 : 1;
 	}
 
 	Card = BeginCard(Middle, "Автосмена скина", 2);

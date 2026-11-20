@@ -835,7 +835,7 @@ MACRO_CONFIG_INT(ClVisualsBulletTrail, cl_visuals_bullet_trail, 0, 0, 1, CFGFLAG
 MACRO_CONFIG_INT(ClVisualsLaserSparks, cl_visuals_laser_sparks, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Let electric sparks jump off lasers")
 MACRO_CONFIG_INT(ClVisualsHookSparks, cl_visuals_hook_sparks, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Let sparks run along your hook")
 MACRO_CONFIG_INT(ClVisualsEcho, cl_visuals_echo, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Leave faded copies of your tee behind when moving fast")
-MACRO_CONFIG_INT(ClVisualsPet, cl_visuals_pet, 0, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pet that follows your tee (0 = off)")
+MACRO_CONFIG_INT(ClVisualsPet, cl_visuals_pet, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pet that follows your tee (0 = off)")
 MACRO_CONFIG_INT(ClVisualsNameSpeed, cl_visuals_name_speed, 4, 1, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Speed of the shimmering name")
 MACRO_CONFIG_COL(ClVisualsNameColor1, cl_visuals_name_color1, 14942130, CFGFLAG_CLIENT | CFGFLAG_SAVE, "First color of the shimmering name")
 MACRO_CONFIG_COL(ClVisualsNameColor2, cl_visuals_name_color2, 8847270, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Second color of the shimmering name")

@@ -173,7 +173,6 @@ class CVisuals : public CComponent
 	IGraphics::CTextureHandle m_StarTexture;
 	IGraphics::CTextureHandle m_CircleTexture;
 	IGraphics::CTextureHandle m_SoulTexture;
-	IGraphics::CTextureHandle m_aPetTextures[5];
 
 	CFlake m_aFlakes[NUM_FLAKES];
 	CFlake m_aPetals[NUM_PETALS];
@@ -224,6 +223,27 @@ class CVisuals : public CComponent
 	vec2 m_PetVel = vec2(0.0f, 0.0f);
 	float m_PetFacing = 1.0f;
 	vec2 m_PetSpeedShown = vec2(0.0f, 0.0f);
+	float m_PetFacingShown = 1.0f; // facing while rolling over
+	float m_PetRoll = 1.0f; // 0..1 progress of the roll when the owner turns around
+	float m_PetSleep = 0.0f; // 0 awake, 1 asleep
+	float m_PetWalk = 0.0f;
+	float m_PetCelebrate = 0.0f; // seconds left of the party after finishing
+	float m_PetWake = 0.0f; // stretch after waking up
+	bool m_PetSpawnBalloons = false;
+	float m_AfkTimer = 0.0f;
+	vec2 m_AfkLastPos = vec2(0.0f, 0.0f);
+	vec2 m_AfkLastLook = vec2(0.0f, 0.0f);
+	int m_AfkLastInput = 0;
+
+	struct CBalloon
+	{
+		vec2 m_Pos;
+		vec2 m_Vel;
+		float m_Life;
+		float m_Phase;
+		ColorRGBA m_Color;
+	};
+	std::vector<CBalloon> m_vBalloons;
 
 	void InitFlakes();
 	void SpawnBurst(vec2 Pos, vec2 Dir, float Spread, int Num, float MinSpeed, float MaxSpeed);
@@ -240,10 +260,10 @@ class CVisuals : public CComponent
 	void StepGlows(std::vector<CSparkle> &vGlows, float DeltaTime);
 	void DrawSprite(IGraphics::CTextureHandle Texture, vec2 Center, float Width, float Height, float Rotation, bool Flip, ColorRGBA Color) const;
 	void DrawFlake(vec2 Center, float Size, float Angle, int Type) const;
-	void DrawPet(int Type, vec2 Center, float Size, float Facing, float Alpha, vec2 Vel) const;
+	void DrawPanda(vec2 Feet, float Size, float Alpha, vec2 Vel) const;
 	void RenderGunPredict(const CScreenRect &View) const;
 	void UpdateHat(vec2 LookDir, vec2 Vel, float DeltaTime);
-	void UpdatePet(vec2 BodyPos, float TeeSize, vec2 LookDir, float DeltaTime);
+	void UpdatePet(vec2 Position, float TeeSize, vec2 LookDir, vec2 Vel, int Jumped, float DeltaTime);
 	ColorRGBA Rainbow(float Offset) const;
 
 public:
@@ -276,6 +296,8 @@ public:
 	void OnHookRendered(vec2 Pos, vec2 HookPos);
 	// called when a kill message arrives
 	void OnKill(int Killer, int Victim);
+	// called when the own tee finishes the map: the panda celebrates
+	void OnFinish();
 	// puts back the skin and colors you had before the automatic changes
 	void RestoreSkin();
 	// remembers the current skin and colors as your own

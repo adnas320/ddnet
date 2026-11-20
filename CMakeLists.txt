@@ -2067,11 +2067,6 @@ set(EXPECTED_DATA
   touch_controls.json
   visuals/circle.png
   visuals/glow.png
-  visuals/pet_bunny.png
-  visuals/pet_cat.png
-  visuals/pet_duck.png
-  visuals/pet_frog.png
-  visuals/pet_slime.png
   visuals/soul.png
   visuals/star.png
   visuals/winter_hat.png
