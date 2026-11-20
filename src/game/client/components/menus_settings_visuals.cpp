@@ -86,12 +86,11 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClVisualsAurora, "Северное сияние", true);
 
 	// средняя колонка
-	Card = BeginCard(Middle, "Эффекты тишки", 6);
+	Card = BeginCard(Middle, "Эффекты тишки", 5);
 	DoToggle(Card, g_Config.m_ClVisualsAura, "Аура цвета скина");
 	DoToggle(Card, g_Config.m_ClVisualsTrail, "Радужный след");
 	DoToggle(Card, g_Config.m_ClVisualsJumpRings, "Кольца при прыжке");
 	DoToggle(Card, g_Config.m_ClVisualsEcho, "Эхо-силуэты на скорости");
-	DoToggle(Card, g_Config.m_ClVisualsMagicCircle, "Магический круг под ногами");
 	DoToggle(Card, g_Config.m_ClVisualsDust, "Пыль при беге", true);
 
 	Card = BeginCard(Middle, "Плащ", 1);

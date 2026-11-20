@@ -60,10 +60,21 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 				At(x, y) = TILE_AIR;
 	};
 
+	// difficulty: 0 = novice, 1 = moderate, 2 = brutal; style: 0 = 1x1 blocks, 1 = 3x3 blocks
+	const int Diff = std::clamp(m_GeneratorDifficulty, 0, 2);
+	const int PW = m_GeneratorStyle == 1 ? 3 : 1;
+	const int aStartHeight[3] = {8, 6, 5};
+	const int aMinHeight[3] = {7, 5, 4};
+	const int aMaxHeight[3] = {10, 7, 6};
+	const int aBlockGap[3] = {3, 2, 1};
+
 	// the tunnel is between Top and Bottom (both air rows)
 	const int MinTop = 3, MaxBottom = H - 4;
-	int Top = std::clamp(H / 2 - 3, MinTop, MaxBottom - 5);
-	int Bottom = Top + 5;
+	const int StartHeight = std::clamp(aStartHeight[Diff], 4, MaxBottom - MinTop + 1);
+	const int MinHeight = std::min(aMinHeight[Diff], StartHeight);
+	const int MaxHeight = std::min(aMaxHeight[Diff], MaxBottom - MinTop + 1);
+	int Top = std::clamp(H / 2 - StartHeight / 2, MinTop, MaxBottom - StartHeight + 1);
+	int Bottom = Top + StartHeight - 1;
 	int x = 2;
 
 	// start room
@@ -74,11 +85,18 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		if(Inside(x - 1, y))
 			At(x - 1, y) = TILE_START;
 
+	// which kinds of sections are used on which difficulty
+	static const int s_aNovice[] = {0, 0, 1, 2, 3, 7, 7, 8};
+	static const int s_aModerate[] = {0, 1, 3, 4, 5, 6, 8, 9, 10};
+	static const int s_aBrutal[] = {4, 5, 6, 8, 9, 9, 10, 10};
+	const int *pPool = Diff == 0 ? s_aNovice : (Diff == 1 ? s_aModerate : s_aBrutal);
+	const int PoolSize = Diff == 0 ? (int)std::size(s_aNovice) : (Diff == 1 ? (int)std::size(s_aModerate) : (int)std::size(s_aBrutal));
+
 	const int FinishRoomStart = W - 10;
 	while(x < FinishRoomStart)
 	{
-		const int Pattern = Rand(0, 8);
-		const int Len = Rand(7, 13);
+		const int Pattern = pPool[Rand(0, PoolSize - 1)];
+		const int Len = Rand(7, Diff == 0 ? 13 : 16);
 		const int End = std::min(x + Len, FinishRoomStart);
 		const int Height = Bottom - Top + 1;
 		switch(Pattern)
@@ -88,12 +106,10 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			const int Change = Rand(-1, 1);
 			for(; x < End; x++)
 				Carve(x, Top, Bottom);
-			if(Change != 0 && Bottom - Top + Change >= 4 && Bottom - Top + Change <= 8)
+			if(Change != 0 && Height + 2 * Change >= MinHeight && Height + 2 * Change <= MaxHeight && Top - Change >= MinTop && Bottom + Change <= MaxBottom)
 			{
 				Top -= Change;
 				Bottom += Change;
-				Top = std::max(Top, MinTop);
-				Bottom = std::min(Bottom, MaxBottom);
 				Carve(x, Top, Bottom);
 			}
 			break;
@@ -106,7 +122,6 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			const int NewBottom = NewTop + Height - 1;
 			for(; x < End - 2; x++)
 				Carve(x, Top, Bottom);
-			// connection between the two heights
 			for(int i = 0; i < 3; i++, x++)
 				Carve(x, std::min(Top, NewTop), std::max(Bottom, NewBottom));
 			Top = NewTop;
@@ -114,12 +129,11 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			break;
 		}
 		case 3: // freeze floor
-			for(; x < End; x++)
+			for(int Start = x; x < End; x++)
 			{
 				Carve(x, Top, Bottom);
-				if(x > End - 2 || x < End - Len + 1)
-					continue;
-				At(x, Bottom) = TILE_FREEZE;
+				if(x > Start && x < End - 1)
+					At(x, Bottom) = TILE_FREEZE;
 			}
 			break;
 		case 4: // freeze pit in the floor
@@ -138,38 +152,39 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			}
 			break;
 		}
-		case 5: // hanging and standing pillars
+		case 5: // hanging and standing pillars (1 or 3 tiles wide)
 		{
 			bool FromTop = Rand(0, 1) != 0;
-			for(; x < End; x++)
+			const int PillarLen = std::max(PW, Height - (Diff == 2 ? 3 : 4));
+			const int Step = PW + (Diff == 0 ? 4 : (Diff == 1 ? 3 : 2));
+			for(int Start = x; x < End; x++)
 			{
 				Carve(x, Top, Bottom);
-				if((x - End) % 3 == 0)
+				const int Rel = x - Start;
+				if(Rel < 2 || Rel % Step >= PW)
+					continue;
+				for(int i = 0; i < PillarLen; i++)
 				{
-					const int PillarLen = std::max(1, Height - 4);
-					for(int i = 0; i < PillarLen; i++)
-					{
-						const int y = FromTop ? Top + i : Bottom - i;
-						if(Inside(x, y))
-							At(x, y) = TILE_SOLID;
-					}
-					// freeze tip
-					const int TipY = FromTop ? Top + PillarLen : Bottom - PillarLen;
-					if(Inside(x, TipY))
-						At(x, TipY) = TILE_FREEZE;
-					FromTop = !FromTop;
+					const int y = FromTop ? Top + i : Bottom - i;
+					if(Inside(x, y))
+						At(x, y) = TILE_SOLID;
 				}
+				const int TipY = FromTop ? Top + PillarLen : Bottom - PillarLen;
+				if(Diff > 0 && Inside(x, TipY))
+					At(x, TipY) = TILE_FREEZE;
+				if(Rel % Step == PW - 1)
+					FromTop = !FromTop;
 			}
 			break;
 		}
 		case 6: // squeeze with freeze on both sides
 		{
-			const int Squeeze = Rand(3, 4);
+			const int Squeeze = Diff == 2 ? 2 : Rand(3, 4);
 			const int Mid = (Top + Bottom) / 2;
-			for(; x < End; x++)
+			for(int Start = x; x < End; x++)
 			{
 				Carve(x, Top, Bottom);
-				if(x < End - 1 && x > End - Len + 1)
+				if(x < End - 1 && x > Start + 1)
 				{
 					for(int y = Top; y <= Bottom; y++)
 					{
@@ -190,12 +205,50 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 					At(x, Bottom + 1) = TILE_NOHOOK;
 			}
 			break;
-		default: // freeze ceiling
-			for(; x < End; x++)
+		case 8: // freeze ceiling
+			for(int Start = x; x < End; x++)
 			{
 				Carve(x, Top, Bottom);
-				if(x > End - Len + 1 && x < End - 1)
+				if(x > Start && x < End - 1)
 					At(x, Top) = TILE_FREEZE;
+			}
+			break;
+		case 9: // field of blocks, staggered between ceiling and floor, with freeze on their free sides
+		{
+			const int B = std::clamp(PW, 1, std::max(1, Height - 3));
+			const int Pitch = B + aBlockGap[Diff];
+			const int BlockHeight = std::max(B, Height - (Diff == 0 ? 4 : 3));
+			bool FromTop = Rand(0, 1) != 0;
+			for(int Start = x; x < End; x++)
+			{
+				Carve(x, Top, Bottom);
+				const int Rel = x - Start;
+				if(Rel < 2 || Rel % Pitch >= B)
+					continue;
+				for(int i = 0; i < BlockHeight; i++)
+				{
+					const int y = FromTop ? Top + i : Bottom - i;
+					if(Inside(x, y))
+						At(x, y) = TILE_SOLID;
+				}
+				const int FreezeY = FromTop ? Top + BlockHeight : Bottom - BlockHeight;
+				if(Diff > 0 && Inside(x, FreezeY))
+					At(x, FreezeY) = TILE_FREEZE;
+				if(Rel % Pitch == B - 1)
+					FromTop = !FromTop;
+			}
+			break;
+		}
+		default: // corridor lined with freeze on floor and ceiling, with gaps
+			for(int Start = x; x < End; x++)
+			{
+				Carve(x, Top, Bottom);
+				if(x > Start && x < End - 1 && (x - Start) % 5 != 4)
+				{
+					At(x, Bottom) = TILE_FREEZE;
+					if(Diff == 2)
+						At(x, Top) = TILE_FREEZE;
+				}
 			}
 			break;
 		}

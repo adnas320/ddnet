@@ -376,17 +376,6 @@ void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRG
 		DrawSprite(m_GlowTexture, BodyPos, 2.8f * TeeSize * Pulse, 2.8f * TeeSize * Pulse, 0.0f, false, ColorRGBA(Light.r, Light.g, Light.b, 0.6f * Alpha));
 	}
 
-	// magic circle under the feet: two rotating RGB runes, flat like on the ground
-	if(g_Config.m_ClVisualsMagicCircle)
-	{
-		m_CircleAngle = std::fmod(m_CircleAngle + DeltaTime * 0.8f, 2.0f * pi);
-		const vec2 FeetCenter = BodyPos + vec2(0.0f, 0.55f * TeeSize);
-		const ColorRGBA Outer = Rainbow(0.0f);
-		const ColorRGBA Inner = Rainbow(0.5f);
-		DrawFlatCircle(m_CircleTexture, FeetCenter, 1.6f * TeeSize, m_CircleAngle, 0.3f, ColorRGBA(Outer.r, Outer.g, Outer.b, 0.8f * Alpha));
-		DrawFlatCircle(m_CircleTexture, FeetCenter, 1.0f * TeeSize, -m_CircleAngle * 1.7f, 0.3f, ColorRGBA(Inner.r, Inner.g, Inner.b, 0.6f * Alpha));
-	}
-
 	// sparkle trail and dust puffs, drawn behind the tee
 	StepGlows(m_vSparkles, DeltaTime);
 	Graphics()->BlendNormal();

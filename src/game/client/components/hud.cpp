@@ -451,13 +451,21 @@ void CHud::RenderScoreHud()
 					if(Id >= 0 && Id < MAX_CLIENTS)
 					{
 						const char *pName = GameClient()->m_aClients[Id].m_aName;
-						if(RecreateRect)
+						const bool OwnShimmer = g_Config.m_ClVisualsNameShimmer && Id == GameClient()->m_Snap.m_LocalClientId;
+						if(RecreateRect || OwnShimmer)
 						{
 							str_copy(m_aScoreInfo[t].m_aPlayerNameText, pName);
 
 							CTextCursor Cursor;
 							Cursor.SetPosition(vec2(std::min(m_Width - TextRender()->TextWidth(8.0f, pName) - 1.0f, m_Width - ScoreWidthMax - ImageSize - 2 * Split - PosSize), StartY + (t + 1) * 20.0f - 2.0f));
 							Cursor.m_FontSize = 8.0f;
+							if(OwnShimmer)
+							{
+								size_t Size = 0, Count = 0;
+								str_utf8_stats(pName, str_length(pName) + 1, str_length(pName) + 1, &Size, &Count);
+								for(int i = 0; i < (int)Count; i++)
+									Cursor.m_vColorSplits.emplace_back(i, 1, GameClient()->m_Visuals.NameShimmerColor(i));
+							}
 							TextRender()->RecreateTextContainer(m_aScoreInfo[t].m_OptionalNameTextContainerIndex, &Cursor, pName);
 						}
 

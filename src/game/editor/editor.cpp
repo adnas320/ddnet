@@ -673,7 +673,7 @@ void CEditor::DoToolbarLayers(CUIRect ToolBar)
 
 		// Generator button and color palette
 		{
-			const float PipetteButtonWidth = 70.0f;
+			const float PipetteButtonWidth = 70.0f + 2.0f * 76.0f + 2.0f * 2.0f;
 			const float ColorPickerButtonWidth = 20.0f;
 			const float Spacing = 2.0f;
 			const size_t NumColorsShown = std::clamp<int>(round_to_int((ToolbarTop.w - PipetteButtonWidth - 40.0f) / (ColorPickerButtonWidth + Spacing)), 1, std::size(m_aSavedColors));
@@ -683,12 +683,26 @@ void CEditor::DoToolbarLayers(CUIRect ToolBar)
 
 			// Generate button
 			static char s_PipetteButton;
-			ColorPalette.VSplitLeft(PipetteButtonWidth, &Button, &ColorPalette);
+			ColorPalette.VSplitLeft(70.0f, &Button, &ColorPalette);
 			ColorPalette.VSplitLeft(Spacing, nullptr, &ColorPalette);
 			if(DoButton_Editor(&s_PipetteButton, "Generate", m_QuickActionGenerate.Active(), &Button, BUTTONFLAG_LEFT, m_QuickActionGenerate.Description()) ||
 				(CLineInput::GetActiveInput() == nullptr && ModPressed && ShiftPressed && Input()->KeyPress(KEY_G)))
 			{
 				m_QuickActionGenerate.Call();
+			}
+
+			// difficulty and block style of the generator
+			{
+				static char s_DifficultyButton, s_StyleButton;
+				const char *apDifficulties[3] = {"Novice", "Moderate", "Brutal"};
+				ColorPalette.VSplitLeft(76.0f, &Button, &ColorPalette);
+				ColorPalette.VSplitLeft(Spacing, nullptr, &ColorPalette);
+				if(DoButton_Editor(&s_DifficultyButton, apDifficulties[std::clamp(m_GeneratorDifficulty, 0, 2)], 0, &Button, BUTTONFLAG_LEFT, "Difficulty of the generated parts: novice, moderate or brutal."))
+					m_GeneratorDifficulty = (m_GeneratorDifficulty + 1) % 3;
+				ColorPalette.VSplitLeft(76.0f, &Button, &ColorPalette);
+				ColorPalette.VSplitLeft(Spacing, nullptr, &ColorPalette);
+				if(DoButton_Editor(&s_StyleButton, m_GeneratorStyle == 1 ? "Blocks 3x3" : "Blocks 1x1", 0, &Button, BUTTONFLAG_LEFT, "Size of the blocks (pillars) in the generated parts."))
+					m_GeneratorStyle = 1 - m_GeneratorStyle;
 			}
 
 			// Palette color pickers

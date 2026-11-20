@@ -427,6 +427,8 @@ public:
 	ivec2 m_GeneratorStart = ivec2(0, 0);
 	ivec2 m_GeneratorEnd = ivec2(0, 0);
 	unsigned m_GeneratorSeed = 1;
+	int m_GeneratorDifficulty = 0; // 0 novice, 1 moderate, 2 brutal
+	int m_GeneratorStyle = 0; // 0 = 1x1 blocks, 1 = 3x3 blocks
 
 	IGraphics::CTextureHandle m_CheckerTexture;
 
