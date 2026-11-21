@@ -431,7 +431,7 @@ public:
 	int m_GeneratorDifficulty = 0; // 0 novice, 1 moderate, 2 brutal
 	int m_GeneratorStyle = 0; // 0 = 1x1 blocks, 1 = 3x3 blocks
 	bool m_GeneratorTeleports = true;
-	int m_GeneratorThink = 1; // 0 = fast, 1 = normal, 2 = long (up to two minutes)
+	int m_GeneratorThink = 1; // 0 = fast, 1 = normal, 2 = long (up to five minutes)
 
 	// A generated course is built column by column over some time ("thinking"), then recorded as one undo step.
 	struct SGeneratorJob

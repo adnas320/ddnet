@@ -4301,7 +4301,7 @@ void CEditor::RenderGeneratorOverlay()
 		Panel.HSplitTop(3.0f, nullptr, &Panel);
 		Row.VSplitLeft(62.0f, &Button, &Row);
 		Ui()->DoLabel(&Button, "Thinking", 10.0f, TEXTALIGN_ML);
-		static const char *s_apThink[3] = {"Fast", "Normal", "Long (2 min)"};
+		static const char *s_apThink[3] = {"Fast", "Normal", "Long (5 min)"};
 		for(int i = 0; i < 3; i++)
 		{
 			Row.VSplitLeft(i == 2 ? 80.0f : 62.0f, &Button, &Row);

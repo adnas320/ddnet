@@ -73,6 +73,14 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	if(pTeleLayer)
 		TeleBase = std::clamp(pTeleLayer->FindNextFreeNumber(false), 1, 240);
 
+	// With more thinking time several complete candidates are built and the best one is kept: it has to be
+	// connected from the spawn to the finish and is rated by variety.
+	std::vector<unsigned char> vOutBuf, vOutTeleType, vOutTeleNum;
+	float BestScore = -1.0f;
+	const int aAttempts[3] = {1, 8, 30};
+	const int Attempts = aAttempts[std::clamp(m_GeneratorThink, 0, 2)];
+	for(int Attempt = 0; Attempt < Attempts; Attempt++)
+	{
 	// ---- local buffers, everything starts as solid ----
 	enum
 	{
@@ -674,6 +682,129 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			if(xx == 0 || yy == 0 || xx == W - 1 || yy == H - 1)
 				At(xx, yy) = (unsigned char)T_NOHOOK;
 
+	// ---- rate this candidate ----
+	{
+		const auto Passable = [&](int Index) {
+			const unsigned char Tile = vBuf[Index];
+			return Tile != T_SOLID && Tile != T_NOHOOK && Tile != T_DEATH && Tile != T_FREEZE;
+		};
+		int SpawnIndex = -1;
+		int FinishIndex = -1;
+		int FreezeCount = 0;
+		int AirCount = 0;
+		for(int i = 0; i < W * H; i++)
+		{
+			if(vBuf[i] == T_SPAWN)
+				SpawnIndex = i;
+			else if(vBuf[i] == T_FINISH && FinishIndex < 0)
+				FinishIndex = i;
+			if(vBuf[i] == T_FREEZE)
+				FreezeCount++;
+			if(vBuf[i] != T_SOLID && vBuf[i] != T_NOHOOK)
+				AirCount++;
+		}
+		float Score = 0.0f;
+		if(SpawnIndex >= 0 && FinishIndex >= 0)
+		{
+			std::vector<unsigned char> vSeen((size_t)W * H, 0);
+			std::vector<int> vStack;
+			vStack.push_back(SpawnIndex);
+			vSeen[SpawnIndex] = 1;
+			int Reached = 0;
+			while(!vStack.empty())
+			{
+				const int Cur = vStack.back();
+				vStack.pop_back();
+				Reached++;
+				const int cx = Cur % W, cy = Cur / W;
+				const int aNext[4] = {cx > 0 ? Cur - 1 : -1, cx < W - 1 ? Cur + 1 : -1, cy > 0 ? Cur - W : -1, cy < H - 1 ? Cur + W : -1};
+				for(const int Next : aNext)
+					if(Next >= 0 && !vSeen[Next] && Passable(Next))
+					{
+						vSeen[Next] = 1;
+						vStack.push_back(Next);
+					}
+			}
+			Score = vSeen[FinishIndex] ? 1000.0f : 100.0f * (float)Reached / (float)std::max(1, AirCount);
+		}
+		const float AirFraction = (float)AirCount / (float)(W * H);
+		const float FreezeFraction = (float)FreezeCount / (float)std::max(1, AirCount);
+		Score += 100.0f - std::abs(AirFraction - 0.45f) * 200.0f;
+		Score += 60.0f - std::abs(FreezeFraction - (Diff == 0 ? 0.04f : 0.09f)) * 400.0f;
+		Score += (float)TeleUsed * 15.0f + (float)(Rng() % 1000) / 100.0f;
+		if(Score > BestScore)
+		{
+			BestScore = Score;
+			vOutBuf = vBuf;
+			vOutTeleType = vTeleType;
+			vOutTeleNum = vTeleNum;
+		}
+	}
+	}
+
+	// ---- hollow out: only a wall around the course is kept and the rest of the rock becomes empty ----
+	// The walls are mostly unhookable with a few hookable patches, like in the maps that were studied.
+	{
+		const int Wall = B == 3 ? 3 : 1;
+		std::vector<unsigned char> vNew = vOutBuf;
+		const auto IsRock = [&](int xx, int yy) {
+			const unsigned char Tile = vOutBuf[(size_t)yy * W + xx];
+			return Tile == TILE_SOLID || Tile == TILE_NOHOOK;
+		};
+		for(int yy = 0; yy < H; yy++)
+		{
+			for(int xx = 0; xx < W; xx++)
+			{
+				if(!IsRock(xx, yy))
+					continue;
+				if(xx < Wall || yy < Wall || xx >= W - Wall || yy >= H - Wall)
+				{
+					vNew[(size_t)yy * W + xx] = TILE_NOHOOK;
+					continue;
+				}
+				bool Near = false;
+				for(int dy = -Wall; dy <= Wall && !Near; dy++)
+					for(int dx = -Wall; dx <= Wall && !Near; dx++)
+					{
+						const int nx = xx + dx, ny = yy + dy;
+						if(nx >= 0 && ny >= 0 && nx < W && ny < H && !IsRock(nx, ny))
+							Near = true;
+					}
+				if(!Near)
+					vNew[(size_t)yy * W + xx] = TILE_AIR;
+				else if(vOutBuf[(size_t)yy * W + xx] == TILE_SOLID)
+					vNew[(size_t)yy * W + xx] = (((xx / 6) * 7 + (yy / 6) * 13 + (xx / 6) * (yy / 6)) % 9 == 0) ? TILE_SOLID : TILE_NOHOOK;
+			}
+		}
+		// freeze lines that hug the floors (and on brutal also the ceilings) of the halls in long runs
+		if(Diff >= 1)
+		{
+			for(int Pass = 0; Pass < (Diff == 2 ? 2 : 1); Pass++)
+			{
+				const int Dy = Pass == 0 ? 1 : -1;
+				int Run = 0;
+				for(int yy = 3; yy < H - 3; yy++)
+				{
+					Run = 0;
+					for(int xx = 14; xx < W - 14; xx++)
+					{
+						const bool Floor = vNew[(size_t)yy * W + xx] == TILE_AIR && vNew[(size_t)(yy + Dy) * W + xx] != TILE_AIR && vNew[(size_t)(yy + Dy) * W + xx] <= TILE_NOHOOK && vNew[(size_t)(yy + Dy) * W + xx] != 0;
+						if(Run > 0 && Floor)
+						{
+							vNew[(size_t)yy * W + xx] = TILE_FREEZE;
+							Run--;
+						}
+						else if(Run > 0)
+							Run = 0;
+						else if(Floor && Rand(0, 99) < (Diff == 2 ? 3 : 2))
+							Run = Rand(8, 28);
+					}
+				}
+			}
+		}
+		vOutBuf = vNew;
+	}
+
 	// ---- hand the result to the job that builds it column by column ----
 	SGeneratorJob &Job = m_GeneratorJob;
 	Job = SGeneratorJob();
@@ -682,14 +813,14 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	Job.m_Y0 = Y0;
 	Job.m_W = W;
 	Job.m_H = H;
-	Job.m_vTile = vBuf;
-	Job.m_vTeleType = vTeleType;
-	Job.m_vTeleNum = vTeleNum;
+	Job.m_vTile = vOutBuf;
+	Job.m_vTeleType = vOutTeleType;
+	Job.m_vTeleNum = vOutTeleNum;
 	Job.m_GameGroupIndex = std::find(Map()->m_vpGroups.begin(), Map()->m_vpGroups.end(), Map()->m_pGameGroup) - Map()->m_vpGroups.begin();
 	Job.m_pTeleLayer = pTeleLayer;
 
 	bool HasTele = false;
-	for(const unsigned char Type : vTeleType)
+	for(const unsigned char Type : vOutTeleType)
 		HasTele |= Type != 0;
 	if(HasTele && !Job.m_pTeleLayer)
 	{
@@ -701,8 +832,8 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 
 	// the thinking time grows with the size of the zone
 	const float Area = (float)W * (float)H;
-	const float aMax[3] = {4.0f, 60.0f, 120.0f};
-	const float aPerTile[3] = {0.0005f, 0.012f, 0.03f};
+	const float aMax[3] = {4.0f, 90.0f, 300.0f};
+	const float aPerTile[3] = {0.0005f, 0.012f, 0.05f};
 	Job.m_Duration = std::clamp(Area * aPerTile[std::clamp(m_GeneratorThink, 0, 2)], 1.5f, aMax[std::clamp(m_GeneratorThink, 0, 2)]);
 }
 
