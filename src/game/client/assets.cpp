@@ -47,21 +47,24 @@ void CGameClient::MixGunpack(CImageInfo &Base) const
 		int m_Mask;
 		int m_X, m_Y, m_W, m_H;
 	};
+	// m_Mask is the number of the element, see the list of elements in the gunpack menu
 	static const SRegion s_aRegions[] = {
-		// weapons
-		{1, 2, 1, 4, 3}, {1, 2, 4, 4, 2}, {1, 2, 6, 8, 2}, {1, 2, 8, 7, 2}, {1, 2, 10, 8, 2}, {1, 2, 12, 7, 3},
-		// cursors
-		{2, 0, 0, 2, 2}, {2, 0, 4, 2, 2}, {2, 0, 6, 2, 2}, {2, 0, 8, 2, 2}, {2, 0, 10, 2, 2}, {2, 0, 12, 2, 2},
-		// projectiles
-		{4, 6, 4, 2, 2}, {4, 10, 6, 2, 2}, {4, 10, 8, 2, 2}, {4, 10, 12, 2, 2},
-		// muzzle flashes
+		// 0 hammer, 1 gun, 2 shotgun, 3 grenade, 4 laser, 5 ninja sword
+		{0, 2, 1, 4, 3}, {1, 2, 4, 4, 2}, {2, 2, 6, 8, 2}, {3, 2, 8, 7, 2}, {4, 2, 10, 8, 2}, {5, 2, 12, 7, 3},
+		// 6 cursors
+		{6, 0, 0, 2, 2}, {6, 0, 4, 2, 2}, {6, 0, 6, 2, 2}, {6, 0, 8, 2, 2}, {6, 0, 10, 2, 2}, {6, 0, 12, 2, 2},
+		// 7 projectiles
+		{7, 6, 4, 2, 2}, {7, 10, 6, 2, 2}, {7, 10, 8, 2, 2}, {7, 10, 12, 2, 2},
+		// 8 muzzle flashes
 		{8, 8, 4, 12, 2}, {8, 12, 6, 12, 2}, {8, 25, 0, 7, 12},
-		// hook
-		{16, 2, 0, 1, 1}, {16, 3, 0, 2, 1},
-		// pickups, hearts, armor and flags
-		{32, 10, 2, 4, 2}, {32, 6, 2, 2, 2}, {32, 15, 2, 6, 2}, {32, 10, 10, 2, 2}, {32, 21, 0, 4, 4}, {32, 12, 8, 8, 8},
-		// stars and particles
-		{64, 15, 0, 6, 2}, {64, 6, 0, 9, 2}};
+		// 9 hook
+		{9, 2, 0, 1, 1}, {9, 3, 0, 2, 1},
+		// 10 hearts, armor and pickups
+		{10, 10, 2, 4, 2}, {10, 6, 2, 2, 2}, {10, 15, 2, 6, 2}, {10, 10, 10, 2, 2},
+		// 11 flags and the rest of the pickups
+		{11, 21, 0, 4, 4}, {11, 12, 8, 8, 8},
+		// 12 stars and particles
+		{12, 15, 0, 6, 2}, {12, 6, 0, 9, 2}};
 
 	const int Mask = g_Config.m_ClGunpackMask;
 	if(Mask == 0 || g_Config.m_ClGunpackSecond[0] == '\0' || Base.m_Format != CImageInfo::FORMAT_RGBA || Base.m_Width == 0 || Base.m_Height == 0)
@@ -91,7 +94,7 @@ void CGameClient::MixGunpack(CImageInfo &Base) const
 	constexpr int GRID_Y = 16;
 	for(const SRegion &Region : s_aRegions)
 	{
-		if(!(Mask & Region.m_Mask))
+		if(!((Mask >> Region.m_Mask) & 1))
 			continue;
 		const size_t X0 = Region.m_X * Base.m_Width / GRID_X;
 		const size_t X1 = (Region.m_X + Region.m_W) * Base.m_Width / GRID_X;

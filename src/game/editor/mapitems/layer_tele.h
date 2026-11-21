@@ -33,6 +33,8 @@ public:
 	void BrushFlipY() override;
 	void BrushRotate(float Amount) override;
 	void FillSelection(bool Empty, CLayer *pBrush, CUIRect Rect) override;
+	// sets a teleporter tile (Type 0 removes it) and records the change for undo
+	void SetTeleTile(int x, int y, int Type, int Number);
 	int FindNextFreeNumber(bool Checkpoint) const;
 	bool ContainsElementWithId(int Id, bool Checkpoint) const;
 	void GetPos(int Number, int Offset, int &TeleX, int &TeleY);

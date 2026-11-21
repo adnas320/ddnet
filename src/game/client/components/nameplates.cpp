@@ -350,7 +350,7 @@ protected:
 		m_Visible = Data.m_ShowName;
 		if(!m_Visible)
 			return false;
-		const bool Shimmer = g_Config.m_ClVisualsNameShimmer != 0;
+		const bool Shimmer = This.m_Visuals.ShouldShimmer(Data.m_ClientId);
 		m_Color = Shimmer ? ColorRGBA(1.0f, 1.0f, 1.0f, Data.m_Color.a) : Data.m_Color;
 		// the shimmering colors flow through the name, so the text is rebuilt 20 times per second
 		const int Stamp = Shimmer ? (int)(This.Client()->LocalTime() * 20.0f) : 0;

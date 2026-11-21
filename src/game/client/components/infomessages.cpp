@@ -165,11 +165,12 @@ void CInfoMessages::CreateTextContainersIfNotCreated(CInfoMsg &InfoMsg)
 			Cursor.m_vColorSplits.emplace_back(i, 1, GameClient()->m_Visuals.NameShimmerColor(i));
 	};
 	const int LocalId = GameClient()->m_Snap.m_LocalClientId;
+	const auto ShimId = [&](int Id) { return Shimmer && GameClient()->m_Visuals.ShouldShimmer(Id); };
 	if(Shimmer && LocalId >= 0)
 	{
-		if(InfoMsg.m_aVictimName[0] != '\0' && InfoMsg.m_aVictimIds[0] == LocalId)
+		if(InfoMsg.m_aVictimName[0] != '\0' && ShimId(InfoMsg.m_aVictimIds[0]))
 			TextRender()->DeleteTextContainer(InfoMsg.m_VictimTextContainerIndex);
-		if(InfoMsg.m_aKillerName[0] != '\0' && InfoMsg.m_KillerId == LocalId)
+		if(InfoMsg.m_aKillerName[0] != '\0' && ShimId(InfoMsg.m_KillerId))
 			TextRender()->DeleteTextContainer(InfoMsg.m_KillerTextContainerIndex);
 	}
 
@@ -177,9 +178,9 @@ void CInfoMessages::CreateTextContainersIfNotCreated(CInfoMsg &InfoMsg)
 	{
 		CTextCursor Cursor;
 		Cursor.m_FontSize = FONT_SIZE;
-		if(Shimmer && InfoMsg.m_aVictimIds[0] == LocalId)
+		if(ShimId(InfoMsg.m_aVictimIds[0]))
 			AddShimmer(Cursor, InfoMsg.m_aVictimName);
-		TextRender()->TextColor(Shimmer && InfoMsg.m_aVictimIds[0] == LocalId ? ColorRGBA(1, 1, 1, 1) : NameColor(InfoMsg.m_aVictimIds[0]));
+		TextRender()->TextColor(ShimId(InfoMsg.m_aVictimIds[0]) ? ColorRGBA(1, 1, 1, 1) : NameColor(InfoMsg.m_aVictimIds[0]));
 		TextRender()->CreateTextContainer(InfoMsg.m_VictimTextContainerIndex, &Cursor, InfoMsg.m_aVictimName);
 	}
 
@@ -187,9 +188,9 @@ void CInfoMessages::CreateTextContainersIfNotCreated(CInfoMsg &InfoMsg)
 	{
 		CTextCursor Cursor;
 		Cursor.m_FontSize = FONT_SIZE;
-		if(Shimmer && InfoMsg.m_KillerId == LocalId)
+		if(ShimId(InfoMsg.m_KillerId))
 			AddShimmer(Cursor, InfoMsg.m_aKillerName);
-		TextRender()->TextColor(Shimmer && InfoMsg.m_KillerId == LocalId ? ColorRGBA(1, 1, 1, 1) : NameColor(InfoMsg.m_KillerId));
+		TextRender()->TextColor(ShimId(InfoMsg.m_KillerId) ? ColorRGBA(1, 1, 1, 1) : NameColor(InfoMsg.m_KillerId));
 		TextRender()->CreateTextContainer(InfoMsg.m_KillerTextContainerIndex, &Cursor, InfoMsg.m_aKillerName);
 	}
 

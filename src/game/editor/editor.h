@@ -429,6 +429,27 @@ public:
 	unsigned m_GeneratorSeed = 1;
 	int m_GeneratorDifficulty = 0; // 0 novice, 1 moderate, 2 brutal
 	int m_GeneratorStyle = 0; // 0 = 1x1 blocks, 1 = 3x3 blocks
+	bool m_GeneratorTeleports = true;
+	int m_GeneratorThink = 1; // 0 = fast, 1 = normal, 2 = long (up to two minutes)
+
+	// A generated course is built column by column over some time ("thinking"), then recorded as one undo step.
+	struct SGeneratorJob
+	{
+		bool m_Running = false;
+		int m_X0 = 0, m_Y0 = 0, m_W = 0, m_H = 0;
+		std::vector<unsigned char> m_vTile;
+		std::vector<unsigned char> m_vTeleType;
+		std::vector<unsigned char> m_vTeleNum;
+		int m_Revealed = 0; // number of columns that are already applied
+		float m_Elapsed = 0.0f;
+		float m_Duration = 0.0f;
+		int m_Changes = 0;
+		int m_GameGroupIndex = 0;
+		std::shared_ptr<CLayerTele> m_pTeleLayer;
+		std::vector<std::shared_ptr<IEditorAction>> m_vpActions;
+	};
+	SGeneratorJob m_GeneratorJob;
+	void StepGeneratorJob(bool Finish);
 
 	IGraphics::CTextureHandle m_CheckerTexture;
 

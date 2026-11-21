@@ -288,6 +288,8 @@ public:
 
 	// color of the shimmering own name in the scoreboard for the character with the given index
 	ColorRGBA NameShimmerColor(int CharIndex) const;
+	// whether the name of this player shimmers (everyone, only you or the names of a list)
+	bool ShouldShimmer(int ClientId) const;
 
 	// hooks of other components
 	void OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun);

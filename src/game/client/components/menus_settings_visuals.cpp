@@ -77,13 +77,11 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Снег при приземлении");
 	DoToggle(Card, g_Config.m_ClVisualsSnowWeapons, "Космический взрыв при попадании", true);
 
-	Card = BeginCard(Left, "Мир", 6);
+	Card = BeginCard(Left, "Мир", 4);
 	DoToggle(Card, g_Config.m_ClVisualsFireflies, "Светлячки");
 	DoToggle(Card, g_Config.m_ClVisualsPetals, "Лепестки сакуры");
 	DoToggle(Card, g_Config.m_ClVisualsBubbles, "Мыльные пузыри");
-	DoToggle(Card, g_Config.m_ClVisualsMeteors, "Синие метеоры");
-	DoToggle(Card, g_Config.m_ClVisualsStarfield, "Звёздное небо");
-	DoToggle(Card, g_Config.m_ClVisualsAurora, "Северное сияние", true);
+	DoToggle(Card, g_Config.m_ClVisualsStarfield, "Звёздное небо", true);
 
 	// средняя колонка
 	Card = BeginCard(Middle, "Эффекты тишки", 5);
@@ -144,8 +142,21 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 		DoToggle(Card, g_Config.m_ClVisualsKillOwnOnly, "Только мои убийства", true);
 	}
 
-	Card = BeginCard(Right, "Переливающийся ник (в игре и в Tab)", 5);
-	DoToggle(Card, g_Config.m_ClVisualsNameShimmer, "Переливающиеся ники у всех");
+	Card = BeginCard(Right, "Переливающийся ник (везде)", 7);
+	DoToggle(Card, g_Config.m_ClVisualsNameShimmer, "Переливающийся ник");
+	{
+		static CButtonContainer s_NameModeButton;
+		const char *apModes[3] = {"У всех игроков", "Только у меня", "У меня и у ников из списка"};
+		char aText[96];
+		str_format(aText, sizeof(aText), "Кому: %s", apModes[std::clamp(g_Config.m_ClVisualsNameMode, 0, 2)]);
+		CUIRect Button = NextRow(Card, false);
+		if(DoButton_Menu(&s_NameModeButton, aText, 0, &Button))
+			g_Config.m_ClVisualsNameMode = (g_Config.m_ClVisualsNameMode + 1) % 3;
+		static CLineInput s_NameListInput(g_Config.m_ClVisualsNameList, sizeof(g_Config.m_ClVisualsNameList));
+		s_NameListInput.SetEmptyText("Ники через запятую (режим «список»)");
+		CUIRect Row = NextRow(Card, false);
+		Ui()->DoEditBox(&s_NameListInput, &Row, 12.0f);
+	}
 	static CButtonContainer s_Color1Reset, s_Color2Reset, s_Color3Reset;
 	DoColor(Card, s_Color1Reset, g_Config.m_ClVisualsNameColor1, 14942130u, "Цвет 1");
 	DoColor(Card, s_Color2Reset, g_Config.m_ClVisualsNameColor2, 8847270u, "Цвет 2");

@@ -76,13 +76,14 @@ void CMenus::RenderSettingsCombat(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClCombatPredictGrenade, "Граната");
 	DoToggle(Card, g_Config.m_ClCombatPredictGun, "Пистолет", true);
 
-	Card = BeginCard(Right, "Внешний вид", 8);
+	Card = BeginCard(Right, "Внешний вид", 9);
 	DoSlider(Card, g_Config.m_ClCombatPredictAlpha, "Прозрачность", 10, 100, "%");
 	DoSlider(Card, g_Config.m_ClCombatPredictWidth, "Толщина линии", 1, 12, "");
 	static CButtonContainer s_LineReset, s_BounceReset, s_EndReset;
 	DoColor(Card, s_LineReset, g_Config.m_ClCombatPredictColor, 8978399u, "Цвет линии");
 	DoColor(Card, s_BounceReset, g_Config.m_ClCombatPredictBounceColor, 2555839u, "Цвет точек отскока");
 	DoColor(Card, s_EndReset, g_Config.m_ClCombatPredictEndColor, 524204u, "Цвет конечной точки");
+	DoToggle(Card, g_Config.m_ClCombatPredictLine, "Показывать саму линию");
 	DoToggle(Card, g_Config.m_ClCombatPredictFade, "Линия угасает к концу");
 	DoToggle(Card, g_Config.m_ClCombatPredictBounces, "Точки в местах отскока");
 	DoToggle(Card, g_Config.m_ClCombatPredictEnd, "Точка в конце выстрела", true);

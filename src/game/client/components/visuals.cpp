@@ -351,6 +351,10 @@ void CVisuals::RenderBehindTee(vec2 BodyPos, float TeeSize, float Alpha, ColorRG
 	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.05f);
 	const ColorRGBA Light = Lighten(TeeColor, 0.3f);
 
+	// the weapon prediction is drawn here so that it stays behind the tee
+	if(g_Config.m_ClCombatPredict)
+		RenderGunPredict(Graphics()->GetScreen());
+
 	// echoes get older (they are drawn by the player renderer before the tee)
 	if(!g_Config.m_ClVisualsEcho)
 		m_vEchoes.clear();
@@ -898,68 +902,139 @@ void CVisuals::DrawPanda(vec2 Feet, float Size, float Alpha, vec2 Vel) const
 		}
 	}
 
-	// legs, the far ones a little lighter. Lying down they fold under the body.
-	const float LegLen = 0.17f * (1.0f - Sleep * 0.7f);
-	const float aLegX[4] = {-0.34f, -0.2f, 0.2f, 0.34f};
-	for(int i = 0; i < 4; i++)
-	{
-		const bool Far = i == 1 || i == 3;
-		const float Swing = std::sin(m_PetWalk * 2.0f * pi + (i == 0 || i == 3 ? 0.0f : pi)) * 0.07f * Walk;
-		const float Up = std::max(0.0f, std::cos(m_PetWalk * 2.0f * pi + (i == 0 || i == 3 ? 0.0f : pi))) * 0.05f * Walk;
-		Ellipse(vec2(aLegX[i] + Swing, -LegLen * 0.8f - Up), 0.085f, LegLen, 0.0f, Far ? FarBlack : Black);
-	}
+	// ---- pixel art body parts ----
+	// One pixel is PX units of the panda; the panda is built of the sprites below like a pixel art picture.
+	// K = black, W = white, G = grey, P = pink, S = light grey.
+	constexpr float PX = 0.026f;
+	const auto PixelColor = [&](char C) {
+		switch(C)
+		{
+		case 'K': return Black;
+		case 'W': return White;
+		case 'G': return ColorRGBA(0.28f, 0.28f, 0.31f, Alpha);
+		case 'P': return ColorRGBA(1.0f, 0.59f, 0.67f, Alpha);
+		default: return ColorRGBA(0.87f, 0.89f, 0.92f, Alpha);
+		}
+	};
+	// draws a sprite whose top left corner is at pixel (Px, Py) of the picture, optionally turned around a pivot
+	const auto Pixels = [&](const char *const *ppRows, int NumRows, int Width, float Px, float Py, float Angle, vec2 PivotPx) {
+		const float Ca = std::cos(Angle), Sa = std::sin(Angle);
+		const auto ToLocal = [&](float X, float Y) {
+			// rotate around the pivot (in picture pixels)
+			const float Dx = X - PivotPx.x, Dy = Y - PivotPx.y;
+			const float Rx = PivotPx.x + Dx * Ca - Dy * Sa, Ry = PivotPx.y + Dx * Sa + Dy * Ca;
+			return Tr(vec2((Rx - 24.0f) * PX, (Ry - 32.0f) * PX));
+		};
+		for(int Row = 0; Row < NumRows; Row++)
+		{
+			for(int Col = 0; Col < Width;)
+			{
+				const char C = ppRows[Row][Col];
+				if(C == '.')
+				{
+					Col++;
+					continue;
+				}
+				int End = Col + 1;
+				while(End < Width && ppRows[Row][End] == C)
+					End++;
+				Graphics()->SetColor(PixelColor(C));
+				const float X0 = Px + Col, X1 = Px + End, Y0 = Py + Row, Y1 = Py + Row + 1.0f;
+				const IGraphics::CFreeformItem Item(ToLocal(X0, Y0), ToLocal(X1, Y0), ToLocal(X0, Y1), ToLocal(X1, Y1));
+				Graphics()->QuadsDrawFreeform(&Item, 1);
+				Col = End;
+			}
+		}
+	};
 
-	// tail
-	const float TailWag = std::sin(Time * 4.0f) * 0.03f * (Celebrating ? 3.0f : 1.0f);
-	Ellipse(vec2(-0.45f, -0.43f + TailWag), 0.07f, 0.065f, 0.0f, White);
-
-	// body with black shoulders and hips
-	const float BodyY = -0.33f - LegLen * 0.1f;
-	Ellipse(vec2(0.0f, BodyY - 0.05f), 0.43f, 0.27f, 0.0f, White);
-	Ellipse(vec2(0.2f, BodyY - 0.03f), 0.11f, 0.2f, 0.0f, Black);
-	Ellipse(vec2(-0.3f, BodyY - 0.02f), 0.1f, 0.17f, 0.0f, Black);
-
-	// head, nodding a little. Asleep it rests low.
-	const float Nod = (1.0f - Sleep) * std::sin(Time * 2.2f + 0.8f) * 0.02f + Sleep * 0.1f;
-	const vec2 Head(0.38f, -0.6f + Nod);
-	// ears (they twitch every now and then)
-	const float Twitch = std::fmod(Time, 4.0f) < 0.25f ? std::sin(std::fmod(Time, 4.0f) * 25.0f) * 0.03f : 0.0f;
-	Ellipse(Head + vec2(-0.14f, -0.22f + Twitch), 0.08f, 0.08f, 0.0f, Black);
-	Ellipse(Head + vec2(0.16f, -0.21f), 0.08f, 0.08f, 0.0f, Black);
-	Ellipse(Head, 0.27f, 0.23f, 0.0f, White);
-	// eye patches
-	Ellipse(Head + vec2(-0.09f, 0.0f), 0.065f, 0.085f, 0.45f, Black);
-	Ellipse(Head + vec2(0.15f, 0.0f), 0.065f, 0.085f, -0.45f, Black);
-	// eyes: they blink, look happy when partying and are closed when asleep
+	static const char *const s_apBody[10] = {
+		"....KKKKKKKKKKKKKKKK....",
+		"..KKWWWWWWWWWWWWWWWWKK..",
+		".KWWWWWWWWWWWWKKKKKWWWK.",
+		"KWWWWWWWWWWWWKKKKKKKWWWK",
+		"KWWKKKKWWWWWWKKKKKKKWWWK",
+		"KWWKKKKWWWWWWKKKKKKKWWWK",
+		"KWWWKKWWWWWWWWKKKKKKWWWK",
+		".KWWWWWWWWWWWWWWWWWWWWK.",
+		"..KKWWWWWWWWWWWWWWWWKK..",
+		"....KKKKKKKKKKKKKKKK...."};
+	static const char *const s_apLeg[4] = {"KKKK", "KKKK", "KKKK", "KKKK"};
+	static const char *const s_apTail[3] = {".WW.", "WWWW", ".WW."};
+	static const char *const s_apHead[18] = {
+		"..KKKK........KKKK..",
+		".KKKKKK......KKKKKK.",
+		".KKKKKKKKKKKKKKKKKK.",
+		"..KKKWWWWWWWWWWKKK..",
+		"...KWWWWWWWWWWWWK...",
+		"..KWWWWWWWWWWWWWWK..",
+		".KWWWWWWWWWWWWWWWWK.",
+		".KWWKKKKWWWWKKKKWWK.",
+		".KWKKKKKKWWKKKKKKWK.",
+		".KWKKWKKKWWKKWKKKWK.",
+		".KWKKKKKKWWKKKKKKWK.",
+		".KWWKKKKWWWWKKKKWWK.",
+		".KWPPWWWWKKWWWWPPWK.",
+		".KWPPPWWWKKWWWPPPWK.",
+		"..KWWWWWWWWWWWWWWK..",
+		"...KWWWWWWWWWWWWK...",
+		"....KKKWWWWWWKKK....",
+		"......KKKKKKKK......"};
+	// the eyes: open with a shine, closed when asleep or blinking, happy arcs when celebrating
 	const bool Blink = std::fmod(Time + 1.3f, 3.5f) < 0.12f;
-	const vec2 aEye[2] = {Head + vec2(-0.085f, -0.005f), Head + vec2(0.145f, -0.005f)};
-	for(const vec2 &Eye : aEye)
+	char aHeadRows[18][21];
+	for(int Row = 0; Row < 18; Row++)
+		str_copy(aHeadRows[Row], s_apHead[Row], sizeof(aHeadRows[Row]));
+	if(Sleep > 0.5f || Blink)
 	{
-		if(Sleep > 0.5f || Blink || Celebrating)
+		for(const int Col : {4, 5, 6, 13, 14, 15})
 		{
-			// closed (or happy) eye: a small arc
-			const float Curve = Celebrating && Sleep < 0.5f ? -0.03f : 0.025f;
-			Line(Eye + vec2(-0.035f, 0.0f), Eye + vec2(0.0f, Curve), 0.018f, White);
-			Line(Eye + vec2(0.0f, Curve), Eye + vec2(0.035f, 0.0f), 0.018f, White);
+			aHeadRows[9][Col] = 'S';
+			aHeadRows[8][Col] = 'K';
 		}
-		else
-		{
-			Ellipse(Eye, 0.03f, 0.034f, 0.0f, White);
-			Ellipse(Eye + vec2(0.006f, 0.004f), 0.015f, 0.018f, 0.0f, Black);
-		}
+		aHeadRows[9][5] = aHeadRows[9][13] = 'S';
 	}
-	// nose, mouth and cheeks
-	Ellipse(Head + vec2(0.1f, 0.09f), 0.04f, 0.028f, 0.0f, Black);
-	Line(Head + vec2(0.1f, 0.115f), Head + vec2(0.1f, 0.135f), 0.012f, Black);
-	Line(Head + vec2(0.06f, 0.15f), Head + vec2(0.1f, 0.14f), 0.012f, Black);
-	Line(Head + vec2(0.1f, 0.14f), Head + vec2(0.14f, 0.15f), 0.012f, Black);
-	Ellipse(Head + vec2(-0.13f, 0.08f), 0.045f, 0.03f, 0.0f, Pink);
-	Ellipse(Head + vec2(0.2f, 0.08f), 0.045f, 0.03f, 0.0f, Pink);
+	else if(Celebrating)
+	{
+		for(const int Col : {5, 13})
+		{
+			aHeadRows[9][Col] = 'K';
+			aHeadRows[8][Col] = 'S';
+		}
+		for(const int Col : {4, 6, 12, 14})
+			aHeadRows[9][Col] = 'S';
+	}
+	const char *apHeadRows[18];
+	for(int Row = 0; Row < 18; Row++)
+		apHeadRows[Row] = aHeadRows[Row];
+
+	// legs: they swing when the panda walks, asleep it lies on them
+	const float Gait = m_PetWalk * 2.0f * pi;
+	const float LieShift = Sleep * 2.0f;
+	const auto Leg = [&](float PxX, bool Reverse) {
+		const float Phase = Gait + (Reverse ? pi : 0.0f);
+		const float Swing = std::sin(Phase) * 2.5f * Walk;
+		const float Up = std::max(0.0f, std::cos(Phase)) * 1.5f * Walk;
+		Pixels(s_apLeg, 4, 4, PxX + Swing, 28.0f - Up - LieShift, 0.0f, vec2(0.0f, 0.0f));
+	};
+	const float TailWag = std::sin(Time * 4.0f) * (Celebrating ? 3.0f : 1.0f) * 0.12f;
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+	Leg(10.0f, true);
+	Leg(26.0f, false);
+	Pixels(s_apBody, 10, 24, 3.0f, 19.0f + LieShift * 0.5f, 0.0f, vec2(0.0f, 0.0f));
+	Pixels(s_apTail, 3, 4, 0.0f, 22.0f + LieShift * 0.5f, TailWag, vec2(2.0f, 23.0f));
+	Leg(5.0f, false);
+	Leg(22.0f, true);
+
+	// the head nods a little, tilts toward the shoulder when it falls asleep and looks around
+	const float Nod = (1.0f - Sleep) * std::sin(Time * 2.2f + 0.8f) * 0.8f + Sleep * 3.0f;
+	const float Tilt = Sleep * 0.25f + (1.0f - Sleep) * std::sin(Time * 1.3f) * 0.05f + (Celebrating ? std::sin(Time * 6.0f) * 0.1f : 0.0f);
+	Pixels(apHeadRows, 18, 20, 24.0f + Sleep * 1.0f, 6.0f + Nod + LieShift * 0.5f, Tilt, vec2(34.0f, 22.0f));
+	const vec2 Head(0.26f, -0.44f + Nod * PX);
 
 	// party hat on the head
 	if(Celebrating)
 	{
-		const vec2 Base = Head + vec2(0.02f, -0.19f);
+		const vec2 Base = Head + vec2(0.0f, -0.17f);
 		Tri(Base + vec2(-0.12f, 0.0f), Base + vec2(0.12f, 0.0f), Base + vec2(0.0f, -0.3f), ColorRGBA(1.0f, 0.4f, 0.55f, Alpha));
 		Tri(Base + vec2(-0.06f, -0.1f), Base + vec2(-0.02f, -0.2f), Base + vec2(0.0f, -0.1f), ColorRGBA(1.0f, 0.9f, 0.3f, Alpha));
 		Tri(Base + vec2(0.0f, -0.18f), Base + vec2(0.06f, -0.1f), Base + vec2(0.09f, -0.18f), ColorRGBA(0.4f, 0.8f, 1.0f, Alpha));
@@ -1017,6 +1092,36 @@ void CVisuals::DrawPanda(vec2 Feet, float Size, float Alpha, vec2 Vel) const
 	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
+bool CVisuals::ShouldShimmer(int ClientId) const
+{
+	if(!g_Config.m_ClVisualsNameShimmer || ClientId < 0 || ClientId >= MAX_CLIENTS)
+		return false;
+	const int Mode = g_Config.m_ClVisualsNameMode;
+	if(Mode == 0 || ClientId == GameClient()->m_Snap.m_LocalClientId)
+		return true;
+	if(Mode == 1)
+		return false;
+	// list of names separated by commas
+	const char *pName = GameClient()->m_aClients[ClientId].m_aName;
+	const char *pList = g_Config.m_ClVisualsNameList;
+	while(*pList)
+	{
+		while(*pList == ',' || *pList == ' ')
+			pList++;
+		const char *pEnd = pList;
+		while(*pEnd && *pEnd != ',')
+			pEnd++;
+		const char *pTrim = pEnd;
+		while(pTrim > pList && pTrim[-1] == ' ')
+			pTrim--;
+		const int Length = (int)(pTrim - pList);
+		if(Length > 0 && Length == str_length(pName) && str_comp_nocase_num(pName, pList, Length) == 0)
+			return true;
+		pList = pEnd;
+	}
+	return false;
+}
+
 ColorRGBA CVisuals::NameShimmerColor(int CharIndex) const
 {
 	// the chosen colors flow through the name from left to right
@@ -1056,12 +1161,12 @@ void CVisuals::OnRender()
 
 	const bool Snow = g_Config.m_ClVisualsSnow;
 	const bool Fireflies = g_Config.m_ClVisualsFireflies;
-	const bool Predict = g_Config.m_ClCombatPredict;
+	const bool Predict = false; // drawn behind the tee instead, see RenderBehindTee
 	const bool Petals = g_Config.m_ClVisualsPetals;
 	const bool Bubbles = g_Config.m_ClVisualsBubbles;
 	const bool Starfield = g_Config.m_ClVisualsStarfield;
-	const bool Aurora = g_Config.m_ClVisualsAurora;
-	const bool Meteors = g_Config.m_ClVisualsMeteors;
+	const bool Aurora = false; // removed
+	const bool Meteors = false; // removed
 	if(!Snow && !Fireflies && !Predict && !Petals && !Bubbles && !Starfield && !Aurora && !Meteors && m_vBlackHoles.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty() && m_vMeteors.empty())
 		return;
 
@@ -1600,7 +1705,7 @@ void CVisuals::RenderGunPredict(const CScreenRect &View) const
 	const ColorRGBA EndColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClCombatPredictEndColor));
 	Graphics()->TextureClear();
 	Graphics()->QuadsBegin();
-	const size_t NumSegments = vPoints.size() - 1;
+	const size_t NumSegments = g_Config.m_ClCombatPredictLine ? vPoints.size() - 1 : 0;
 	for(size_t i = 0; i < NumSegments; i++)
 	{
 		const vec2 A = vPoints[i];
@@ -1737,8 +1842,8 @@ void CVisuals::UpdateAutoSkin(float DeltaTime)
 {
 	if(!g_Config.m_ClVisualsAutoSkin)
 	{
-		// switched off: everything is as it was before
-		m_AutoSkinTimer = 0.0f;
+		// switched off: everything is as it was before. The first change comes right after switching on.
+		m_AutoSkinTimer = 1000.0f;
 		RestoreSkin();
 		return;
 	}
@@ -1747,7 +1852,8 @@ void CVisuals::UpdateAutoSkin(float DeltaTime)
 	if(Client()->State() != IClient::STATE_ONLINE)
 		return;
 	m_AutoSkinTimer += DeltaTime;
-	if(m_AutoSkinTimer < (float)g_Config.m_ClVisualsAutoSkinInterval)
+	// servers ignore skin changes that come faster than sv_info_change_delay (5 seconds), so never go below 6
+	if(m_AutoSkinTimer < (float)std::max(g_Config.m_ClVisualsAutoSkinInterval, 6))
 		return;
 	m_AutoSkinTimer = 0.0f;
 

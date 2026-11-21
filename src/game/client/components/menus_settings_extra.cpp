@@ -94,9 +94,9 @@ void CMenus::RenderSettingsSkin(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClVisualsAutoSkin, "Включить автосмену");
 	{
 		CUIRect Row = NextRow(Card);
-		Ui()->DoScrollbarOption(&g_Config.m_ClVisualsAutoSkinInterval, &g_Config.m_ClVisualsAutoSkinInterval, &Row, "Менять каждые", 1, 120, &CUi::ms_LinearScrollbarScale, 0u, " сек");
+		Ui()->DoScrollbarOption(&g_Config.m_ClVisualsAutoSkinInterval, &g_Config.m_ClVisualsAutoSkinInterval, &Row, "Менять каждые", 6, 120, &CUi::ms_LinearScrollbarScale, 0u, " сек");
 	}
-	DoText(Card, "Сервер часто принимает смену скина не чаще раза в 5 секунд.");
+	DoText(Card, "Сервер принимает смену скина не чаще раза в 5 секунд (минимум здесь 6).");
 	{
 		static CButtonContainer s_ColorsButton;
 		const char *apModes[3] = {"Цвета не менять", "Цвета: радуга плавно", "Цвета: случайные резко"};
@@ -175,77 +175,151 @@ void CMenus::RenderSettingsGunpack(CUIRect MainView)
 		std::sort(gs_vGunpacks.begin() + 1, gs_vGunpacks.end());
 		gs_vGunpacks.erase(std::unique(gs_vGunpacks.begin(), gs_vGunpacks.end()), gs_vGunpacks.end());
 	}
+	if(g_Config.m_ClGunpackSecond[0] == '\0')
+		str_copy(g_Config.m_ClGunpackSecond, "default");
 
-	CUIRect Left, Middle, Right, Rest;
-	MainView.VSplitLeft((MainView.w - 20.0f) / 3.0f, &Left, &Rest);
-	Rest.VSplitLeft(10.0f, nullptr, &Rest);
-	Rest.VSplitLeft((MainView.w - 20.0f) / 3.0f, &Middle, &Right);
-	Right.VSplitLeft(10.0f, nullptr, &Right);
+	// the two packs are shown as textures: the first on the left half, the second on the right half
+	static IGraphics::CTextureHandle s_aTextures[2];
+	static char s_aLoadedNames[2][64] = {"\x01", "\x01"};
+	char *apNames[2] = {g_Config.m_ClAssetGame, g_Config.m_ClGunpackSecond};
+	for(int Side = 0; Side < 2; Side++)
+	{
+		if(str_comp(s_aLoadedNames[Side], apNames[Side]) == 0)
+			continue;
+		str_copy(s_aLoadedNames[Side], apNames[Side], sizeof(s_aLoadedNames[Side]));
+		Graphics()->UnloadTexture(&s_aTextures[Side]);
+		CImageInfo Image;
+		char aPath[IO_MAX_PATH_LENGTH];
+		bool Loaded;
+		if(str_comp(apNames[Side], "default") == 0)
+			Loaded = Graphics()->LoadPng(Image, "game.png", IStorage::TYPE_ALL);
+		else
+		{
+			str_format(aPath, sizeof(aPath), "assets/game/%s.png", apNames[Side]);
+			Loaded = Graphics()->LoadPng(Image, aPath, IStorage::TYPE_ALL);
+			if(!Loaded)
+			{
+				str_format(aPath, sizeof(aPath), "assets/game/%s/game.png", apNames[Side]);
+				Loaded = Graphics()->LoadPng(Image, aPath, IStorage::TYPE_ALL);
+			}
+		}
+		if(Loaded)
+			s_aTextures[Side] = Graphics()->LoadTextureRawMove(Image, 0, "gunpack preview");
+	}
 
-	const auto DoPackList = [&](CUIRect Area, const char *pTitle, char *pCurrent, size_t CurrentSize, bool ReloadSkin, CListBox &ListBox) {
-		Area.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f), IGraphics::CORNER_ALL, 10.0f);
-		Area.Margin(CARD_PADDING, &Area);
-		CUIRect Title;
-		Area.HSplitTop(CARD_TITLE_HEIGHT, &Title, &Area);
-		Ui()->DoLabel(&Title, pTitle, 16.0f, TEXTALIGN_ML);
-		int Selected = -1;
-		for(size_t i = 0; i < gs_vGunpacks.size(); i++)
-		{
-			if(str_comp(gs_vGunpacks[i].c_str(), pCurrent) == 0)
-				Selected = (int)i;
-		}
-		ListBox.DoStart(24.0f, gs_vGunpacks.size(), 1, 3, Selected, &Area);
-		for(size_t i = 0; i < gs_vGunpacks.size(); i++)
-		{
-			const CListboxItem Item = ListBox.DoNextItem(&gs_vGunpacks[i], Selected == (int)i);
-			if(!Item.m_Visible)
-				continue;
-			Ui()->DoLabel(&Item.m_Rect, gs_vGunpacks[i].c_str(), 13.0f, TEXTALIGN_ML);
-		}
-		const int NewSelected = ListBox.DoEnd();
-		if(NewSelected != Selected && NewSelected >= 0 && NewSelected < (int)gs_vGunpacks.size())
-		{
-			str_copy(pCurrent, gs_vGunpacks[NewSelected].c_str(), CurrentSize);
-			GameClient()->LoadGameSkin(g_Config.m_ClAssetGame);
-			(void)ReloadSkin;
-		}
+	// an element is one part of a gunpack that can be taken from either side: bit number, name, preview region of the game image (in grid cells)
+	struct SElement
+	{
+		const char *m_pName;
+		int m_X, m_Y, m_W, m_H;
 	};
-	static CListBox s_FirstList, s_SecondList;
-	DoPackList(Left, "Основной ганпак", g_Config.m_ClAssetGame, sizeof(g_Config.m_ClAssetGame), true, s_FirstList);
-	DoPackList(Middle, "Второй ганпак (берём из него)", g_Config.m_ClGunpackSecond, sizeof(g_Config.m_ClGunpackSecond), false, s_SecondList);
+	static const SElement s_aElements[13] = {
+		{"Молоток", 2, 1, 4, 3}, {"Пистолет", 2, 4, 4, 2}, {"Дробовик", 2, 6, 8, 2}, {"Граната", 2, 8, 7, 2}, {"Лазер", 2, 10, 8, 2}, {"Меч ниндзя", 2, 12, 7, 3},
+		{"Прицелы", 0, 4, 2, 2}, {"Снаряды", 6, 4, 2, 2}, {"Вспышки выстрелов", 8, 4, 4, 2}, {"Хук", 3, 0, 2, 1}, {"Сердца, броня, пикапы", 10, 2, 4, 2}, {"Флаги", 21, 0, 4, 4}, {"Звёзды и частицы", 15, 0, 2, 2}};
 
-	CUIRect Card = BeginCard(Right, "Что взять из второго", 10);
-	static const char *s_apParts[7] = {"Оружие", "Прицелы", "Снаряды", "Вспышки выстрелов", "Хук", "Пикапы, сердца, флаги", "Звёзды и частицы"};
-	for(int i = 0; i < 7; i++)
+	MainView.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f), IGraphics::CORNER_ALL, 10.0f);
+	MainView.Margin(CARD_PADDING, &MainView);
+	CUIRect Header;
+	MainView.HSplitTop(34.0f, &Header, &MainView);
+	CUIRect HeaderLeft, HeaderRight;
+	Header.VSplitMid(&HeaderLeft, &HeaderRight, 10.0f);
+
+	// pack choosers: "<" name ">" for each half
+	static CButtonContainer s_aPrev[2], s_aNext[2];
+	for(int Side = 0; Side < 2; Side++)
 	{
-		static int s_aToggles[7];
-		s_aToggles[i] = (g_Config.m_ClGunpackMask >> i) & 1;
-		CUIRect Row = NextRow(Card);
-		if(DoButton_CheckBox(&s_aToggles[i], s_apParts[i], s_aToggles[i], &Row))
+		CUIRect Area = Side == 0 ? HeaderLeft : HeaderRight, Prev, Next, Name;
+		Area.VSplitLeft(36.0f, &Prev, &Area);
+		Area.VSplitRight(36.0f, &Name, &Next);
+		int Current = 0;
+		for(size_t i = 0; i < gs_vGunpacks.size(); i++)
+			if(str_comp(gs_vGunpacks[i].c_str(), apNames[Side]) == 0)
+				Current = (int)i;
+		int Step = 0;
+		if(DoButton_Menu(&s_aPrev[Side], "<", 0, &Prev))
+			Step = -1;
+		if(DoButton_Menu(&s_aNext[Side], ">", 0, &Next))
+			Step = 1;
+		if(Step != 0)
 		{
-			g_Config.m_ClGunpackMask ^= 1 << i;
+			const int Count = (int)gs_vGunpacks.size();
+			const int NewIndex = (Current + Step + Count) % Count;
+			str_copy(apNames[Side], gs_vGunpacks[NewIndex].c_str(), 50);
 			GameClient()->LoadGameSkin(g_Config.m_ClAssetGame);
 		}
+		char aTitle[96];
+		str_format(aTitle, sizeof(aTitle), "%s: %s", Side == 0 ? "Ганпак 1" : "Ганпак 2", apNames[Side]);
+		Ui()->DoLabel(&Name, aTitle, 15.0f, TEXTALIGN_MC);
 	}
+	MainView.HSplitTop(4.0f, nullptr, &MainView);
+
+	// every element: the left cell takes it from the first pack, the right cell from the second one
+	const float RowHeight = std::min(44.0f, (MainView.h - 40.0f) / 13.0f);
+	static CButtonContainer s_aCells[13][2];
+	for(int Element = 0; Element < 13; Element++)
 	{
-		static CButtonContainer s_ResetButton;
-		CUIRect Row = NextRow(Card);
-		if(DoButton_Menu(&s_ResetButton, "Сбросить смешивание", 0, &Row))
+		CUIRect Row;
+		MainView.HSplitTop(RowHeight, &Row, &MainView);
+		Row.HMargin(1.0f, &Row);
+		CUIRect Left, Right, Middle;
+		Row.VSplitMid(&Left, &Right, 10.0f);
+		const bool FromSecond = (g_Config.m_ClGunpackMask >> Element) & 1;
+		for(int Side = 0; Side < 2; Side++)
 		{
-			g_Config.m_ClGunpackMask = 0;
-			g_Config.m_ClGunpackSecond[0] = '\0';
-			GameClient()->LoadGameSkin(g_Config.m_ClAssetGame);
+			CUIRect Cell = Side == 0 ? Left : Right;
+			const bool Chosen = (Side == 1) == FromSecond;
+			Cell.Draw(Chosen ? ColorRGBA(0.2f, 0.85f, 0.5f, 0.35f) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.06f), IGraphics::CORNER_ALL, 6.0f);
+			if(Chosen)
+			{
+				CUIRect Edge = Cell;
+				Edge.Draw(ColorRGBA(0.3f, 1.0f, 0.6f, 0.0f), IGraphics::CORNER_ALL, 6.0f);
+			}
+			const SElement &Info = s_aElements[Element];
+			CUIRect Preview, Label;
+			Cell.VSplitLeft(Cell.h * 1.8f, &Preview, &Label);
+			Label.VMargin(6.0f, &Label);
+			Ui()->DoLabel(&Label, Info.m_pName, 13.0f, TEXTALIGN_ML);
+			if(s_aTextures[Side].IsValid())
+			{
+				// the picture keeps its proportions inside the preview area
+				const float Aspect = (float)Info.m_W / (float)Info.m_H;
+				float W = Preview.w - 6.0f, H = Preview.h - 4.0f;
+				if(W / H > Aspect)
+					W = H * Aspect;
+				else
+					H = W / Aspect;
+				Graphics()->TextureSet(s_aTextures[Side]);
+				Graphics()->QuadsBegin();
+				Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+				Graphics()->QuadsSetSubset(Info.m_X / 32.0f, Info.m_Y / 16.0f, (Info.m_X + Info.m_W) / 32.0f, (Info.m_Y + Info.m_H) / 16.0f);
+				const IGraphics::CQuadItem Item(Preview.x + (Preview.w - W) / 2.0f, Preview.y + (Preview.h - H) / 2.0f, W, H);
+				Graphics()->QuadsDrawTL(&Item, 1);
+				Graphics()->QuadsEnd();
+			}
+			// the whole cell is the button
+			if(Ui()->DoButtonLogic(&s_aCells[Element][Side], 0, &Cell, BUTTONFLAG_LEFT) && !Chosen)
+			{
+				g_Config.m_ClGunpackMask ^= 1 << Element;
+				GameClient()->LoadGameSkin(g_Config.m_ClAssetGame);
+			}
 		}
 	}
+
+	CUIRect Bottom;
+	MainView.HSplitTop(30.0f, &Bottom, &MainView);
+	Bottom.HMargin(3.0f, &Bottom);
+	CUIRect Hint, ButtonA, ButtonB;
+	Bottom.VSplitRight(180.0f, &Hint, &ButtonB);
+	Hint.VSplitRight(180.0f, &Hint, &ButtonA);
+	static CButtonContainer s_ResetButton, s_RefreshButton;
+	if(DoButton_Menu(&s_ResetButton, "Всё из ганпака 1", 0, &ButtonA))
 	{
-		static CButtonContainer s_RefreshButton;
-		CUIRect Row = NextRow(Card, true);
-		if(DoButton_Menu(&s_RefreshButton, "Обновить список", 0, &Row))
-			gs_GunpacksLoaded = false;
+		g_Config.m_ClGunpackMask = 0;
+		GameClient()->LoadGameSkin(g_Config.m_ClAssetGame);
 	}
-	CUIRect Hint;
-	Right.HSplitTop(60.0f, &Hint, &Right);
-	Ui()->DoLabel(&Hint, "Выберите основной и второй ганпак, отметьте что взять из второго (например прицелы или оружие). Новые ганпаки кладите в папку assets/game.", 12.0f, TEXTALIGN_TL);
+	if(DoButton_Menu(&s_RefreshButton, "Обновить список", 0, &ButtonB))
+		gs_GunpacksLoaded = false;
+	Ui()->DoLabel(&Hint, "Нажмите на левую или правую сторону у каждой части, чтобы выбрать, откуда её взять. Ганпаки кладите в assets/game.", 12.0f, TEXTALIGN_ML);
 }
 
 // ---------------------------------------------------------------- Рисование
@@ -316,7 +390,7 @@ void CMenus::RenderSettingsMusic(CUIRect MainView)
 	MainView.VSplitMid(&Left, &Right, 10.0f);
 	CMusicPlayer &Music = GameClient()->m_MusicPlayer;
 
-	CUIRect Card = BeginCard(Left, "Музыка", 11);
+	CUIRect Card = BeginCard(Left, "Музыка", 12);
 	{
 		char aText[256];
 		if(Music.Current() >= 0 && Music.Current() < (int)Music.Tracks().size())
@@ -366,14 +440,40 @@ void CMenus::RenderSettingsMusic(CUIRect MainView)
 		CUIRect Row = NextRow(Card);
 		Ui()->DoLabel(&Row, aFolder, 10.0f, TEXTALIGN_ML);
 	}
+	DoText(Card, "Песни из интернета: Kevin MacLeod, incompetech.com (CC BY 4.0)");
 	if(Music.Error()[0] != '\0')
 		DoText(Card, Music.Error(), true);
 
 	Right.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f), IGraphics::CORNER_ALL, 10.0f);
 	Right.Margin(CARD_PADDING, &Right);
+	CUIRect OnlineArea;
+	Right.HSplitMid(&OnlineArea, &Right, 8.0f);
+
+	// песни из интернета: скачиваются один раз сами и сразу играют
+	{
+		CUIRect Title;
+		OnlineArea.HSplitTop(CARD_TITLE_HEIGHT, &Title, &OnlineArea);
+		Ui()->DoLabel(&Title, Music.IsDownloading() ? "Песни из интернета (скачивается...)" : "Песни из интернета (нажмите, чтобы слушать)", 16.0f, TEXTALIGN_ML);
+		static CListBox s_OnlineList;
+		int OnlineSelected = Music.OnlineCurrent();
+		s_OnlineList.DoStart(24.0f, CMusicPlayer::NumOnlineTracks(), 1, 3, OnlineSelected, &OnlineArea);
+		for(int i = 0; i < CMusicPlayer::NumOnlineTracks(); i++)
+		{
+			const CListboxItem Item = s_OnlineList.DoNextItem(&CMusicPlayer::OnlineTrack(i), OnlineSelected == i);
+			if(!Item.m_Visible)
+				continue;
+			char aName[128];
+			str_format(aName, sizeof(aName), "%s%s", CMusicPlayer::OnlineTrack(i).m_pTitle, Music.DownloadIndex() == i ? "  ..." : "");
+			Ui()->DoLabel(&Item.m_Rect, aName, 13.0f, TEXTALIGN_ML);
+		}
+		const int NewOnline = s_OnlineList.DoEnd();
+		if(NewOnline != OnlineSelected && NewOnline >= 0)
+			Music.PlayOnline(NewOnline);
+	}
+
 	CUIRect Title;
 	Right.HSplitTop(CARD_TITLE_HEIGHT, &Title, &Right);
-	Ui()->DoLabel(&Title, "Треки (нажмите, чтобы включить)", 16.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Title, "Ваши треки (нажмите, чтобы включить)", 16.0f, TEXTALIGN_ML);
 	if(Music.Tracks().empty())
 	{
 		Ui()->DoLabel(&Right, "Папка пуста. Добавьте песни и нажмите «Обновить список».", 13.0f, TEXTALIGN_TL);

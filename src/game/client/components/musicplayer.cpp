@@ -4,6 +4,7 @@
 #include <base/str.h>
 
 #include <engine/client.h>
+#include <engine/http.h>
 #include <engine/shared/config.h>
 #include <engine/storage.h>
 
@@ -77,9 +78,16 @@ bool CMusicPlayer::LoadTrack(int Index)
 	m_aError[0] = '\0';
 	if(Index < 0 || Index >= (int)m_vTracks.size())
 		return false;
-
 	char aPath[IO_MAX_PATH_LENGTH];
 	str_format(aPath, sizeof(aPath), "%s/%s", MUSIC_FOLDER, m_vTracks[Index].c_str());
+	return LoadFile(aPath);
+}
+
+// Loads a file of the save folder into the sound engine.
+bool CMusicPlayer::LoadFile(const char *pPath)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	str_copy(aPath, pPath);
 	void *pData = nullptr;
 	unsigned Size = 0;
 	if(!Storage()->ReadFile(aPath, IStorage::TYPE_SAVE, &pData, &Size))
@@ -87,7 +95,6 @@ bool CMusicPlayer::LoadTrack(int Index)
 		str_copy(m_aError, "Не удалось прочитать файл");
 		return false;
 	}
-
 	int Sample = -1;
 	if(str_endswith_nocase(aPath, ".mp3"))
 	{
@@ -133,7 +140,72 @@ void CMusicPlayer::Play(int Index)
 		m_Playing = false;
 		return;
 	}
+	m_OnlineCurrent = -1;
+	StartPlayback();
+}
+
+void CMusicPlayer::StartPlayback()
+{
 	m_Voice = Sound()->Play(CSounds::CHN_GLOBAL, m_Sample, 0, g_Config.m_ClMusicVolume / 100.0f);
+}
+
+// Songs with a free license (Kevin MacLeod, incompetech.com, CC BY 4.0).
+static const CMusicPlayer::SOnlineTrack gs_aOnlineTracks[] = {
+	{"Sneaky Snitch", "Sneaky Snitch.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Sneaky%20Snitch.mp3"},
+	{"Monkeys Spinning Monkeys", "Monkeys Spinning Monkeys.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Monkeys%20Spinning%20Monkeys.mp3"},
+	{"Carefree", "Carefree.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Carefree.mp3"},
+	{"Fluffing a Duck", "Fluffing a Duck.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Fluffing%20a%20Duck.mp3"},
+	{"Wallpaper", "Wallpaper.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Wallpaper.mp3"},
+	{"Cipher", "Cipher.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Cipher.mp3"},
+	{"Run Amok", "Run Amok.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Run%20Amok.mp3"},
+	{"Hyperfun", "Hyperfun.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Hyperfun.mp3"},
+	{"Pixel Peeker Polka (faster)", "Pixel Peeker Polka - faster.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Pixel%20Peeker%20Polka%20-%20faster.mp3"},
+	{"Ice Flow", "Ice Flow.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Ice%20Flow.mp3"},
+	{"Local Forecast (Elevator)", "Local Forecast - Elevator.mp3", "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Local%20Forecast%20-%20Elevator.mp3"},
+};
+
+int CMusicPlayer::NumOnlineTracks()
+{
+	return (int)std::size(gs_aOnlineTracks);
+}
+
+const CMusicPlayer::SOnlineTrack &CMusicPlayer::OnlineTrack(int Index)
+{
+	return gs_aOnlineTracks[std::clamp(Index, 0, NumOnlineTracks() - 1)];
+}
+
+void CMusicPlayer::PlayOnline(int Index)
+{
+	if(Index < 0 || Index >= NumOnlineTracks() || m_pDownload)
+		return;
+	const SOnlineTrack &Track = OnlineTrack(Index);
+	Storage()->CreateFolder("music/online", IStorage::TYPE_SAVE);
+	str_format(m_aDownloadPath, sizeof(m_aDownloadPath), "music/online/%s", Track.m_pFile);
+	m_aError[0] = '\0';
+	m_DownloadIndex = Index;
+
+	// already downloaded: play it right away
+	IOHANDLE File = Storage()->OpenFile(m_aDownloadPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(File)
+	{
+		io_close(File);
+		Unload();
+		if(LoadFile(m_aDownloadPath))
+		{
+			m_Current = -1;
+			m_OnlineCurrent = Index;
+			m_Playing = true;
+			m_Paused = false;
+			StartPlayback();
+		}
+		m_DownloadIndex = -1;
+		return;
+	}
+
+	str_format(m_aDownloadTmp, sizeof(m_aDownloadTmp), "%s.tmp", m_aDownloadPath);
+	m_pDownload = HttpGetFile(Track.m_pUrl, Storage(), m_aDownloadTmp, IStorage::TYPE_SAVE);
+	m_pDownload->MaxResponseSize(60 * 1024 * 1024);
+	Http()->Run(m_pDownload);
 }
 
 void CMusicPlayer::TogglePause()
@@ -179,6 +251,24 @@ void CMusicPlayer::Previous()
 
 void CMusicPlayer::OnRender()
 {
+	if(m_pDownload && m_pDownload->State() != EHttpState::QUEUED && m_pDownload->State() != EHttpState::RUNNING)
+	{
+		const bool Done = m_pDownload->State() == EHttpState::DONE;
+		const int Index = m_DownloadIndex;
+		m_pDownload = nullptr;
+		m_DownloadIndex = -1;
+		if(Done)
+		{
+			Storage()->RenameFile(m_aDownloadTmp, m_aDownloadPath, IStorage::TYPE_SAVE);
+			PlayOnline(Index);
+		}
+		else
+		{
+			Storage()->RemoveFile(m_aDownloadTmp, IStorage::TYPE_SAVE);
+			str_copy(m_aError, "Не удалось скачать песню (нет интернета или сайт недоступен)");
+		}
+	}
+
 	if(!m_AutoStarted)
 	{
 		m_AutoStarted = true;
@@ -192,5 +282,10 @@ void CMusicPlayer::OnRender()
 		Sound()->SetVoiceVolume(m_Voice, g_Config.m_ClMusicVolume / 100.0f);
 	// the track ended: next one
 	if(!Sound()->IsPlaying(m_Sample))
-		Next();
+	{
+		if(m_OnlineCurrent >= 0)
+			PlayOnline((m_OnlineCurrent + 1) % NumOnlineTracks());
+		else
+			Next();
+	}
 }

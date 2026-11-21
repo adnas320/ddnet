@@ -673,7 +673,7 @@ void CEditor::DoToolbarLayers(CUIRect ToolBar)
 
 		// Generator button and color palette
 		{
-			const float PipetteButtonWidth = 70.0f + 2.0f * 76.0f + 2.0f * 2.0f;
+			const float PipetteButtonWidth = 72.0f;
 			const float ColorPickerButtonWidth = 20.0f;
 			const float Spacing = 2.0f;
 			const size_t NumColorsShown = std::clamp<int>(round_to_int((ToolbarTop.w - PipetteButtonWidth - 40.0f) / (ColorPickerButtonWidth + Spacing)), 1, std::size(m_aSavedColors));
@@ -689,20 +689,6 @@ void CEditor::DoToolbarLayers(CUIRect ToolBar)
 				(CLineInput::GetActiveInput() == nullptr && ModPressed && ShiftPressed && Input()->KeyPress(KEY_G)))
 			{
 				m_QuickActionGenerate.Call();
-			}
-
-			// difficulty and block style of the generator
-			{
-				static char s_DifficultyButton, s_StyleButton;
-				const char *apDifficulties[3] = {"Novice", "Moderate", "Brutal"};
-				ColorPalette.VSplitLeft(76.0f, &Button, &ColorPalette);
-				ColorPalette.VSplitLeft(Spacing, nullptr, &ColorPalette);
-				if(DoButton_Editor(&s_DifficultyButton, apDifficulties[std::clamp(m_GeneratorDifficulty, 0, 2)], 0, &Button, BUTTONFLAG_LEFT, "Difficulty of the generated parts: novice, moderate or brutal."))
-					m_GeneratorDifficulty = (m_GeneratorDifficulty + 1) % 3;
-				ColorPalette.VSplitLeft(76.0f, &Button, &ColorPalette);
-				ColorPalette.VSplitLeft(Spacing, nullptr, &ColorPalette);
-				if(DoButton_Editor(&s_StyleButton, m_GeneratorStyle == 1 ? "Blocks 3x3" : "Blocks 1x1", 0, &Button, BUTTONFLAG_LEFT, "Size of the blocks (pillars) in the generated parts."))
-					m_GeneratorStyle = 1 - m_GeneratorStyle;
 			}
 
 			// Palette color pickers
@@ -4175,6 +4161,15 @@ void CEditor::FreeDynamicPopupMenus()
 
 void CEditor::UpdateGenerator()
 {
+	if(m_GeneratorJob.m_Running)
+	{
+		// the course is being built: clicks are blocked, escape or a click finishes it right away
+		static char s_GeneratorBusyButton;
+		const int Result = DoButtonLogic(&s_GeneratorBusyButton, 0, Ui()->Screen(), BUTTONFLAG_ALL, "The course is being generated. Click or press escape to finish it at once.");
+		m_GeneratorJob.m_Elapsed += Client()->RenderFrameTime();
+		StepGeneratorJob(Result != 0 || Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE));
+		return;
+	}
 	if(!m_GeneratorActive)
 		return;
 	if(!Map()->m_pGameLayer || !Map()->m_pGameGroup)
@@ -4227,8 +4222,80 @@ void CEditor::UpdateGenerator()
 
 void CEditor::RenderGeneratorOverlay()
 {
+	if(m_GeneratorJob.m_Running)
+	{
+		// progress panel with the stage the generator is working on
+		const float Progress = std::clamp(m_GeneratorJob.m_Elapsed / m_GeneratorJob.m_Duration, 0.0f, 1.0f);
+		static const char *s_apStages[] = {"Planning the route...", "Carving chambers...", "Placing blocks and walls...", "Adding freeze and unhookable parts...", "Connecting teleporters...", "Polishing the edges..."};
+		const int Stage = std::min((int)(Progress * (float)std::size(s_apStages)), (int)std::size(s_apStages) - 1);
+		CUIRect Panel = {Ui()->Screen()->w / 2.0f - 120.0f, 70.0f, 240.0f, 44.0f};
+		Panel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f), IGraphics::CORNER_ALL, 6.0f);
+		CUIRect Label, Bar;
+		Panel.Margin(6.0f, &Panel);
+		Panel.HSplitTop(16.0f, &Label, &Bar);
+		char aText[128];
+		str_format(aText, sizeof(aText), "Generating: %s", s_apStages[Stage]);
+		Ui()->DoLabel(&Label, aText, 10.0f, TEXTALIGN_ML);
+		Bar.HSplitTop(4.0f, nullptr, &Bar);
+		Bar.h = 10.0f;
+		Bar.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.15f), IGraphics::CORNER_ALL, 3.0f);
+		CUIRect Fill = Bar;
+		Fill.w = std::max(6.0f, Bar.w * Progress);
+		Fill.Draw(ColorRGBA(0.45f, 1.0f, 0.75f, 0.9f), IGraphics::CORNER_ALL, 3.0f);
+		return;
+	}
 	if(!m_GeneratorActive || !Map()->m_pGameGroup)
 		return;
+
+	// settings panel (drawn last so that its buttons win over the zone selection)
+	{
+		CUIRect Panel = {Ui()->Screen()->w / 2.0f - 150.0f, 70.0f, 300.0f, 84.0f};
+		Panel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f), IGraphics::CORNER_ALL, 6.0f);
+		Panel.Margin(6.0f, &Panel);
+		CUIRect Row, Button;
+		static char s_aDifficulty[3], s_aStyle[2], s_aThink[3], s_Teleports;
+
+		Panel.HSplitTop(18.0f, &Row, &Panel);
+		Panel.HSplitTop(3.0f, nullptr, &Panel);
+		Row.VSplitLeft(62.0f, &Button, &Row);
+		Ui()->DoLabel(&Button, "Difficulty", 10.0f, TEXTALIGN_ML);
+		static const char *s_apDifficulties[3] = {"Novice", "Moderate", "Brutal"};
+		for(int i = 0; i < 3; i++)
+		{
+			Row.VSplitLeft(70.0f, &Button, &Row);
+			Row.VSplitLeft(2.0f, nullptr, &Row);
+			if(DoButton_Editor(&s_aDifficulty[i], s_apDifficulties[i], m_GeneratorDifficulty == i, &Button, BUTTONFLAG_LEFT, "Difficulty of the generated parts."))
+				m_GeneratorDifficulty = i;
+		}
+
+		Panel.HSplitTop(18.0f, &Row, &Panel);
+		Panel.HSplitTop(3.0f, nullptr, &Panel);
+		Row.VSplitLeft(62.0f, &Button, &Row);
+		Ui()->DoLabel(&Button, "Blocks", 10.0f, TEXTALIGN_ML);
+		static const char *s_apStyles[2] = {"1x1", "3x3"};
+		for(int i = 0; i < 2; i++)
+		{
+			Row.VSplitLeft(70.0f, &Button, &Row);
+			Row.VSplitLeft(2.0f, nullptr, &Row);
+			if(DoButton_Editor(&s_aStyle[i], s_apStyles[i], m_GeneratorStyle == i, &Button, BUTTONFLAG_LEFT, "Thickness of blocks and walls."))
+				m_GeneratorStyle = i;
+		}
+		Row.VSplitLeft(2.0f, nullptr, &Row);
+		if(DoButton_Editor(&s_Teleports, "Teleports", m_GeneratorTeleports, &Row, BUTTONFLAG_LEFT, "Add teleporter parts (needs a zone that is at least 64 tiles wide)."))
+			m_GeneratorTeleports = !m_GeneratorTeleports;
+
+		Panel.HSplitTop(18.0f, &Row, &Panel);
+		Row.VSplitLeft(62.0f, &Button, &Row);
+		Ui()->DoLabel(&Button, "Thinking", 10.0f, TEXTALIGN_ML);
+		static const char *s_apThink[3] = {"Fast", "Normal", "Long (2 min)"};
+		for(int i = 0; i < 3; i++)
+		{
+			Row.VSplitLeft(i == 2 ? 80.0f : 62.0f, &Button, &Row);
+			Row.VSplitLeft(2.0f, nullptr, &Row);
+			if(DoButton_Editor(&s_aThink[i], s_apThink[i], m_GeneratorThink == i, &Button, BUTTONFLAG_LEFT, "How long the generator takes. The course is built step by step while it works."))
+				m_GeneratorThink = i;
+		}
+	}
 
 	const CScreenRect Rect = Map()->m_pGameGroup->Mapping();
 	const auto ToUiX = [&](float TileX) { return (TileX * 32.0f - Rect.m_TopLeft.x) / Rect.Width() * Ui()->Screen()->w; };

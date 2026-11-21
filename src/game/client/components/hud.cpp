@@ -451,7 +451,7 @@ void CHud::RenderScoreHud()
 					if(Id >= 0 && Id < MAX_CLIENTS)
 					{
 						const char *pName = GameClient()->m_aClients[Id].m_aName;
-						const bool OwnShimmer = g_Config.m_ClVisualsNameShimmer && Id == GameClient()->m_Snap.m_LocalClientId;
+						const bool OwnShimmer = GameClient()->m_Visuals.ShouldShimmer(Id);
 						if(RecreateRect || OwnShimmer)
 						{
 							str_copy(m_aScoreInfo[t].m_aPlayerNameText, pName);

@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <iterator>
 #include <random>
 
 void CEditor::FillGameTiles(EGameTileOp FillTile) const
@@ -25,9 +27,11 @@ bool CEditor::CanFillGameTiles() const
 	return false;
 }
 
-// Generates a DDRace course in a zone of the game layer: a winding tunnel from a start room with the
-// start line to a finish room with the finish line. Between them the tunnel is made of floor with
-// freeze, freeze pits, hanging and standing pillars, squeezes, unhookable ceilings and steps.
+// Generates a DDRace course in a zone of the game layer. The course runs from a start room (spawn and
+// start line) to a finish room (finish line) and is built from sections: open chambers with platforms,
+// fields of blocks, zigzag walls, freeze floors, freeze pits, vertical shafts, hook sections with
+// stalactites, staircases, narrow freeze tunnels and (optionally) teleporter parts. Difficulty and
+// block style (1x1 or 3x3) change sizes, freeze density and which sections are used.
 void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 {
 	std::shared_ptr<CLayerTiles> pGameLayer = Map()->m_pGameLayer;
@@ -41,247 +45,550 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	Y1 = std::min(Y1, pGameLayer->m_Height - 1);
 	const int W = X1 - X0 + 1;
 	const int H = Y1 - Y0 + 1;
-	if(W < 24 || H < 12)
+	if(W < 32 || H < 16)
 	{
-		ShowFileDialogError("The zone is too small. It has to be at least 24 x 12 tiles.");
+		ShowFileDialogError("The zone is too small. It has to be at least 32 x 16 tiles.");
 		return;
 	}
 
 	std::mt19937 Rng(m_GeneratorSeed++ * 2654435761u + (unsigned)std::chrono::steady_clock::now().time_since_epoch().count());
-	const auto Rand = [&](int Min, int Max) { return std::uniform_int_distribution<int>(Min, Max)(Rng); };
-
-	// local buffer, everything is solid at the start
-	std::vector<unsigned char> vBuf((size_t)W * H, TILE_SOLID);
-	const auto At = [&](int x, int y) -> unsigned char & { return vBuf[(size_t)y * W + x]; };
-	const auto Inside = [&](int x, int y) { return x >= 1 && x < W - 1 && y >= 1 && y < H - 1; };
-	const auto Carve = [&](int x, int Top, int Bottom) {
-		for(int y = Top; y <= Bottom; y++)
-			if(Inside(x, y))
-				At(x, y) = TILE_AIR;
+	const auto Rand = [&](int Min, int Max) {
+		if(Max < Min)
+			Max = Min;
+		return std::uniform_int_distribution<int>(Min, Max)(Rng);
 	};
 
-	// difficulty: 0 = novice, 1 = moderate, 2 = brutal; style: 0 = 1x1 blocks, 1 = 3x3 blocks
-	const int Diff = std::clamp(m_GeneratorDifficulty, 0, 2);
-	const int PW = m_GeneratorStyle == 1 ? 3 : 1;
-	const int aStartHeight[3] = {8, 6, 5};
-	const int aMinHeight[3] = {7, 5, 4};
-	const int aMaxHeight[3] = {10, 7, 6};
-	const int aBlockGap[3] = {3, 2, 1};
+	// ---- settings ----
+	const int Diff = std::clamp(m_GeneratorDifficulty, 0, 2); // 0 novice, 1 moderate, 2 brutal
+	const int B = m_GeneratorStyle == 1 ? 3 : 1; // thickness of blocks and walls
+	const int aHMin[3] = {10, 7, 5};
+	const int aHMax[3] = {16, 11, 8};
 
-	// the tunnel is between Top and Bottom (both air rows)
-	const int MinTop = 3, MaxBottom = H - 4;
-	const int StartHeight = std::clamp(aStartHeight[Diff], 4, MaxBottom - MinTop + 1);
-	const int MinHeight = std::min(aMinHeight[Diff], StartHeight);
-	const int MaxHeight = std::min(aMaxHeight[Diff], MaxBottom - MinTop + 1);
-	int Top = std::clamp(H / 2 - StartHeight / 2, MinTop, MaxBottom - StartHeight + 1);
-	int Bottom = Top + StartHeight - 1;
-	int x = 2;
+	// teleporters are only possible when the tele layer (if there is one) covers the zone
+	std::shared_ptr<CLayerTele> pTeleLayer = Map()->m_pTeleLayer;
+	bool Teleports = m_GeneratorTeleports && W >= 64;
+	if(pTeleLayer && (pTeleLayer->m_Width <= X1 || pTeleLayer->m_Height <= Y1))
+		Teleports = false;
+	int TeleBase = 1;
+	if(pTeleLayer)
+		TeleBase = std::clamp(pTeleLayer->FindNextFreeNumber(false), 1, 240);
 
-	// start room
-	for(int i = 0; i < 8; i++, x++)
-		Carve(x, Top - 1, Bottom);
-	At(4, Bottom) = (unsigned char)(ENTITY_OFFSET + ENTITY_SPAWN);
-	for(int y = Top - 1; y <= Bottom; y++)
-		if(Inside(x - 1, y))
-			At(x - 1, y) = TILE_START;
+	// ---- local buffers, everything starts as solid ----
+	enum
+	{
+		T_AIR = TILE_AIR,
+		T_SOLID = TILE_SOLID,
+		T_DEATH = TILE_DEATH,
+		T_NOHOOK = TILE_NOHOOK,
+		T_HOOKTHROUGH = TILE_THROUGH_CUT,
+		T_FREEZE = TILE_FREEZE,
+		T_UNFREEZE = TILE_UNFREEZE,
+		T_START = TILE_START,
+		T_FINISH = TILE_FINISH,
+		T_SPAWN = ENTITY_OFFSET + ENTITY_SPAWN,
+	};
+	std::vector<unsigned char> vBuf((size_t)W * H, (unsigned char)T_SOLID);
+	std::vector<unsigned char> vTeleType((size_t)W * H, 0);
+	std::vector<unsigned char> vTeleNum((size_t)W * H, 0);
+	const auto At = [&](int x, int y) -> unsigned char & { return vBuf[(size_t)y * W + x]; };
+	// the outermost ring of the zone always stays solid
+	const auto Inside = [&](int x, int y) { return x >= 1 && x < W - 1 && y >= 1 && y < H - 1; };
+	const auto Put = [&](int x, int y, int Tile) {
+		if(Inside(x, y))
+			At(x, y) = (unsigned char)Tile;
+	};
+	const auto PutIfAir = [&](int x, int y, int Tile) {
+		if(Inside(x, y) && At(x, y) == T_AIR)
+			At(x, y) = (unsigned char)Tile;
+	};
+	const auto Fill = [&](int x, int y, int w, int h, int Tile) {
+		for(int yy = y; yy < y + h; yy++)
+			for(int xx = x; xx < x + w; xx++)
+				Put(xx, yy, Tile);
+	};
 
-	// which kinds of sections are used on which difficulty
-	static const int s_aNovice[] = {0, 0, 1, 2, 3, 7, 7, 8};
-	static const int s_aModerate[] = {0, 1, 3, 4, 5, 6, 8, 9, 10};
-	static const int s_aBrutal[] = {4, 5, 6, 8, 9, 9, 10, 10};
+	// vertical limits of the air of the course
+	const int MinC = 2, MaxF = H - 3;
+
+	// chooses the rows (c to f) of the next chamber, it wanders up and down and overlaps the previous one
+	const auto ChooseRange = [&](int PrevC, int PrevF, int HMin, int HMax, bool NeedOverlap, int &c, int &f) {
+		const int Avail = MaxF - MinC + 1;
+		HMax = std::min(HMax, Avail);
+		HMin = std::min(HMin, HMax);
+		for(int Try = 0; Try < 60; Try++)
+		{
+			const int h = Rand(HMin, HMax);
+			const int Center = (PrevC + PrevF) / 2 + Rand(-7, 7);
+			c = std::clamp(Center - h / 2, MinC, MaxF - h + 1);
+			f = c + h - 1;
+			if(!NeedOverlap || std::min(f, PrevF) - std::max(c, PrevC) + 1 >= 3)
+				return;
+		}
+		c = PrevC;
+		f = PrevF;
+	};
+
+	// ---- sections ----
+	enum
+	{
+		S_OPEN,
+		S_PLATFORMS,
+		S_BLOCKS,
+		S_ZIGZAG,
+		S_FREEZEFLOOR,
+		S_PIT,
+		S_SHAFT,
+		S_HOOK,
+		S_STAIRS,
+		S_SQUEEZE,
+		S_NOHOOK,
+		S_FREEZELINED,
+		NUM_SECTIONS,
+	};
+	// minimum height of the chamber a section needs
+	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6};
+	static const int s_aNovice[] = {S_OPEN, S_OPEN, S_PLATFORMS, S_PLATFORMS, S_STAIRS, S_ZIGZAG, S_NOHOOK, S_BLOCKS, S_SHAFT};
+	static const int s_aModerate[] = {S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
+	static const int s_aBrutal[] = {S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
 	const int *pPool = Diff == 0 ? s_aNovice : (Diff == 1 ? s_aModerate : s_aBrutal);
 	const int PoolSize = Diff == 0 ? (int)std::size(s_aNovice) : (Diff == 1 ? (int)std::size(s_aModerate) : (int)std::size(s_aBrutal));
 
-	const int FinishRoomStart = W - 10;
-	while(x < FinishRoomStart)
-	{
-		const int Pattern = pPool[Rand(0, PoolSize - 1)];
-		const int Len = Rand(7, Diff == 0 ? 13 : 16);
-		const int End = std::min(x + Len, FinishRoomStart);
-		const int Height = Bottom - Top + 1;
-		switch(Pattern)
+	bool UsedFreeze = false;
+	const auto FreezeAir = [&](int x, int y) {
+		if(Inside(x, y) && At(x, y) == T_AIR)
 		{
-		case 0: // plain corridor, the height changes a bit
-		{
-			const int Change = Rand(-1, 1);
-			for(; x < End; x++)
-				Carve(x, Top, Bottom);
-			if(Change != 0 && Height + 2 * Change >= MinHeight && Height + 2 * Change <= MaxHeight && Top - Change >= MinTop && Bottom + Change <= MaxBottom)
-			{
-				Top -= Change;
-				Bottom += Change;
-				Carve(x, Top, Bottom);
-			}
-			break;
+			At(x, y) = T_FREEZE;
+			UsedFreeze = true;
 		}
-		case 1: // step up or down
-		case 2:
+	};
+	// rough patches of unhookable tiles in the ceiling
+	const auto NoHookCeiling = [&](int x0, int x1, int c) {
+		for(int x = x0 + 1; x < x1 - 1;)
 		{
-			const int Delta = (Rand(0, 1) ? 1 : -1) * Rand(2, 4);
-			const int NewTop = std::clamp(Top + Delta, MinTop, MaxBottom - (Height - 1));
-			const int NewBottom = NewTop + Height - 1;
-			for(; x < End - 2; x++)
-				Carve(x, Top, Bottom);
-			for(int i = 0; i < 3; i++, x++)
-				Carve(x, std::min(Top, NewTop), std::max(Bottom, NewBottom));
-			Top = NewTop;
-			Bottom = NewBottom;
-			break;
+			const int Run = Rand(4, 8);
+			if(Rand(0, 1))
+				for(int i = 0; i < Run && x + i < x1 - 1; i++)
+					Put(x + i, c - 1, T_NOHOOK);
+			x += Run + Rand(2, 5);
 		}
-		case 3: // freeze floor
-			for(int Start = x; x < End; x++)
-			{
-				Carve(x, Top, Bottom);
-				if(x > Start && x < End - 1)
-					At(x, Bottom) = TILE_FREEZE;
-			}
-			break;
-		case 4: // freeze pit in the floor
+	};
+
+	// Builds the content of one chamber. The air (rows c to f, columns x0 to x1 - 1) is already carved.
+	const auto Section = [&](int Id, int x0, int x1, int c, int f) {
+		const int Height = f - c + 1;
+		switch(Id)
 		{
-			const int PitWidth = Rand(3, 5);
-			const int PitStart = x + Rand(2, 4);
-			for(; x < End + PitWidth; x++)
+		case S_NOHOOK:
+			NoHookCeiling(x0, x1, c);
+			[[fallthrough]];
+		case S_OPEN:
+			if(Diff == 0 && Height >= 8)
 			{
-				Carve(x, Top, Bottom);
-				if(x >= PitStart && x < PitStart + PitWidth)
+				// low mounds on the floor
+				for(int mx = x0 + 4; mx < x1 - 12; mx += Rand(10, 14))
 				{
-					for(int y = Bottom; y <= Bottom + 2; y++)
-						if(Inside(x, y))
-							At(x, y) = TILE_FREEZE;
+					const int w = 4 * B + Rand(2, 4);
+					Fill(mx, f - B + 1, w, B, T_SOLID);
+					Fill(mx + B, f - 2 * B + 1, w - 2 * B, B, T_SOLID);
 				}
 			}
 			break;
-		}
-		case 5: // hanging and standing pillars (1 or 3 tiles wide)
+		case S_PLATFORMS:
 		{
-			bool FromTop = Rand(0, 1) != 0;
-			const int PillarLen = std::max(PW, Height - (Diff == 2 ? 3 : 4));
-			const int Step = PW + (Diff == 0 ? 4 : (Diff == 1 ? 3 : 2));
-			for(int Start = x; x < End; x++)
+			int Index = 0;
+			for(int px = x0 + 3; px + 7 < x1; px += Rand(8, 11), Index++)
 			{
-				Carve(x, Top, Bottom);
-				const int Rel = x - Start;
-				if(Rel < 2 || Rel % Step >= PW)
-					continue;
-				for(int i = 0; i < PillarLen; i++)
+				const int w = Rand(4, 7) + (B == 3 ? 2 : 0);
+				const int py = Rand(c + 2, std::max(c + 2, f - B - 2));
+				const int Tile = (Diff == 2 && Index % 3 == 2) ? T_HOOKTHROUGH : T_SOLID;
+				Fill(px, py, w, B, Tile);
+				if(Diff >= 1)
 				{
-					const int y = FromTop ? Top + i : Bottom - i;
-					if(Inside(x, y))
-						At(x, y) = TILE_SOLID;
-				}
-				const int TipY = FromTop ? Top + PillarLen : Bottom - PillarLen;
-				if(Diff > 0 && Inside(x, TipY))
-					At(x, TipY) = TILE_FREEZE;
-				if(Rel % Step == PW - 1)
-					FromTop = !FromTop;
-			}
-			break;
-		}
-		case 6: // squeeze with freeze on both sides
-		{
-			const int Squeeze = Diff == 2 ? 2 : Rand(3, 4);
-			const int Mid = (Top + Bottom) / 2;
-			for(int Start = x; x < End; x++)
-			{
-				Carve(x, Top, Bottom);
-				if(x < End - 1 && x > Start + 1)
-				{
-					for(int y = Top; y <= Bottom; y++)
+					for(int xx = px; xx < px + w; xx++)
 					{
-						if(y < Mid - Squeeze / 2 || y > Mid + Squeeze / 2)
-							At(x, y) = (y == Mid - Squeeze / 2 - 1 || y == Mid + Squeeze / 2 + 1) ? TILE_FREEZE : TILE_SOLID;
+						FreezeAir(xx, py + B);
+						if(Diff == 2)
+							FreezeAir(xx, py - 1);
 					}
 				}
 			}
 			break;
 		}
-		case 7: // unhookable ceiling and floor
-			for(; x < End; x++)
-			{
-				Carve(x, Top, Bottom);
-				if(Inside(x, Top - 1))
-					At(x, Top - 1) = TILE_NOHOOK;
-				if(Inside(x, Bottom + 1))
-					At(x, Bottom + 1) = TILE_NOHOOK;
-			}
-			break;
-		case 8: // freeze ceiling
-			for(int Start = x; x < End; x++)
-			{
-				Carve(x, Top, Bottom);
-				if(x > Start && x < End - 1)
-					At(x, Top) = TILE_FREEZE;
-			}
-			break;
-		case 9: // field of blocks, staggered between ceiling and floor, with freeze on their free sides
+		case S_BLOCKS:
 		{
-			const int B = std::clamp(PW, 1, std::max(1, Height - 3));
-			const int Pitch = B + aBlockGap[Diff];
-			const int BlockHeight = std::max(B, Height - (Diff == 0 ? 4 : 3));
-			bool FromTop = Rand(0, 1) != 0;
-			for(int Start = x; x < End; x++)
+			// staggered field of blocks, with freeze above and below them on harder difficulties
+			const int Gap = Diff == 0 ? 4 : (Diff == 1 ? 3 : 2);
+			const int P = B + Gap;
+			for(int i = 0;; i++)
 			{
-				Carve(x, Top, Bottom);
-				const int Rel = x - Start;
-				if(Rel < 2 || Rel % Pitch >= B)
+				const int bx = x0 + 3 + i * P;
+				if(bx + B > x1 - 3)
+					break;
+				const int Offset = (i % 2) * (P / 2);
+				for(int by = c + 1 + Offset; by + B <= f; by += P)
+				{
+					if(Rand(0, 99) >= (Diff == 0 ? 55 : 80))
+						continue;
+					Fill(bx, by, B, B, T_SOLID);
+					if(Diff >= 1 && (Diff == 2 || Rand(0, 1)))
+					{
+						for(int xx = bx; xx < bx + B; xx++)
+						{
+							FreezeAir(xx, by - 1);
+							FreezeAir(xx, by + B);
+						}
+					}
+				}
+			}
+			break;
+		}
+		case S_ZIGZAG:
+		{
+			int Passage = Diff == 0 ? 6 : (Diff == 1 ? 4 : 3);
+			Passage = std::min(Passage, std::max(3, Height - 3));
+			const int Len = Height - Passage;
+			const int Pitch = B + Rand(5, 7);
+			for(int i = 0;; i++)
+			{
+				const int bx = x0 + 3 + i * Pitch;
+				if(bx + B > x1 - 3)
+					break;
+				const bool FromTop = i % 2 == 0;
+				if(FromTop)
+					Fill(bx, c, B, Len, T_SOLID);
+				else
+					Fill(bx, f - Len + 1, B, Len, T_SOLID);
+				if(Diff >= 1)
+					for(int xx = bx; xx < bx + B; xx++)
+						FreezeAir(xx, FromTop ? c + Len : f - Len);
+			}
+			break;
+		}
+		case S_FREEZEFLOOR:
+		case S_FREEZELINED:
+		case S_HOOK:
+		{
+			// freeze on the floor with safe landings, in the lined variant also on the ceiling
+			for(int x = x0 + 1; x < x1 - 1; x++)
+			{
+				const int Rel = (x - x0) % 9;
+				if(Id != S_HOOK && Rel >= 7)
 					continue;
-				for(int i = 0; i < BlockHeight; i++)
-				{
-					const int y = FromTop ? Top + i : Bottom - i;
-					if(Inside(x, y))
-						At(x, y) = TILE_SOLID;
-				}
-				const int FreezeY = FromTop ? Top + BlockHeight : Bottom - BlockHeight;
-				if(Diff > 0 && Inside(x, FreezeY))
-					At(x, FreezeY) = TILE_FREEZE;
-				if(Rel % Pitch == B - 1)
-					FromTop = !FromTop;
+				FreezeAir(x, f);
+				if(Id == S_FREEZELINED || (Id == S_HOOK && Diff == 2))
+					FreezeAir(x, c);
 			}
-			break;
-		}
-		default: // corridor lined with freeze on floor and ceiling, with gaps
-			for(int Start = x; x < End; x++)
+			// stalactites to hook on
+			for(int px = x0 + 4; px + B < x1 - 3; px += Rand(6, 9))
+				Fill(px, c, B, Rand(2, std::max(2, Height / 2 - 1)), T_SOLID);
+			if(Id == S_HOOK && Diff >= 1)
+				NoHookCeiling(x0, x1, c);
+			if(Id == S_FREEZELINED)
 			{
-				Carve(x, Top, Bottom);
-				if(x > Start && x < End - 1 && (x - Start) % 5 != 4)
+				// a few platforms in the middle give something to land on
+				for(int px = x0 + 5; px + 6 < x1; px += Rand(9, 13))
+					Fill(px, (c + f) / 2, Rand(3, 5), B, T_SOLID);
+			}
+			break;
+		}
+		case S_PIT:
+		{
+			const int Depth = std::min(3, H - 3 - f);
+			if(Depth < 2)
+				break;
+			const int w = Rand(4, 6) + (B == 3 ? 2 : 0);
+			for(int px = x0 + 4; px + w + 3 < x1; px += w + Rand(6, 9))
+			{
+				for(int dx = 0; dx < w; dx++)
+					for(int y = f; y <= f + Depth; y++)
+						Put(px + dx, y, (Diff == 2 && y == f + Depth) ? T_DEATH : T_FREEZE);
+				UsedFreeze = true;
+			}
+			break;
+		}
+		case S_STAIRS:
+		{
+			const int StepH = B == 3 ? 3 : 2;
+			const int StepW = B + 2;
+			const int N = std::min((Height - 5) / StepH, (x1 - x0 - 6) / (2 * StepW));
+			if(N < 2)
+				break;
+			for(int k = 0; k < N; k++)
+			{
+				const int Up = x0 + 2 + k * StepW;
+				const int Down = x0 + 2 + (N + k) * StepW;
+				const int HUp = (k + 1) * StepH;
+				const int HDown = (N - k) * StepH;
+				Fill(Up, f - HUp + 1, StepW, HUp, T_SOLID);
+				Fill(Down, f - HDown + 1, StepW, HDown, T_SOLID);
+				if(Diff >= 1 && k % 2 == 0)
 				{
-					At(x, Bottom) = TILE_FREEZE;
-					if(Diff == 2)
-						At(x, Top) = TILE_FREEZE;
+					for(int xx = 0; xx < StepW; xx++)
+					{
+						FreezeAir(Up + xx, f - HUp);
+						FreezeAir(Down + xx, f - HDown);
+					}
 				}
 			}
 			break;
 		}
+		default:
+			break;
+		}
+	};
+
+	// ---- start room ----
+	const int StartHeight = Diff == 0 ? 8 : 6;
+	int PrevC = std::clamp(H / 2 - StartHeight / 2, MinC, MaxF - StartHeight + 1);
+	int PrevF = PrevC + StartHeight - 1;
+	for(int x = 2; x <= 10; x++)
+		Fill(x, PrevC, 1, StartHeight, T_AIR);
+	Put(5, PrevF, T_SPAWN);
+	for(int y = PrevC; y <= PrevF; y++)
+		Put(10, y, T_START);
+
+	// ---- sections ----
+	const int FinishStart = W - 12;
+	int x = 11;
+	int SinceTele = 0;
+	int NumTele = 0;
+	while(x < FinishStart - 8)
+	{
+		int Id = pPool[Rand(0, PoolSize - 1)];
+		const int Len = Rand(Diff == 0 ? 18 : 16, Diff == 0 ? 28 : 26) + (B == 3 ? 4 : 0);
+		int End = std::min(x + Len, FinishStart);
+		if(FinishStart - End < 14)
+			End = FinishStart;
+		UsedFreeze = false;
+
+		// teleporter part: a dead end with a teleporter and an arrival room behind a wall
+		if(Teleports && SinceTele >= 2 && x + 34 < FinishStart && Rand(0, 99) < 45 && NumTele < 6)
+		{
+			const int In = TeleBase + NumTele;
+			// chamber of the dead end, same rows as before
+			int c = PrevC, f = PrevF;
+			if(f - c + 1 < 5)
+				f = c + 4;
+			for(int xx = x; xx < x + 12; xx++)
+				Fill(xx, std::min(PrevC, c), 1, std::max(PrevF, f) - std::min(PrevC, c) + 1, T_AIR);
+			for(int xx = x + 3; xx < x + 9; xx++)
+				FreezeAir(xx, f);
+			// tele in tiles at the end, the wall behind them is solid
+			for(int xx = x + 10; xx < x + 12; xx++)
+				for(int yy = c; yy <= f; yy++)
+				{
+					vTeleType[(size_t)yy * W + xx] = TILE_TELEIN;
+					vTeleNum[(size_t)yy * W + xx] = (unsigned char)In;
+				}
+			// arrival room
+			const int AX = x + 15;
+			int c2, f2;
+			ChooseRange(PrevC, PrevF, aHMin[Diff], aHMax[Diff], false, c2, f2);
+			if(f2 - c2 + 1 < 5)
+				f2 = std::min(MaxF, c2 + 4);
+			for(int xx = AX; xx < AX + 8; xx++)
+				Fill(xx, c2, 1, f2 - c2 + 1, T_AIR);
+			vTeleType[(size_t)f2 * W + AX + 2] = TILE_TELEOUT;
+			vTeleNum[(size_t)f2 * W + AX + 2] = (unsigned char)In;
+			NumTele++;
+			SinceTele = 0;
+			x = AX + 8;
+			PrevC = c2;
+			PrevF = f2;
+			continue;
+		}
+		SinceTele++;
+
+		// vertical shaft: the next chamber is far above or below
+		if(Id == S_SHAFT)
+		{
+			const int ShaftW = Diff == 0 ? 6 : 4;
+			int c2 = 0, f2 = 0;
+			bool Found = false;
+			for(int Try = 0; Try < 40 && !Found; Try++)
+			{
+				ChooseRange(PrevC, PrevF, aHMin[Diff], aHMax[Diff], false, c2, f2);
+				Found = std::abs(c2 - PrevC) >= 6;
+			}
+			if(!Found || x + 5 + ShaftW + 6 >= FinishStart)
+				Id = S_OPEN;
+			else
+			{
+				const int Top = std::min(PrevC, c2), Bottom = std::max(PrevF, f2);
+				const int SX = x + 5;
+				for(int xx = x; xx < SX; xx++)
+					Fill(xx, PrevC, 1, PrevF - PrevC + 1, T_AIR);
+				for(int xx = SX; xx < SX + ShaftW; xx++)
+					Fill(xx, Top, 1, Bottom - Top + 1, T_AIR);
+				for(int xx = SX + ShaftW; xx < SX + ShaftW + 6; xx++)
+					Fill(xx, c2, 1, f2 - c2 + 1, T_AIR);
+				// freeze along the walls of the shaft, outside of the openings of the chambers
+				for(int yy = Top; yy <= Bottom; yy++)
+				{
+					if(Diff >= 1 && (yy < PrevC || yy > PrevF))
+						PutIfAir(SX, yy, T_FREEZE);
+					if(Diff == 2 && (yy < c2 || yy > f2))
+						PutIfAir(SX + ShaftW - 1, yy, T_FREEZE);
+				}
+				x = SX + ShaftW + 6;
+				PrevC = c2;
+				PrevF = f2;
+				continue;
+			}
+		}
+
+		// narrow tunnel that wanders up and down, with freeze on the floor (and the ceiling when brutal)
+		if(Id == S_SQUEEZE)
+		{
+			const int Th = 5;
+			if(PrevF - PrevC + 1 < Th)
+				Id = S_OPEN;
+			else
+			{
+				int ct = Rand(PrevC, PrevF - Th + 1);
+				for(int xx = x; xx < End; xx++)
+				{
+					Fill(xx, ct, 1, Th, T_AIR);
+					if(xx == x)
+					{
+						for(int yy = ct; yy < ct + Th; yy++)
+							Put(xx, yy, T_UNFREEZE);
+					}
+					else if(Diff >= 1 && xx > x + 1 && (xx - x) % 7 != 0)
+					{
+						FreezeAir(xx, ct + Th - 1);
+						if(Diff == 2)
+							FreezeAir(xx, ct);
+					}
+					if(Rand(0, 99) < 22)
+					{
+						const int Next = std::clamp(ct + Rand(-1, 1), MinC, MaxF - Th + 1);
+						// the columns have to touch, so the new rows are carved in the same column
+						Fill(xx, std::min(ct, Next), 1, Th + std::abs(Next - ct), T_AIR);
+						ct = Next;
+					}
+				}
+				PrevC = ct;
+				PrevF = ct + Th - 1;
+				x = End;
+				continue;
+			}
+		}
+
+		// normal chamber
+		int HMin = std::max(aHMin[Diff], aNeedHeight[Id]), HMax = std::max(aHMax[Diff], aNeedHeight[Id]);
+		int c, f;
+		ChooseRange(PrevC, PrevF, HMin, HMax, true, c, f);
+		// the opening between the old and the new chamber
+		Fill(x, std::min(PrevC, c), 1, std::max(PrevF, f) - std::min(PrevC, c) + 1, T_AIR);
+		for(int xx = x + 1; xx < End; xx++)
+			Fill(xx, c, 1, f - c + 1, T_AIR);
+		Section(Id, x + 1, End, c, f);
+		// unfreeze strip at the start of parts with freeze, so a freeze from before never carries over
+		if(UsedFreeze && Diff >= 1)
+			for(int yy = c; yy <= f; yy++)
+				if(Inside(x + 1, yy) && At(x + 1, yy) == T_AIR)
+					At(x + 1, yy) = T_UNFREEZE;
+		PrevC = c;
+		PrevF = f;
+		x = End;
 	}
 
-	// finish room
-	for(; x < W - 2; x++)
-		Carve(x, Top - 1, Bottom);
-	for(int y = Top - 1; y <= Bottom; y++)
-		if(Inside(W - 6, y))
-			At(W - 6, y) = TILE_FINISH;
+	// ---- finish room ----
+	if(PrevF - PrevC + 1 < 5)
+		PrevF = std::min(MaxF, PrevC + 4);
+	for(int xx = x; xx <= W - 3; xx++)
+		Fill(xx, PrevC, 1, PrevF - PrevC + 1, T_AIR);
+	for(int yy = PrevC; yy <= PrevF; yy++)
+		Put(W - 7, yy, T_FINISH);
 
-	// remember the border: the outermost ring stays solid
-	// apply to the game layer and record the changes for undo
-	EditorTileStateChangeHistory<STileStateChange> Changes;
-	for(int y = 0; y < H; y++)
+	// ---- hand the result to the job that builds it column by column ----
+	SGeneratorJob &Job = m_GeneratorJob;
+	Job = SGeneratorJob();
+	Job.m_Running = true;
+	Job.m_X0 = X0;
+	Job.m_Y0 = Y0;
+	Job.m_W = W;
+	Job.m_H = H;
+	Job.m_vTile = vBuf;
+	Job.m_vTeleType = vTeleType;
+	Job.m_vTeleNum = vTeleNum;
+	Job.m_GameGroupIndex = std::find(Map()->m_vpGroups.begin(), Map()->m_vpGroups.end(), Map()->m_pGameGroup) - Map()->m_vpGroups.begin();
+	Job.m_pTeleLayer = pTeleLayer;
+
+	bool HasTele = false;
+	for(const unsigned char Type : vTeleType)
+		HasTele |= Type != 0;
+	if(HasTele && !Job.m_pTeleLayer)
 	{
-		for(int xx = 0; xx < W; xx++)
+		Job.m_pTeleLayer = std::make_shared<CLayerTele>(Map(), pGameLayer->m_Width, pGameLayer->m_Height);
+		Map()->MakeTeleLayer(Job.m_pTeleLayer);
+		Map()->m_pGameGroup->AddLayer(Job.m_pTeleLayer);
+		Job.m_vpActions.push_back(std::make_shared<CEditorActionAddLayer>(Map(), Job.m_GameGroupIndex, (int)Map()->m_pGameGroup->m_vpLayers.size() - 1));
+	}
+
+	// the thinking time grows with the size of the zone
+	const float Area = (float)W * (float)H;
+	const float aMax[3] = {4.0f, 60.0f, 120.0f};
+	const float aPerTile[3] = {0.0005f, 0.012f, 0.03f};
+	Job.m_Duration = std::clamp(Area * aPerTile[std::clamp(m_GeneratorThink, 0, 2)], 1.5f, aMax[std::clamp(m_GeneratorThink, 0, 2)]);
+}
+
+// Applies the next columns of the running job to the layers. With Finish everything that is left is applied
+// at once. When all columns are done the whole generation is recorded as one undo step.
+void CEditor::StepGeneratorJob(bool Finish)
+{
+	SGeneratorJob &Job = m_GeneratorJob;
+	if(!Job.m_Running)
+		return;
+	std::shared_ptr<CLayerTiles> pGameLayer = Map()->m_pGameLayer;
+	if(!pGameLayer)
+	{
+		Job = SGeneratorJob();
+		return;
+	}
+
+	const float Progress = Finish ? 1.0f : std::clamp(Job.m_Elapsed / Job.m_Duration, 0.0f, 1.0f);
+	// ease in and out so that it looks like it first plans and then builds
+	const float Eased = Progress * Progress * (3.0f - 2.0f * Progress);
+	const int Target = Progress >= 1.0f ? Job.m_W : (int)(Eased * Job.m_W);
+	for(int xx = Job.m_Revealed; xx < Target; xx++)
+	{
+		for(int y = 0; y < Job.m_H; y++)
 		{
-			CTile &Tile = pGameLayer->m_pTiles[(Y0 + y) * pGameLayer->m_Width + X0 + xx];
-			const CTile Previous = Tile;
-			CTile New{};
-			New.m_Index = At(xx, y);
-			if(Previous.m_Index == New.m_Index && Previous.m_Flags == 0)
-				continue;
-			Tile = New;
-			Changes[Y0 + y][X0 + xx] = STileStateChange{true, Previous, New};
+			const int LayerX = Job.m_X0 + xx, LayerY = Job.m_Y0 + y;
+			const unsigned char NewTile = Job.m_vTile[(size_t)y * Job.m_W + xx];
+			const CTile Old = pGameLayer->m_pTiles[(size_t)LayerY * pGameLayer->m_Width + LayerX];
+			if(Old.m_Index != NewTile || Old.m_Flags != 0)
+			{
+				pGameLayer->SetTile(LayerX, LayerY, CTile{NewTile});
+				Job.m_Changes++;
+			}
+			if(Job.m_pTeleLayer)
+			{
+				const int TeleIndex = LayerY * Job.m_pTeleLayer->m_Width + LayerX;
+				const unsigned char NewType = Job.m_vTeleType[(size_t)y * Job.m_W + xx];
+				const unsigned char NewNumber = Job.m_vTeleNum[(size_t)y * Job.m_W + xx];
+				if(Job.m_pTeleLayer->m_pTeleTile[TeleIndex].m_Type != NewType || (NewType != 0 && Job.m_pTeleLayer->m_pTeleTile[TeleIndex].m_Number != NewNumber))
+				{
+					Job.m_pTeleLayer->SetTeleTile(LayerX, LayerY, NewType, NewNumber);
+					Job.m_Changes++;
+				}
+			}
 		}
 	}
+	Job.m_Revealed = Target;
+	if(Job.m_Revealed < Job.m_W)
+		return;
 
-	const int GameGroupIndex = std::find(Map()->m_vpGroups.begin(), Map()->m_vpGroups.end(), Map()->m_pGameGroup) - Map()->m_vpGroups.begin();
-	const int GameLayerIndex = std::find(Map()->m_pGameGroup->m_vpLayers.begin(), Map()->m_pGameGroup->m_vpLayers.end(), std::static_pointer_cast<CLayer>(pGameLayer)) - Map()->m_pGameGroup->m_vpLayers.begin();
-	Map()->m_EditorHistory.RecordAction(std::make_shared<CEditorActionTileChanges>(Map(), GameGroupIndex, GameLayerIndex, "Generate DDRace gameplay", Changes));
+	if(Job.m_Changes > 0)
+	{
+		Job.m_vpActions.push_back(std::make_shared<CEditorBrushDrawAction>(Map(), Job.m_GameGroupIndex));
+		char aDisplay[256];
+		str_format(aDisplay, sizeof(aDisplay), "Generate DDRace gameplay (x%d)", Job.m_Changes);
+		Map()->m_EditorHistory.RecordAction(std::make_shared<CEditorActionBulk>(Map(), Job.m_vpActions, aDisplay, true));
+	}
+	Job = SGeneratorJob();
 }
 
 void CEditor::AddQuadOrSound()

@@ -980,7 +980,7 @@ void CChat::OnPrepareLines(float y)
 			break;
 
 		// own name shimmers, so those lines are rebuilt 20 times per second
-		const bool OwnShimmer = g_Config.m_ClVisualsNameShimmer && Line.m_ClientId >= 0 && Line.m_ClientId == GameClient()->m_Snap.m_LocalClientId && Line.m_aName[0] != '\0';
+		const bool OwnShimmer = GameClient()->m_Visuals.ShouldShimmer(Line.m_ClientId) && Line.m_aName[0] != '\0';
 		const int ShimmerStamp = OwnShimmer ? (int)(Client()->LocalTime() * 20.0f) : 0;
 		const bool ShimmerChanged = OwnShimmer && ShimmerStamp != Line.m_ShimmerStamp;
 		Line.m_ShimmerStamp = ShimmerStamp;
@@ -1115,7 +1115,7 @@ void CChat::OnPrepareLines(float y)
 
 		TextRender()->TextColor(NameColor);
 		TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &LineCursor, aClientId);
-		if(g_Config.m_ClVisualsNameShimmer && Line.m_ClientId >= 0 && Line.m_ClientId == GameClient()->m_Snap.m_LocalClientId && Line.m_aName[0] != '\0')
+		if(GameClient()->m_Visuals.ShouldShimmer(Line.m_ClientId) && Line.m_aName[0] != '\0')
 		{
 			// own name: baked colors, the line is rebuilt regularly by the shimmer refresh in OnRender
 			size_t Size = 0, Count = 0;

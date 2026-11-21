@@ -169,6 +169,23 @@ void CLayerTele::BrushDraw(CLayer *pBrush, vec2 WorldPos)
 	FlagModified(sx, sy, pTeleLayer->m_Width, pTeleLayer->m_Height);
 }
 
+void CLayerTele::SetTeleTile(int x, int y, int Type, int Number)
+{
+	const int Index = y * m_Width + x;
+	STeleTileStateChange::SData Previous{
+		m_pTeleTile[Index].m_Number,
+		m_pTeleTile[Index].m_Type,
+		m_pTiles[Index].m_Index};
+	m_pTeleTile[Index].m_Number = Type == 0 ? 0 : Number;
+	m_pTeleTile[Index].m_Type = Type;
+	m_pTiles[Index].m_Index = Type;
+	STeleTileStateChange::SData Current{
+		m_pTeleTile[Index].m_Number,
+		m_pTeleTile[Index].m_Type,
+		m_pTiles[Index].m_Index};
+	RecordStateChange(x, y, Previous, Current);
+}
+
 void CLayerTele::RecordStateChange(int x, int y, STeleTileStateChange::SData Previous, STeleTileStateChange::SData Current)
 {
 	STeleTileStateChange &Change = m_History[y][x];
