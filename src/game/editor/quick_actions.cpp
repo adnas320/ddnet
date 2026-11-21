@@ -147,16 +147,19 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		S_FREEZEROOM,
 		S_LADDER,
 		S_FRLINES,
+		S_TELELINE,
+		S_HALL,
 		NUM_SECTIONS,
 	};
 	// minimum height of the chamber a section needs
-	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13};
-	static const int s_aNovice[] = {S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
-	static const int s_aModerate[] = {S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
-	static const int s_aBrutal[] = {S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
+	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10};
+	static const int s_aNovice[] = {S_HALL, S_HALL, S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
+	static const int s_aModerate[] = {S_TELELINE, S_HALL, S_TELELINE, S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
+	static const int s_aBrutal[] = {S_TELELINE, S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
 	const int *pPool = Diff == 0 ? s_aNovice : (Diff == 1 ? s_aModerate : s_aBrutal);
 	const int PoolSize = Diff == 0 ? (int)std::size(s_aNovice) : (Diff == 1 ? (int)std::size(s_aModerate) : (int)std::size(s_aBrutal));
 
+	int TeleUsed = 0;
 	bool UsedFreeze = false;
 	const auto FreezeAir = [&](int x, int y) {
 		if(Inside(x, y) && At(x, y) == T_AIR)
@@ -336,6 +339,58 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			}
 			break;
 		}
+		case S_HALL:
+		{
+			// a big hall: notched ledges on the walls, ceiling and floor like stacked blocks, an unhookable strip in the ceiling
+			for(int px = x0 + 2; px < x1 - 8; px += Rand(8, 14))
+			{
+				const int w = Rand(3, 7) * (B == 3 ? 2 : 1);
+				const int h = Rand(1, 2) * B;
+				Fill(px, c, w, h, T_SOLID);
+				if(Rand(0, 1))
+					Fill(px + B, c + h, std::max(1, w - 2 * B), B, T_SOLID);
+			}
+			for(int px = x0 + 3; px < x1 - 8; px += Rand(9, 15))
+			{
+				const int w = Rand(3, 8) * (B == 3 ? 2 : 1);
+				const int h = Rand(1, 3);
+				Fill(px, f - h + 1, w, h, T_SOLID);
+				if(Diff >= 1)
+					for(int xx = px; xx < px + w; xx++)
+						FreezeAir(xx, f - h);
+			}
+			for(int px = x0 + 6; px + 10 < x1 - 3; px += Rand(14, 20))
+				Fill(px, (c + f) / 2 + Rand(-2, 2), Rand(6, 10), B, Diff == 0 ? T_NOHOOK : T_SOLID);
+			NoHookCeiling(x0, x1, c);
+			break;
+		}
+		case S_TELELINE:
+		{
+			// the floor is a plate with a line of teleporters on top that throws you back to the start of the hall
+			if(!Teleports || Diff == 0 || TeleBase + TeleUsed >= 250 || Height < 8)
+			{
+				for(int xx = x0 + 1; xx < x1 - 1; xx++)
+					FreezeAir(xx, f);
+				break;
+			}
+			const int Plate = Diff == 2 ? 2 : 1;
+			const int Line = f - Plate;
+			const int Number = TeleBase + TeleUsed++;
+			Fill(x0, Line + 1, x1 - x0, Plate, T_SOLID);
+			for(int xx = x0 + 4; xx < x1 - 1; xx++)
+			{
+				vTeleType[(size_t)Line * W + xx] = TILE_TELEIN;
+				vTeleNum[(size_t)Line * W + xx] = (unsigned char)Number;
+			}
+			vTeleType[(size_t)(Line - 2) * W + x0 + 2] = TILE_TELEOUT;
+			vTeleNum[(size_t)(Line - 2) * W + x0 + 2] = (unsigned char)Number;
+			// ledges that reach over the line so it can be passed by hooking
+			for(int px = x0 + 8; px + 6 < x1 - 3; px += Rand(10, 14))
+				Fill(px, c, Rand(3, 6), Rand(2, std::max(2, Height / 3)), T_SOLID);
+			for(int px = x0 + 10; px + 8 < x1 - 3; px += Rand(12, 18))
+				Fill(px, Rand(c + 3, std::max(c + 3, Line - 4)), Rand(4, 8), B, T_SOLID);
+			break;
+		}
 		case S_CAVE:
 		{
 			// a big cave: uneven ceiling and floor, pools of freeze and floating unhookable bars
@@ -462,7 +517,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	const int FinishStart = W - 12;
 	int x = 11;
 	int SinceTele = 0;
-	int NumTele = 0;
+	int &NumTele = TeleUsed;
 	while(x < FinishStart - 8)
 	{
 		int Id = pPool[Rand(0, PoolSize - 1)];
@@ -473,7 +528,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		UsedFreeze = false;
 
 		// teleporter part: a dead end with a teleporter and an arrival room behind a wall
-		if(Teleports && SinceTele >= 2 && x + 34 < FinishStart && Rand(0, 99) < 45 && NumTele < 6)
+		if(Teleports && SinceTele >= 2 && x + 34 < FinishStart && Rand(0, 99) < 45 && TeleBase + NumTele < 250)
 		{
 			const int In = TeleBase + NumTele;
 			// chamber of the dead end, same rows as before
@@ -612,6 +667,12 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		Fill(xx, PrevC, 1, PrevF - PrevC + 1, T_AIR);
 	for(int yy = PrevC; yy <= PrevF; yy++)
 		Put(W - 7, yy, T_FINISH);
+
+	// ---- unhookable outer frame, one more solid ring stays inside it ----
+	for(int yy = 0; yy < H; yy++)
+		for(int xx = 0; xx < W; xx++)
+			if(xx == 0 || yy == 0 || xx == W - 1 || yy == H - 1)
+				At(xx, yy) = (unsigned char)T_NOHOOK;
 
 	// ---- hand the result to the job that builds it column by column ----
 	SGeneratorJob &Job = m_GeneratorJob;
