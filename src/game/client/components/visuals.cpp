@@ -1609,7 +1609,7 @@ void CVisuals::OnRender()
 					continue;
 				Graphics()->SetColor(Color.r, Color.g, Color.b, Alpha);
 				Graphics()->QuadsSetRotation(Rotation);
-				const IGraphics::CQuadItem Quad(Pos.x, Pos.y, Size, Size);
+				IGraphics::CQuadItem Quad(Pos.x, Pos.y, Size, Size);
 				Graphics()->QuadsDraw(&Quad, 1);
 			}
 		}
