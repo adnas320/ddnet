@@ -4178,6 +4178,14 @@ void CEditor::UpdateGenerator()
 		return;
 	}
 
+	if(!m_GeneratorReady)
+	{
+		// the settings panel is shown, nothing can be selected until Done is pressed
+		if(Ui()->MouseButton(1))
+			m_GeneratorActive = false;
+		return;
+	}
+
 	// Simulate button overlaying the entire screen to intercept all clicks for the generator.
 	static char s_GeneratorScreenButton;
 	DoButtonLogic(&s_GeneratorScreenButton, 0, Ui()->Screen(), BUTTONFLAG_ALL, "Drag with the left mouse button to select a zone. Right click or escape to cancel.");
@@ -4247,13 +4255,18 @@ void CEditor::RenderGeneratorOverlay()
 	if(!m_GeneratorActive || !Map()->m_pGameGroup)
 		return;
 
-	// settings panel (drawn last so that its buttons win over the zone selection)
+	// "Generation" panel: first choose the settings and press Done, then select the zone
+	if(!m_GeneratorReady)
 	{
-		CUIRect Panel = {Ui()->Screen()->w / 2.0f - 150.0f, 70.0f, 300.0f, 84.0f};
-		Panel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f), IGraphics::CORNER_ALL, 6.0f);
+		CUIRect Panel = {Ui()->Screen()->w / 2.0f - 160.0f, 70.0f, 320.0f, 132.0f};
+		Panel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.8f), IGraphics::CORNER_ALL, 6.0f);
 		Panel.Margin(6.0f, &Panel);
 		CUIRect Row, Button;
-		static char s_aDifficulty[3], s_aStyle[2], s_aThink[3], s_Teleports;
+		static char s_aDifficulty[3], s_aStyle[2], s_aThink[3], s_Teleports, s_Done;
+
+		Panel.HSplitTop(16.0f, &Row, &Panel);
+		Ui()->DoLabel(&Row, "Generation", 12.0f, TEXTALIGN_MC);
+		Panel.HSplitTop(4.0f, nullptr, &Panel);
 
 		Panel.HSplitTop(18.0f, &Row, &Panel);
 		Panel.HSplitTop(3.0f, nullptr, &Panel);
@@ -4285,6 +4298,7 @@ void CEditor::RenderGeneratorOverlay()
 			m_GeneratorTeleports = !m_GeneratorTeleports;
 
 		Panel.HSplitTop(18.0f, &Row, &Panel);
+		Panel.HSplitTop(3.0f, nullptr, &Panel);
 		Row.VSplitLeft(62.0f, &Button, &Row);
 		Ui()->DoLabel(&Button, "Thinking", 10.0f, TEXTALIGN_ML);
 		static const char *s_apThink[3] = {"Fast", "Normal", "Long (2 min)"};
@@ -4295,6 +4309,26 @@ void CEditor::RenderGeneratorOverlay()
 			if(DoButton_Editor(&s_aThink[i], s_apThink[i], m_GeneratorThink == i, &Button, BUTTONFLAG_LEFT, "How long the generator takes. The course is built step by step while it works."))
 				m_GeneratorThink = i;
 		}
+
+		Panel.HSplitTop(20.0f, &Row, &Panel);
+		Row.VMargin(80.0f, &Row);
+		if(DoButton_Editor(&s_Done, "Done", 0, &Row, BUTTONFLAG_LEFT, "Confirm the settings, then select the zone with the mouse."))
+			m_GeneratorReady = true;
+		return;
+	}
+	{
+		static const char *s_apDiffNames[3] = {"Novice", "Moderate", "Brutal"};
+		static char s_Back;
+		CUIRect Panel = {Ui()->Screen()->w / 2.0f - 190.0f, 70.0f, 380.0f, 24.0f};
+		Panel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.8f), IGraphics::CORNER_ALL, 6.0f);
+		Panel.Margin(4.0f, &Panel);
+		CUIRect Button;
+		Panel.VSplitRight(70.0f, &Panel, &Button);
+		if(DoButton_Editor(&s_Back, "Settings", 0, &Button, BUTTONFLAG_LEFT, "Go back to the generation settings."))
+			m_GeneratorReady = false;
+		char aText[128];
+		str_format(aText, sizeof(aText), "%s, %s blocks. Drag to select the zone. Right click cancels.", s_apDiffNames[std::clamp(m_GeneratorDifficulty, 0, 2)], m_GeneratorStyle == 1 ? "3x3" : "1x1");
+		Ui()->DoLabel(&Panel, aText, 10.0f, TEXTALIGN_ML);
 	}
 
 	const CScreenRect Rect = Map()->m_pGameGroup->Mapping();

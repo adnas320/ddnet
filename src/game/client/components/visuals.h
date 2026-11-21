@@ -28,7 +28,7 @@ class CVisuals : public CComponent
 		MAX_RINGS = 24,
 		MAX_ECHOES = 12,
 		MAX_SOULS = 20,
-		MAX_METEORS = 6,
+		MAX_METEORS = 8,
 		NUM_RECENT_LASERS = 32,
 	};
 
@@ -140,6 +140,18 @@ class CVisuals : public CComponent
 		float m_Life;
 		float m_MaxLife;
 		float m_Hue;
+		bool m_Exploded = false;
+	};
+
+	// tee that turns into pixels and crumbles
+	struct CPixelTee
+	{
+		vec2 m_Pos;
+		float m_Age;
+		float m_Life;
+		ColorRGBA m_Body;
+		ColorRGBA m_Feet;
+		unsigned m_Seed;
 	};
 
 	// shooting star
@@ -187,6 +199,7 @@ class CVisuals : public CComponent
 	std::vector<CRing> m_vRings;
 	std::vector<CSoul> m_vSouls;
 	std::vector<CBlackHole> m_vBlackHoles;
+	std::vector<CPixelTee> m_vPixelTees;
 	std::vector<CMeteor> m_vMeteors;
 	std::vector<CEcho> m_vEchoes;
 	CRecentLaser m_aRecentLasers[NUM_RECENT_LASERS];
@@ -250,7 +263,6 @@ class CVisuals : public CComponent
 	void SpawnFlash(vec2 Pos, float Size, float Life);
 	void SpawnRing(vec2 Pos, float MaxRadius, ColorRGBA Color, bool Flat = true);
 	void SpawnStar(vec2 Pos, vec2 Vel, float Life, float Size, float AlphaScale, ColorRGBA Color, float Gravity = 0.0f);
-	void RenderAurora(const CScreenRect &View) const;
 	void UpdateAutoSkin(float DeltaTime);
 	int m_AutoSkinIndex = -1;
 	float m_AutoHue = 0.0f;
@@ -292,10 +304,6 @@ public:
 	bool ShouldShimmer(int ClientId) const;
 
 	// hooks of other components
-	void OnLaserRendered(vec2 From, vec2 To, int StartTick, bool Shotgun);
-	void OnExplosion(vec2 Pos);
-	void OnProjectileRendered(vec2 Pos, vec2 Vel, int Weapon, float Alpha);
-	void OnHookRendered(vec2 Pos, vec2 HookPos);
 	// called when a kill message arrives
 	void OnKill(int Killer, int Victim);
 	// called when the own tee finishes the map: the panda celebrates

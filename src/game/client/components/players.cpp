@@ -531,9 +531,6 @@ void CPlayers::RenderHook(
 		(Pos.y > ScreenRect.m_BottomRight.y && HookPos.y > ScreenRect.m_BottomRight.y))
 		return;
 
-	if(ClientId == GameClient()->m_Snap.m_LocalClientId)
-		GameClient()->m_Visuals.OnHookRendered(Pos, HookPos);
-
 	float d = distance(Pos, HookPos);
 	vec2 Dir = normalize(Pos - HookPos);
 

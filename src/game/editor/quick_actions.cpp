@@ -61,8 +61,8 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	// ---- settings ----
 	const int Diff = std::clamp(m_GeneratorDifficulty, 0, 2); // 0 novice, 1 moderate, 2 brutal
 	const int B = m_GeneratorStyle == 1 ? 3 : 1; // thickness of blocks and walls
-	const int aHMin[3] = {10, 7, 5};
-	const int aHMax[3] = {16, 11, 8};
+	const int aHMin[3] = {12, 8, 6};
+	const int aHMax[3] = {20, 14, 11};
 
 	// teleporters are only possible when the tele layer (if there is one) covers the zone
 	std::shared_ptr<CLayerTele> pTeleLayer = Map()->m_pTeleLayer;
@@ -143,13 +143,17 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		S_SQUEEZE,
 		S_NOHOOK,
 		S_FREEZELINED,
+		S_CAVE,
+		S_FREEZEROOM,
+		S_LADDER,
+		S_FRLINES,
 		NUM_SECTIONS,
 	};
 	// minimum height of the chamber a section needs
-	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6};
-	static const int s_aNovice[] = {S_OPEN, S_OPEN, S_PLATFORMS, S_PLATFORMS, S_STAIRS, S_ZIGZAG, S_NOHOOK, S_BLOCKS, S_SHAFT};
-	static const int s_aModerate[] = {S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
-	static const int s_aBrutal[] = {S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
+	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13};
+	static const int s_aNovice[] = {S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
+	static const int s_aModerate[] = {S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
+	static const int s_aBrutal[] = {S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
 	const int *pPool = Diff == 0 ? s_aNovice : (Diff == 1 ? s_aModerate : s_aBrutal);
 	const int PoolSize = Diff == 0 ? (int)std::size(s_aNovice) : (Diff == 1 ? (int)std::size(s_aModerate) : (int)std::size(s_aBrutal));
 
@@ -328,6 +332,113 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 						FreezeAir(Up + xx, f - HUp);
 						FreezeAir(Down + xx, f - HDown);
 					}
+				}
+			}
+			break;
+		}
+		case S_CAVE:
+		{
+			// a big cave: uneven ceiling and floor, pools of freeze and floating unhookable bars
+			for(int px = x0 + 2; px < x1 - 2; px += Rand(3, 6))
+			{
+				Fill(px, c, Rand(2, 4), Rand(1, std::max(1, Height / 4)), T_SOLID);
+				if(Rand(0, 99) < 60)
+					Fill(px + Rand(0, 2), f - Rand(0, std::max(1, Height / 5)), Rand(2, 5), 6, T_SOLID);
+			}
+			for(int px = x0 + 4; px + 9 < x1 - 2; px += Rand(11, 16))
+			{
+				const int w = Rand(5, 9);
+				for(int dx = 0; dx < w; dx++)
+				{
+					FreezeAir(px + dx, f);
+					FreezeAir(px + dx, f - 1);
+					if(Diff >= 1)
+						FreezeAir(px + dx, f - 2);
+				}
+			}
+			for(int bx = x0 + 5; bx + 9 < x1 - 3; bx += Rand(9, 14))
+			{
+				const int w = Rand(5, 9);
+				const int by = Rand(c + 3, std::max(c + 3, f - 4));
+				Fill(bx, by, w, B, T_NOHOOK);
+				if(Diff >= 1)
+					for(int dx = 0; dx < w; dx++)
+					{
+						FreezeAir(bx + dx, by - 1);
+						FreezeAir(bx + dx, by + B);
+					}
+			}
+			break;
+		}
+		case S_FREEZEROOM:
+		{
+			// the lower part of the room is a freeze field with solid islands and pillars, unhookable bars hang above
+			const int Depth = std::max(3, Height / 2 - 1);
+			for(int xx = x0 + 1; xx < x1 - 1; xx++)
+				for(int yy = f - Depth + 1; yy <= f; yy++)
+					FreezeAir(xx, yy);
+			for(int px = x0 + 3; px + 6 < x1 - 2; px += Rand(8, 12))
+			{
+				if(Rand(0, 1))
+					Fill(px, f - Depth + 1, Rand(2, 3) * (B == 3 ? 2 : 1), Depth, T_SOLID); // pillar
+				else
+					Fill(px, f - Depth + 2 + Rand(0, Depth / 2), Rand(4, 6), B, T_SOLID); // island
+			}
+			for(int bx = x0 + 4; bx + 10 < x1 - 3; bx += Rand(9, 13))
+				Fill(bx, Rand(c + 1, std::max(c + 1, f - Depth - 2)), Rand(5, 9), B, T_NOHOOK);
+			break;
+		}
+		case S_LADDER:
+		{
+			// a diagonal ladder of blocks, every block is wrapped in freeze and the ceiling and floor are freeze too
+			const int Pitch = B + 3;
+			const int Span = std::max(1, Height - B - 2);
+			for(int i = 0;; i++)
+			{
+				const int bx = x0 + 3 + i * Pitch;
+				if(bx + B > x1 - 3)
+					break;
+				const int by = f - B - ((i * (B + 1)) % Span);
+				Fill(bx, by, B, B, T_SOLID);
+				for(int xx = bx - 1; xx <= bx + B; xx++)
+				{
+					FreezeAir(xx, by - 1);
+					FreezeAir(xx, by + B);
+				}
+				for(int yy = by; yy < by + B; yy++)
+				{
+					FreezeAir(bx - 1, yy);
+					FreezeAir(bx + B, yy);
+				}
+			}
+			for(int xx = x0 + 1; xx < x1 - 1; xx++)
+			{
+				if((xx - x0) % 11 < 8)
+				{
+					FreezeAir(xx, c);
+					FreezeAir(xx, f);
+				}
+			}
+			break;
+		}
+		case S_FRLINES:
+		{
+			// serpentine: floors with a line of freeze on top, gaps alternate between the left and the right side
+			const int Step = 4 + B;
+			int Index = 0;
+			for(int yy = c + 2; yy + B < f; yy += Step, Index++)
+			{
+				const int GapW = Diff == 2 ? 4 : 6;
+				const bool GapLeft = Index % 2 == 0;
+				for(int xx = x0 + 1; xx < x1 - 1; xx++)
+				{
+					const bool InGap = GapLeft ? xx < x0 + 1 + GapW : xx >= x1 - 1 - GapW;
+					if(InGap)
+						continue;
+					Fill(xx, yy + 1, 1, B, T_SOLID);
+					FreezeAir(xx, yy);
+					if(Diff == 2)
+						FreezeAir(xx, yy + 1 + B);
 				}
 			}
 			break;

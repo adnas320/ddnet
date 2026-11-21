@@ -71,17 +71,17 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	};
 
 	// левая колонка
-	CUIRect Card = BeginCard(Left, "Новый год", 4);
+	CUIRect Card = BeginCard(Left, "Новый год", 3);
 	DoToggle(Card, g_Config.m_ClVisualsWinterHat, "Шапка на вашей тишке");
 	DoToggle(Card, g_Config.m_ClVisualsSnow, "Падающий снег");
-	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Снег при приземлении");
-	DoToggle(Card, g_Config.m_ClVisualsSnowWeapons, "Космический взрыв при попадании", true);
+	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Снег при приземлении", true);
 
-	Card = BeginCard(Left, "Мир", 4);
+	Card = BeginCard(Left, "Мир", 5);
 	DoToggle(Card, g_Config.m_ClVisualsFireflies, "Светлячки");
 	DoToggle(Card, g_Config.m_ClVisualsPetals, "Лепестки сакуры");
 	DoToggle(Card, g_Config.m_ClVisualsBubbles, "Мыльные пузыри");
-	DoToggle(Card, g_Config.m_ClVisualsStarfield, "Звёздное небо", true);
+	DoToggle(Card, g_Config.m_ClVisualsStarfield, "Звёздное небо");
+	DoToggle(Card, g_Config.m_ClVisualsMeteors, "Синие метеоры", true);
 
 	// средняя колонка
 	Card = BeginCard(Middle, "Эффекты тишки", 5);
@@ -124,21 +124,15 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	}
 
 	// правая колонка
-	Card = BeginCard(Right, "Космическое оружие (RGB)", 4);
-	DoToggle(Card, g_Config.m_ClVisualsGrenadeTrail, "Плазменный шлейф гранаты");
-	DoToggle(Card, g_Config.m_ClVisualsBulletTrail, "RGB-комета за пулями");
-	DoToggle(Card, g_Config.m_ClVisualsLaserSparks, "Звёздная пыль лазера");
-	DoToggle(Card, g_Config.m_ClVisualsHookSparks, "Астральная цепь хука", true);
-
 	Card = BeginCard(Right, "Эффект убийства", 2);
 	{
 		static CButtonContainer s_KillButton;
-		const char *apKills[5] = {"Выключен", "Астральный взрыв", "Сверхновая", "Чёрная дыра", "Призрак"};
+		const char *apKills[4] = {"Выключен", "Пиксельный распад", "Чёрная дыра", "Призрак"};
 		char aText[64];
-		str_format(aText, sizeof(aText), "Эффект: %s", apKills[std::clamp(g_Config.m_ClVisualsKillEffect, 0, 4)]);
+		str_format(aText, sizeof(aText), "Эффект: %s", apKills[std::clamp(g_Config.m_ClVisualsKillEffect, 0, 3)]);
 		CUIRect Button = NextRow(Card, false);
 		if(DoButton_Menu(&s_KillButton, aText, 0, &Button))
-			g_Config.m_ClVisualsKillEffect = (g_Config.m_ClVisualsKillEffect + 1) % 5;
+			g_Config.m_ClVisualsKillEffect = (g_Config.m_ClVisualsKillEffect + 1) % 4;
 		DoToggle(Card, g_Config.m_ClVisualsKillOwnOnly, "Только мои убийства", true);
 	}
 

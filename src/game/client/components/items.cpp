@@ -96,7 +96,6 @@ void CItems::RenderProjectile(const CProjectileData *pCurrent, int ItemId, const
 	}
 
 	vec2 Vel = Pos - PrevPos;
-	GameClient()->m_Visuals.OnProjectileRendered(Pos, Vel, CurWeapon, Alpha);
 
 	// add particle for this projectile
 	// don't check for validity of the projectile for the current weapon here, so particle effects are rendered for mod compatibility
@@ -263,8 +262,6 @@ void CItems::RenderFlag(const CNetObj_Flag *pPrev, const CNetObj_Flag *pCurrent,
 void CItems::RenderLaser(const CLaserData *pCurrent, bool IsPredicted)
 {
 	int Type = std::clamp(pCurrent->m_Type, -1, NUM_LASERTYPES - 1);
-	if(Type == LASERTYPE_RIFLE || Type == LASERTYPE_SHOTGUN)
-		GameClient()->m_Visuals.OnLaserRendered(pCurrent->m_From, pCurrent->m_To, pCurrent->m_StartTick, Type == LASERTYPE_SHOTGUN);
 	int ColorIn, ColorOut;
 	switch(Type)
 	{

@@ -424,6 +424,7 @@ public:
 	ColorRGBA m_aSavedColors[8];
 	bool m_GeneratorActive = false;
 	bool m_GeneratorDragging = false;
+	bool m_GeneratorReady = false; // settings confirmed with Done, now the zone is selected
 	ivec2 m_GeneratorStart = ivec2(0, 0);
 	ivec2 m_GeneratorEnd = ivec2(0, 0);
 	unsigned m_GeneratorSeed = 1;

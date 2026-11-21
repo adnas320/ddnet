@@ -450,7 +450,7 @@ REGISTER_QUICK_ACTION(
 REGISTER_QUICK_ACTION(
 	Generate,
 	"Generate",
-	[&]() { m_GeneratorActive = !m_GeneratorActive; m_GeneratorDragging = false; },
+	[&]() { m_GeneratorActive = !m_GeneratorActive; m_GeneratorDragging = false; m_GeneratorReady = false; },
 	[&]() -> bool { return !Map()->m_pGameLayer; },
 	[&]() -> bool { return m_GeneratorActive; },
 	DEFAULT_BTN,
