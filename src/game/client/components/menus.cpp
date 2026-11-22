@@ -180,28 +180,12 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 	Rect.y -= 2.5f * Grow;
 	Rect.h += 5.0f * Grow;
 
-	const bool CustomColors = pDefaultColor || pActiveColor || pHoverColor;
-	bool MintLabel = false;
-	if(CustomColors)
-	{
-		if(Checked)
-			Rect.Draw(pActiveColor ? *pActiveColor : ms_ColorTabbarActive, Corners, EdgeRounding);
-		else if(MouseInside)
-			Rect.Draw(pHoverColor ? *pHoverColor : ms_ColorTabbarHover, Corners, EdgeRounding);
-		else
-			Rect.Draw(pDefaultColor ? *pDefaultColor : ms_ColorTabbarInactive, Corners, EdgeRounding);
-	}
+	if(Checked)
+		Rect.Draw(pActiveColor ? *pActiveColor : ms_ColorTabbarActive, Corners, EdgeRounding);
+	else if(MouseInside)
+		Rect.Draw(pHoverColor ? *pHoverColor : ms_ColorTabbarHover, Corners, EdgeRounding);
 	else
-	{
-		// soft mint to white gradient
-		const float Boost = MouseInside ? 1.0f : (Checked ? 0.8f : 0.0f);
-		const float AlphaMint = 0.50f + 0.45f * Boost;
-		const float AlphaWhite = 0.40f + 0.55f * Boost;
-		const ColorRGBA Mint(0.50f + 0.06f * Boost, 0.92f, 0.76f + 0.04f * Boost, AlphaMint);
-		const ColorRGBA White(1.0f, 1.0f, 1.0f, AlphaWhite);
-		Rect.Draw4(Mint, White, Mint, White, Corners, EdgeRounding);
-		MintLabel = true;
-	}
+		Rect.Draw(pDefaultColor ? *pDefaultColor : ms_ColorTabbarInactive, Corners, EdgeRounding);
 
 	if(pAnimator != nullptr)
 	{
@@ -218,11 +202,35 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 	{
 		CUIRect Label;
 		Rect.HMargin(2.0f, &Label);
-		if(MintLabel)
-			TextRender()->TextColor(0.04f, 0.2f, 0.17f, 1.0f);
-		Ui()->DoLabel(&Label, pText, Label.h * CUi::ms_FontmodHeight, TEXTALIGN_MC);
-		if(MintLabel)
+		const float FontSize = Label.h * CUi::ms_FontmodHeight;
+		if((unsigned char)pText[0] >= 0xEE || pText[0] == '\0')
+		{
+			// icons keep their normal look
+			Ui()->DoLabel(&Label, pText, FontSize, TEXTALIGN_MC);
+		}
+		else
+		{
+			// the text is a mint to white gradient that flows through the letters
+			const float Width = TextRender()->TextWidth(FontSize, pText, -1, -1.0f);
+			CTextCursor Cursor;
+			Cursor.m_FontSize = FontSize;
+			Cursor.SetPosition(vec2(Label.x + (Label.w - Width) * 0.5f, Label.y + (Label.h - FontSize) * 0.5f - FontSize * 0.08f));
+			const double Now = time_get_nanoseconds().count() / 1e9;
+			int Index = 0;
+			for(int Byte = 0; pText[Byte] != '\0';)
+			{
+				const int Next = str_utf8_forward(pText, Byte);
+				if(Next <= Byte)
+					break;
+				const float Wave = 0.5f + 0.5f * std::sin((float)(Index * 0.55 - Now * 2.6));
+				const float Smooth = Wave * Wave * (3.0f - 2.0f * Wave);
+				TextRender()->TextColor(0.45f + 0.55f * Smooth, 1.0f, 0.78f + 0.22f * Smooth, 1.0f);
+				TextRender()->TextEx(&Cursor, pText + Byte, Next - Byte);
+				Byte = Next;
+				Index++;
+			}
 			TextRender()->TextColor(TextRender()->DefaultTextColor());
+		}
 	}
 
 	return Ui()->DoButtonLogic(pButtonContainer, Checked, pRect, BUTTONFLAG_LEFT);
