@@ -4261,7 +4261,7 @@ void CEditor::RenderGeneratorOverlay()
 	// "Generation" panel: first choose the settings and press Done, then select the zone
 	if(!m_GeneratorReady)
 	{
-		CUIRect Panel = {Ui()->Screen()->w / 2.0f - 160.0f, 70.0f, 320.0f, m_GeneratorStyle == 1 ? 154.0f : 132.0f};
+		CUIRect Panel = {Ui()->Screen()->w / 2.0f - 160.0f, 70.0f, 320.0f, (m_GeneratorStyle == 1 ? 175.0f : 154.0f)};
 		Panel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.8f), IGraphics::CORNER_ALL, 6.0f);
 		Panel.Margin(6.0f, &Panel);
 		CUIRect Row, Button;
@@ -4323,6 +4323,17 @@ void CEditor::RenderGeneratorOverlay()
 			Row.VSplitLeft(70.0f, &Button, &Row);
 			if(DoButton_Editor(&s_Fly, "Fly", m_GeneratorFly, &Button, BUTTONFLAG_LEFT, "Adds fly parts for a dummy (pseudofly): corridors, gaps and lanes that cannot be passed alone."))
 				m_GeneratorFly = !m_GeneratorFly;
+		}
+
+		{
+			static char s_Part;
+			Panel.HSplitTop(18.0f, &Row, &Panel);
+			Panel.HSplitTop(3.0f, nullptr, &Panel);
+			Row.VSplitLeft(62.0f, &Button, &Row);
+			Ui()->DoLabel(&Button, "Zone", 10.0f, TEXTALIGN_ML);
+			Row.VSplitLeft(150.0f, &Button, &Row);
+			if(DoButton_Editor(&s_Part, "Part (replace a piece)", m_GeneratorPart, &Button, BUTTONFLAG_LEFT, "Only builds the selected piece: no start and finish, it joins the openings of the neighbours and copies the wall style around."))
+				m_GeneratorPart = !m_GeneratorPart;
 		}
 
 		Panel.HSplitTop(20.0f, &Row, &Panel);

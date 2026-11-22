@@ -67,6 +67,62 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	// teleporters are only possible when the tele layer (if there is one) covers the zone
 	std::shared_ptr<CLayerTele> pTeleLayer = Map()->m_pTeleLayer;
 	const bool Fly = m_GeneratorFly && m_GeneratorStyle == 1;
+	const bool Part = m_GeneratorPart;
+
+	// a part has to fit in: the rows where the neighbours on the left and on the right are open are read from the map
+	// and the share of unhookable and hookable rock around the zone sets the style
+	int PartEntryC = H / 2 - 3, PartEntryF = H / 2 + 2, PartExitC = H / 2 - 3, PartExitF = H / 2 + 2;
+	int HookPercent = Diff == 0 ? 35 : (Diff == 1 ? 20 : 12);
+	{
+		const auto TileAt = [&](int xx, int yy) -> int {
+			if(xx < 0 || yy < 0 || xx >= pGameLayer->m_Width || yy >= pGameLayer->m_Height)
+				return -1;
+			return pGameLayer->m_pTiles[(size_t)yy * pGameLayer->m_Width + xx].m_Index;
+		};
+		const auto FindRun = [&](int Column, int &C, int &F) {
+			int BestStart = -1, BestLen = 0, Start = -1;
+			for(int yy = Y0; yy <= Y1 + 1; yy++)
+			{
+				const bool Air = yy <= Y1 && TileAt(Column, yy) == TILE_AIR;
+				if(Air && Start < 0)
+					Start = yy;
+				if(!Air && Start >= 0)
+				{
+					if(yy - Start > BestLen)
+					{
+						BestLen = yy - Start;
+						BestStart = Start;
+					}
+					Start = -1;
+				}
+			}
+			if(BestStart >= 0 && BestLen >= 3)
+			{
+				C = BestStart - Y0;
+				F = std::min(H - 3, BestStart - Y0 + std::max(BestLen, 5) - 1);
+				C = std::max(2, std::min(C, H - 8));
+				F = std::max(F, C + 4);
+			}
+		};
+		if(Part)
+		{
+			FindRun(X0 - 1, PartEntryC, PartEntryF);
+			FindRun(X1 + 1, PartExitC, PartExitF);
+			PartEntryF = std::min(PartEntryF, H - 3);
+			PartExitF = std::min(PartExitF, H - 3);
+			int Solid = 0, NoHook = 0;
+			for(int Band = 1; Band <= 8; Band++)
+				for(int yy = Y0; yy <= Y1; yy += 2)
+					for(const int Column : {X0 - Band, X1 + Band})
+					{
+						const int Tile = TileAt(Column, yy);
+						Solid += Tile == TILE_SOLID;
+						NoHook += Tile == TILE_NOHOOK;
+					}
+			if(Solid + NoHook > 20)
+				HookPercent = std::clamp(100 * Solid / (Solid + NoHook), 3, 95);
+		}
+	}
 	bool Teleports = m_GeneratorTeleports && W >= 64;
 	if(pTeleLayer && (pTeleLayer->m_Width <= X1 || pTeleLayer->m_Height <= Y1))
 		Teleports = false;
@@ -95,8 +151,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		T_START = TILE_START,
 		T_FINISH = TILE_FINISH,
 		T_SPAWN = ENTITY_OFFSET + ENTITY_SPAWN,
-		T_JETON = TILE_JETPACK_ENABLE,
-		T_JETOFF = TILE_JETPACK_DISABLE,
+		T_STICK = 250, // hookable thin parts, they become plain solid tiles at the end
 	};
 	std::vector<unsigned char> vBuf((size_t)W * H, (unsigned char)T_SOLID);
 	std::vector<unsigned char> vTeleType((size_t)W * H, 0);
@@ -164,13 +219,15 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		S_PSEUDO,
 		S_DUMMYGAP,
 		S_PSEUDOV,
+		S_STICKS,
+		S_EDGE,
 		NUM_SECTIONS,
 	};
 	// minimum height of the chamber a section needs
-	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10, 14, 10, 12, 17};
-	static const int s_aNovice[] = {S_HALL, S_HALL, S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
-	static const int s_aModerate[] = {S_TELELINE, S_HALL, S_TELELINE, S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
-	static const int s_aBrutal[] = {S_TELELINE, S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
+	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10, 14, 10, 12, 17, 10, 10};
+	static const int s_aNovice[] = {S_EDGE, S_STICKS, S_HALL, S_HALL, S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
+	static const int s_aModerate[] = {S_STICKS, S_EDGE, S_TELELINE, S_HALL, S_TELELINE, S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
+	static const int s_aBrutal[] = {S_EDGE, S_STICKS, S_TELELINE, S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
 	const int *pPool = Diff == 0 ? s_aNovice : (Diff == 1 ? s_aModerate : s_aBrutal);
 	const int PoolSize = Diff == 0 ? (int)std::size(s_aNovice) : (Diff == 1 ? (int)std::size(s_aModerate) : (int)std::size(s_aBrutal));
 
@@ -356,6 +413,53 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			}
 			break;
 		}
+		case S_STICKS:
+		{
+			// hookable sticks over a freeze floor under an unhookable ceiling: hook from stick to stick
+			Fill(x0 + 1, c, x1 - x0 - 2, 2, T_NOHOOK);
+			for(int xx = x0 + 2; xx < x1 - 2; xx++)
+			{
+				FreezeAir(xx, f);
+				FreezeAir(xx, f - 1);
+				if(Diff >= 1)
+					FreezeAir(xx, f - 2);
+			}
+			int px = x0 + 4;
+			int py = Rand(c + 4, std::max(c + 4, f - 5));
+			while(px + 8 < x1 - 3)
+			{
+				if(Rand(0, 1))
+				{
+					const int L = Rand(5, 9);
+					Fill(px, py, L, 1, T_STICK);
+					px += L + Rand(3, 5);
+				}
+				else
+				{
+					const int L = Rand(4, 7);
+					Fill(px, py, 1, L, T_STICK);
+					px += 1 + Rand(3, 5);
+				}
+				py = std::clamp(py + Rand(-3, 3), c + 4, std::max(c + 4, f - 8));
+			}
+			break;
+		}
+		case S_EDGE:
+		{
+			// rising and falling blocks with gaps of freeze between them: jump to the edge and catch it with the hook
+			for(int xx = x0 + 1; xx < x1 - 1; xx++)
+				FreezeAir(xx, f);
+			int px = x0 + 2;
+			int h = 2;
+			while(px + 4 < x1 - 2)
+			{
+				const int w = Rand(3, 6);
+				Fill(px, f - h + 1, w, h, T_STICK);
+				px += w + Rand(3, 5);
+				h = std::clamp(h + Rand(-2, 3), 2, std::max(2, Height - 5));
+			}
+			break;
+		}
 		case S_PSEUDO:
 		{
 			// pseudofly corridor: 3 tiles high with freeze on the floor and the ceiling, nothing to hook.
@@ -423,18 +527,14 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		}
 		case S_FLY:
 		{
-			// a fly part: a big open space with jetpack on at the entrance and off at the exit, freeze on the ceiling and floor and freeze obstacles to fly around
+			// a fly hall for a dummy: a big open space with freeze on the ceiling and floor and freeze obstacles to fly around
 			if(Height < 12)
 			{
 				for(int xx = x0 + 1; xx < x1 - 1; xx++)
 					FreezeAir(xx, f);
 				break;
 			}
-			for(int yy = c; yy <= f; yy++)
-			{
-				Put(x0 + 1, yy, T_JETON);
-				Put(x1 - 2, yy, T_JETOFF);
-			}
+			DummyParts++;
 			for(int xx = x0 + 2; xx < x1 - 2; xx++)
 			{
 				for(int Layer = 0; Layer < 3; Layer++)
@@ -641,32 +741,46 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		}
 	};
 
-	// ---- start room ----
+	// ---- start room (or the entrance of a part) ----
 	const int StartHeight = Diff == 0 ? 8 : 6;
 	int PrevC = std::clamp(H / 2 - StartHeight / 2, MinC, MaxF - StartHeight + 1);
 	int PrevF = PrevC + StartHeight - 1;
-	for(int x = 2; x <= 10; x++)
-		Fill(x, PrevC, 1, StartHeight, T_AIR);
-	Put(5, PrevF, T_SPAWN);
-	for(int y = PrevC; y <= PrevF; y++)
-		Put(10, y, T_START);
+	if(Part)
+	{
+		PrevC = PartEntryC;
+		PrevF = PartEntryF;
+		for(int xx = 0; xx < 3; xx++)
+			Fill(xx, PrevC, 1, PrevF - PrevC + 1, T_AIR);
+	}
+	else
+	{
+		for(int x = 2; x <= 10; x++)
+			Fill(x, PrevC, 1, StartHeight, T_AIR);
+		Put(5, PrevF, T_SPAWN);
+		for(int y = PrevC; y <= PrevF; y++)
+			Put(10, y, T_START);
+	}
 
 	// ---- sections ----
-	const int FinishStart = W - 12;
-	int x = 11;
+	const int FinishStart = Part ? W - 4 : W - 12;
+	int x = Part ? 3 : 11;
 	int SinceTele = 0;
+	int LastId = -1;
 	int &NumTele = TeleUsed;
 	while(x < FinishStart - 8)
 	{
 		int Id = pPool[Rand(0, PoolSize - 1)];
+		if(Id == LastId)
+			Id = pPool[Rand(0, PoolSize - 1)];
 		if(Fly && Rand(0, 99) < 45)
 		{
-			static const int s_aDummy[] = {S_PSEUDO, S_PSEUDO, S_DUMMYGAP, S_PSEUDOV};
-			Id = s_aDummy[Rand(0, 3)];
+			static const int s_aDummy[] = {S_PSEUDO, S_PSEUDO, S_DUMMYGAP, S_PSEUDOV, S_FLY, S_FLY};
+			Id = s_aDummy[Rand(0, 5)];
 		}
 		UsedMask |= 1u << Id;
+		LastId = Id;
 		int Len = Rand(Diff == 0 ? 18 : 16, Diff == 0 ? 28 : 26) + (B == 3 ? 4 : 0);
-		if(Id == S_PSEUDO || Id == S_DUMMYGAP)
+		if(Id == S_PSEUDO || Id == S_DUMMYGAP || Id == S_FLY)
 			Len = Rand(30, 44);
 		else if(Id == S_PSEUDOV)
 			Len = Rand(26, 36);
@@ -808,25 +922,41 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		x = End;
 	}
 
-	// ---- finish room ----
-	if(PrevF - PrevC + 1 < 5)
-		PrevF = std::min(MaxF, PrevC + 4);
-	for(int xx = x; xx <= W - 3; xx++)
-		Fill(xx, PrevC, 1, PrevF - PrevC + 1, T_AIR);
-	for(int yy = PrevC; yy <= PrevF; yy++)
-		Put(W - 7, yy, T_FINISH);
+	if(Part)
+	{
+		// ---- exit of the part: joins the rows where the neighbour on the right continues ----
+		for(int xx = x; xx < W - 5; xx++)
+			Fill(xx, PrevC, 1, PrevF - PrevC + 1, T_AIR);
+		Fill(W - 6, std::min(PrevC, PartExitC), 1, std::max(PrevF, PartExitF) - std::min(PrevC, PartExitC) + 1, T_AIR);
+		for(int xx = W - 5; xx < W; xx++)
+			Fill(xx, PartExitC, 1, PartExitF - PartExitC + 1, T_AIR);
+		for(int yy = 0; yy < H; yy++)
+			for(int xx = 0; xx < W; xx++)
+				if(yy == 0 || yy == H - 1 || ((xx == 0 || xx == W - 1) && At(xx, yy) != T_AIR))
+					At(xx, yy) = (unsigned char)T_NOHOOK;
+	}
+	else
+	{
+		// ---- finish room ----
+		if(PrevF - PrevC + 1 < 5)
+			PrevF = std::min(MaxF, PrevC + 4);
+		for(int xx = x; xx <= W - 3; xx++)
+			Fill(xx, PrevC, 1, PrevF - PrevC + 1, T_AIR);
+		for(int yy = PrevC; yy <= PrevF; yy++)
+			Put(W - 7, yy, T_FINISH);
 
-	// ---- unhookable outer frame, one more solid ring stays inside it ----
-	for(int yy = 0; yy < H; yy++)
-		for(int xx = 0; xx < W; xx++)
-			if(xx == 0 || yy == 0 || xx == W - 1 || yy == H - 1)
-				At(xx, yy) = (unsigned char)T_NOHOOK;
+		// ---- unhookable outer frame, one more solid ring stays inside it ----
+		for(int yy = 0; yy < H; yy++)
+			for(int xx = 0; xx < W; xx++)
+				if(xx == 0 || yy == 0 || xx == W - 1 || yy == H - 1)
+					At(xx, yy) = (unsigned char)T_NOHOOK;
+	}
 
 	// ---- rate this candidate ----
 	{
 		const auto Passable = [&](int Index) {
 			const unsigned char Tile = vBuf[Index];
-			return Tile != T_SOLID && Tile != T_NOHOOK && Tile != T_DEATH && Tile != T_FREEZE;
+			return Tile != T_SOLID && Tile != T_NOHOOK && Tile != T_DEATH && Tile != T_FREEZE && Tile != T_STICK;
 		};
 		int SpawnIndex = -1;
 		int FinishIndex = -1;
@@ -840,8 +970,13 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 				FinishIndex = i;
 			if(vBuf[i] == T_FREEZE)
 				FreezeCount++;
-			if(vBuf[i] != T_SOLID && vBuf[i] != T_NOHOOK)
+			if(vBuf[i] != T_SOLID && vBuf[i] != T_NOHOOK && vBuf[i] != T_STICK)
 				AirCount++;
+		}
+		if(Part)
+		{
+			SpawnIndex = ((PartEntryC + PartEntryF) / 2) * W;
+			FinishIndex = ((PartExitC + PartExitF) / 2) * W + (W - 1);
 		}
 		float Score = 0.0f;
 		if(SpawnIndex >= 0 && FinishIndex >= 0)
@@ -918,7 +1053,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 				if(!Near)
 					vNew[(size_t)yy * W + xx] = TILE_AIR;
 				else if(vOutBuf[(size_t)yy * W + xx] == TILE_SOLID)
-					vNew[(size_t)yy * W + xx] = (((xx / 6) * 7 + (yy / 6) * 13 + (xx / 6) * (yy / 6)) % 9 == 0) ? TILE_SOLID : TILE_NOHOOK;
+					vNew[(size_t)yy * W + xx] = (((unsigned)(xx / 4) * 7919u + (unsigned)(yy / 4) * 104729u + (unsigned)((xx / 4) * (yy / 4)) * 31u) % 100u < (unsigned)HookPercent) ? TILE_SOLID : TILE_NOHOOK;
 			}
 		}
 		// freeze lines that hug the floors (and on brutal also the ceilings) of the halls in long runs
@@ -949,6 +1084,41 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		}
 		vOutBuf = vNew;
 	}
+
+	// ---- organic: small bumps on floors and ceilings so that the halls are not perfect boxes ----
+	for(int Pass = 0; Pass < 2; Pass++)
+	{
+		for(int Dir = 0; Dir < 2; Dir++)
+		{
+			const int Dy = Dir == 0 ? 1 : -1; // where the rock is
+			for(int yy = 4; yy < H - 4; yy++)
+			{
+				for(int xx = 4; xx < W - 8; xx++)
+				{
+					if(Rand(0, 99) >= 3)
+						continue;
+					const int Len = Rand(2, 5);
+					bool Ok = true;
+					for(int dx = 0; dx < Len && Ok; dx++)
+					{
+						const size_t Index = (size_t)yy * W + xx + dx;
+						const unsigned char Below = vOutBuf[Index + (size_t)Dy * W];
+						if(vOutBuf[Index] != TILE_AIR || vOutTeleType[Index] != 0 || (Below != TILE_SOLID && Below != TILE_NOHOOK))
+							Ok = false;
+						for(int Up = 1; Up <= 7 && Ok; Up++)
+							if(yy - Dy * Up < 0 || yy - Dy * Up >= H || vOutBuf[(size_t)(yy - Dy * Up) * W + xx + dx] != TILE_AIR)
+								Ok = false;
+					}
+					if(Ok)
+						for(int dx = 0; dx < Len; dx++)
+							vOutBuf[(size_t)yy * W + xx + dx] = vOutBuf[(size_t)(yy + Dy) * W + xx + dx];
+				}
+			}
+		}
+	}
+	for(unsigned char &Tile : vOutBuf)
+		if(Tile == 250)
+			Tile = TILE_SOLID;
 
 	// ---- hand the result to the job that builds it column by column ----
 	SGeneratorJob &Job = m_GeneratorJob;
