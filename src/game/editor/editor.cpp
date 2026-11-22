@@ -4161,6 +4161,27 @@ void CEditor::FreeDynamicPopupMenus()
 
 void CEditor::UpdateGenerator()
 {
+	if(m_GeneratorSearch.m_Active)
+	{
+		// the search for the best course: candidates are built and rated for the whole budget, it cannot be skipped
+		static char s_GeneratorSearchButton;
+		DoButtonLogic(&s_GeneratorSearchButton, 0, Ui()->Screen(), BUTTONFLAG_ALL, "The generator is thinking, please wait.");
+		Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE);
+		SGeneratorSearch &Search = m_GeneratorSearch;
+		Search.m_Elapsed += Client()->RenderFrameTime();
+		const auto Start = std::chrono::steady_clock::now();
+		do
+		{
+			GenerateGameplay(Search.m_X0, Search.m_Y0, Search.m_X1, Search.m_Y1, 1);
+			Search.m_Tries++;
+		} while(std::chrono::steady_clock::now() - Start < std::chrono::milliseconds(8));
+		if(Search.m_Elapsed >= Search.m_Budget)
+		{
+			Search.m_Active = false;
+			GenerateGameplay(Search.m_X0, Search.m_Y0, Search.m_X1, Search.m_Y1, 2);
+		}
+		return;
+	}
 	if(m_GeneratorJob.m_Running)
 	{
 		// the course is being built: clicks are blocked and the building cannot be skipped
@@ -4232,6 +4253,30 @@ void CEditor::UpdateGenerator()
 
 void CEditor::RenderGeneratorOverlay()
 {
+	if(m_GeneratorSearch.m_Active)
+	{
+		const SGeneratorSearch &Search = m_GeneratorSearch;
+		const float Progress = std::clamp(Search.m_Elapsed / std::max(0.1f, Search.m_Budget), 0.0f, 1.0f);
+		const int Left = (int)std::ceil(std::max(0.0f, Search.m_Budget - Search.m_Elapsed));
+		CUIRect Panel = {Ui()->Screen()->w / 2.0f - 150.0f, 70.0f, 300.0f, 58.0f};
+		Panel.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f), IGraphics::CORNER_ALL, 6.0f);
+		Panel.Margin(6.0f, &Panel);
+		CUIRect Label, Bar;
+		Panel.HSplitTop(14.0f, &Label, &Panel);
+		char aText[160];
+		str_format(aText, sizeof(aText), "Thinking: %d:%02d left", Left / 60, Left % 60);
+		Ui()->DoLabel(&Label, aText, 11.0f, TEXTALIGN_ML);
+		Panel.HSplitTop(14.0f, &Label, &Panel);
+		str_format(aText, sizeof(aText), "%d courses built and checked, best rating %d", Search.m_Tries, (int)Search.m_BestScore);
+		Ui()->DoLabel(&Label, aText, 9.0f, TEXTALIGN_ML);
+		Panel.HSplitTop(4.0f, nullptr, &Bar);
+		Bar.h = 10.0f;
+		Bar.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.15f), IGraphics::CORNER_ALL, 3.0f);
+		CUIRect Fill = Bar;
+		Fill.w = std::max(6.0f, Bar.w * Progress);
+		Fill.Draw(ColorRGBA(0.45f, 1.0f, 0.75f, 0.9f), IGraphics::CORNER_ALL, 3.0f);
+		return;
+	}
 	if(m_GeneratorJob.m_Running)
 	{
 		// progress panel with the stage the generator is working on

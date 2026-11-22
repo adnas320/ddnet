@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iterator>
+#include <queue>
 #include <random>
 
 void CEditor::FillGameTiles(EGameTileOp FillTile) const
@@ -32,7 +33,7 @@ bool CEditor::CanFillGameTiles() const
 // fields of blocks, zigzag walls, freeze floors, freeze pits, vertical shafts, hook sections with
 // stalactites, staircases, narrow freeze tunnels and (optionally) teleporter parts. Difficulty and
 // block style (1x1 or 3x3) change sizes, freeze density and which sections are used.
-void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
+void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 {
 	std::shared_ptr<CLayerTiles> pGameLayer = Map()->m_pGameLayer;
 	if(!pGameLayer || !Map()->m_pGameGroup)
@@ -51,6 +52,58 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		return;
 	}
 
+	if(Stage == 0)
+	{
+		// start the search: it runs over several seconds, a few candidates per frame, and cannot be skipped
+		SGeneratorSearch &Search = m_GeneratorSearch;
+		Search = SGeneratorSearch();
+		Search.m_Active = true;
+		Search.m_X0 = X0;
+		Search.m_Y0 = Y0;
+		Search.m_X1 = X1;
+		Search.m_Y1 = Y1;
+		const float aBudget[3] = {1.5f, 60.0f, 300.0f};
+		Search.m_Budget = aBudget[std::clamp(m_GeneratorThink, 0, 2)];
+		// the wall thickness of the existing map: the most common length of rock between two open tiles
+		int aRuns[5] = {0, 0, 0, 0, 0};
+		const int LW = pGameLayer->m_Width, LH = pGameLayer->m_Height;
+		const auto IsRockAt = [&](int xx, int yy) {
+			const int Tile = pGameLayer->m_pTiles[(size_t)yy * LW + xx].m_Index;
+			return Tile == TILE_SOLID || Tile == TILE_NOHOOK;
+		};
+		const auto InZone = [&](int xx, int yy) { return xx >= X0 && xx <= X1 && yy >= Y0 && yy <= Y1; };
+		for(int Dir = 0; Dir < 2; Dir++)
+		{
+			const int Outer = Dir == 0 ? LH : LW, Inner = Dir == 0 ? LW : LH;
+			for(int a = 0; a < Outer; a += 2)
+			{
+				int Run = 0;
+				for(int b = 0; b < Inner; b++)
+				{
+					const int xx = Dir == 0 ? b : a, yy = Dir == 0 ? a : b;
+					if(!InZone(xx, yy) && IsRockAt(xx, yy))
+						Run++;
+					else
+					{
+						if(Run >= 1 && Run <= 4 && b - Run - 1 >= 0 && !InZone(xx, yy))
+						{
+							const int px = Dir == 0 ? b - Run - 1 : a, py = Dir == 0 ? a : b - Run - 1;
+							if(!IsRockAt(px, py) && !IsRockAt(xx, yy))
+								aRuns[Run]++;
+						}
+						Run = 0;
+					}
+				}
+			}
+		}
+		int Best = 1;
+		for(int Thick = 2; Thick <= 3; Thick++)
+			if(aRuns[Thick] > aRuns[Best])
+				Best = Thick;
+		Search.m_DetectedThickness = aRuns[1] + aRuns[2] + aRuns[3] + aRuns[4] >= 12 ? Best : 0;
+		return;
+	}
+
 	std::mt19937 Rng(m_GeneratorSeed++ * 2654435761u + (unsigned)std::chrono::steady_clock::now().time_since_epoch().count());
 	const auto Rand = [&](int Min, int Max) {
 		if(Max < Min)
@@ -60,7 +113,10 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 
 	// ---- settings ----
 	const int Diff = std::clamp(m_GeneratorDifficulty, 0, 2); // 0 novice, 1 moderate, 2 brutal
-	const int B = m_GeneratorStyle == 1 ? 3 : 1; // thickness of blocks and walls
+	const int DetectedThickness = m_GeneratorSearch.m_DetectedThickness;
+	const bool MixThickness = m_GeneratorStyle == 1 && DetectedThickness == 0; // 3x3 mostly, with strips between
+	const int BaseB = DetectedThickness > 0 ? DetectedThickness : (m_GeneratorStyle == 1 ? 3 : 1);
+	int B = BaseB; // thickness of blocks and walls
 	const int aHMin[3] = {12, 8, 6};
 	const int aHMax[3] = {20, 14, 11};
 
@@ -132,10 +188,11 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 
 	// With more thinking time several complete candidates are built and the best one is kept: it has to be
 	// connected from the spawn to the finish and is rated by variety.
-	std::vector<unsigned char> vOutBuf, vOutTeleType, vOutTeleNum;
-	float BestScore = -1.0f;
-	const int aAttempts[3] = {1, 12, 120};
-	const int Attempts = aAttempts[std::clamp(m_GeneratorThink, 0, 2)];
+	std::vector<unsigned char> &vOutBuf = m_GeneratorSearch.m_vBuf;
+	std::vector<unsigned char> &vOutTeleType = m_GeneratorSearch.m_vTeleType;
+	std::vector<unsigned char> &vOutTeleNum = m_GeneratorSearch.m_vTeleNum;
+	float &BestScore = m_GeneratorSearch.m_BestScore;
+	const int Attempts = Stage == 1 ? 1 : 0;
 	for(int Attempt = 0; Attempt < Attempts; Attempt++)
 	{
 	// ---- local buffers, everything starts as solid ----
@@ -431,13 +488,13 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 				if(Rand(0, 1))
 				{
 					const int L = Rand(5, 9);
-					Fill(px, py, L, 1, T_STICK);
+					Fill(px, py, L, 1, Rand(0, 99) < 18 ? T_HOOKTHROUGH : T_STICK);
 					px += L + Rand(3, 5);
 				}
 				else
 				{
 					const int L = Rand(4, 7);
-					Fill(px, py, 1, L, T_STICK);
+					Fill(px, py, 1, L, Rand(0, 99) < 18 ? T_HOOKTHROUGH : T_STICK);
 					px += 1 + Rand(3, 5);
 				}
 				py = std::clamp(py + Rand(-3, 3), c + 4, std::max(c + 4, f - 8));
@@ -454,7 +511,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			while(px + 4 < x1 - 2)
 			{
 				const int w = Rand(3, 6);
-				Fill(px, f - h + 1, w, h, T_STICK);
+				Fill(px, f - h + 1, w, h, Rand(0, 99) < 15 ? T_HOOKTHROUGH : T_STICK);
 				px += w + Rand(3, 5);
 				h = std::clamp(h + Rand(-2, 3), 2, std::max(2, Height - 5));
 			}
@@ -911,7 +968,10 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		Fill(x, std::min(PrevC, c), 1, std::max(PrevF, f) - std::min(PrevC, c) + 1, T_AIR);
 		for(int xx = x + 1; xx < End; xx++)
 			Fill(xx, c, 1, f - c + 1, T_AIR);
+		if(MixThickness)
+			B = Rand(0, 99) < 65 ? 3 : 1;
 		Section(Id, x + 1, End, c, f);
+		B = BaseB;
 		// unfreeze strip at the start of parts with freeze, so a freeze from before never carries over
 		if(UsedFreeze && Diff >= 1)
 			for(int yy = c; yy <= f; yy++)
@@ -956,7 +1016,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	{
 		const auto Passable = [&](int Index) {
 			const unsigned char Tile = vBuf[Index];
-			return Tile != T_SOLID && Tile != T_NOHOOK && Tile != T_DEATH && Tile != T_FREEZE && Tile != T_STICK;
+			return Tile != T_SOLID && Tile != T_NOHOOK && Tile != T_DEATH && Tile != T_FREEZE && Tile != T_STICK && Tile != T_HOOKTHROUGH;
 		};
 		int SpawnIndex = -1;
 		int FinishIndex = -1;
@@ -981,31 +1041,90 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		float Score = 0.0f;
 		if(SpawnIndex >= 0 && FinishIndex >= 0)
 		{
-			std::vector<unsigned char> vSeen((size_t)W * H, 0);
-			std::vector<int> vStack;
-			vStack.push_back(SpawnIndex);
-			vSeen[SpawnIndex] = 1;
+			// The cheapest route for a tee from the spawn to the finish. Cells where the tee has nothing to stand on and
+			// nothing hookable near it are expensive: a route that needs many of them cannot really be played.
+			const auto Rock = [&](int Index) {
+				const unsigned char Tile = vBuf[Index];
+				return Tile == T_SOLID || Tile == T_NOHOOK || Tile == T_STICK || Tile == T_HOOKTHROUGH;
+			};
+			const auto Hookable = [&](int Index) {
+				const unsigned char Tile = vBuf[Index];
+				if(Tile == T_STICK)
+					return true;
+				if(Tile != T_SOLID)
+					return false;
+				const int xx = Index % W, yy = Index / W;
+				return ((unsigned)(xx / 4) * 7919u + (unsigned)(yy / 4) * 104729u + (unsigned)((xx / 4) * (yy / 4)) * 31u) % 100u < (unsigned)HookPercent;
+			};
+			const int Stride = W + 1;
+			std::vector<int> vIntegral((size_t)Stride * (H + 1), 0);
+			for(int yy = 0; yy < H; yy++)
+				for(int xx = 0; xx < W; xx++)
+					vIntegral[(size_t)(yy + 1) * Stride + xx + 1] = vIntegral[(size_t)yy * Stride + xx + 1] + vIntegral[(size_t)(yy + 1) * Stride + xx] - vIntegral[(size_t)yy * Stride + xx] + (Hookable(yy * W + xx) ? 1 : 0);
+			const auto HookNear = [&](int xx, int yy) {
+				const int X0b = std::max(0, xx - 6), X1b = std::min(W, xx + 7), Y0b = std::max(0, yy - 6), Y1b = std::min(H, yy + 7);
+				return vIntegral[(size_t)Y1b * Stride + X1b] - vIntegral[(size_t)Y0b * Stride + X1b] - vIntegral[(size_t)Y1b * Stride + X0b] + vIntegral[(size_t)Y0b * Stride + X0b] > 0;
+			};
+			const auto Supported = [&](int Index) {
+				const int xx = Index % W, yy = Index / W;
+				for(int Down = 1; Down <= 2; Down++)
+					if(yy + Down < H && Rock(Index + Down * W))
+						return true;
+				return HookNear(xx, yy);
+			};
+			std::vector<int> vCost((size_t)W * H, 1 << 30);
+			std::vector<int> vParent((size_t)W * H, -1);
+			using SNode = std::pair<int, int>;
+			std::priority_queue<SNode, std::vector<SNode>, std::greater<SNode>> Queue;
+			vCost[SpawnIndex] = 0;
+			Queue.push({0, SpawnIndex});
 			int Reached = 0;
-			while(!vStack.empty())
+			while(!Queue.empty())
 			{
-				const int Cur = vStack.back();
-				vStack.pop_back();
+				const SNode Top = Queue.top();
+				Queue.pop();
+				const int Cur = Top.second;
+				if(Top.first > vCost[Cur])
+					continue;
 				Reached++;
+				if(Cur == FinishIndex)
+					break;
 				const int cx = Cur % W, cy = Cur / W;
 				const int aNext[4] = {cx > 0 ? Cur - 1 : -1, cx < W - 1 ? Cur + 1 : -1, cy > 0 ? Cur - W : -1, cy < H - 1 ? Cur + W : -1};
 				for(const int Next : aNext)
-					if(Next >= 0 && !vSeen[Next] && Passable(Next))
+				{
+					if(Next < 0 || !Passable(Next))
+						continue;
+					const int NewCost = Top.first + (Supported(Next) ? 1 : 9);
+					if(NewCost < vCost[Next])
 					{
-						vSeen[Next] = 1;
-						vStack.push_back(Next);
+						vCost[Next] = NewCost;
+						vParent[Next] = Cur;
+						Queue.push({NewCost, Next});
 					}
+				}
 			}
-			Score = vSeen[FinishIndex] ? 1000.0f : 100.0f * (float)Reached / (float)std::max(1, AirCount);
+			if(vCost[FinishIndex] < (1 << 30))
+			{
+				int PathLength = 0, Unsupported = 0;
+				for(int Cur = FinishIndex; Cur >= 0; Cur = vParent[Cur])
+				{
+					PathLength++;
+					if(!Supported(Cur))
+						Unsupported++;
+				}
+				const float Weight = Fly ? 0.4f : 4.0f;
+				Score = 1000.0f - Weight * (float)Unsupported + 0.4f * (float)std::min(PathLength, W * 2);
+				if(Unsupported > 12 && !Fly)
+					Score -= 400.0f;
+			}
+			else
+				Score = 100.0f * (float)Reached / (float)std::max(1, AirCount);
 		}
 		const float AirFraction = (float)AirCount / (float)(W * H);
 		const float FreezeFraction = (float)FreezeCount / (float)std::max(1, AirCount);
 		Score += 100.0f - std::abs(AirFraction - 0.45f) * 200.0f;
-		Score += 60.0f - std::abs(FreezeFraction - (Diff == 0 ? 0.04f : 0.09f)) * 400.0f;
+		Score += 80.0f - std::abs(FreezeFraction - (Diff == 0 ? 0.2f : (Diff == 1 ? 0.15f : 0.11f))) * 300.0f;
 		int Variety = 0;
 		for(unsigned Mask = UsedMask; Mask; Mask >>= 1)
 			Variety += Mask & 1u;
@@ -1022,10 +1141,13 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	}
 	}
 
+	if(Stage != 2)
+		return;
+
 	// ---- hollow out: only a wall around the course is kept and the rest of the rock becomes empty ----
 	// The walls are mostly unhookable with a few hookable patches, like in the maps that were studied.
 	{
-		const int Wall = B == 3 ? 3 : 1;
+		const int Wall = BaseB;
 		std::vector<unsigned char> vNew = vOutBuf;
 		const auto IsRock = [&](int xx, int yy) {
 			const unsigned char Tile = vOutBuf[(size_t)yy * W + xx];
@@ -1145,11 +1267,9 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		Job.m_vpActions.push_back(std::make_shared<CEditorActionAddLayer>(Map(), Job.m_GameGroupIndex, (int)Map()->m_pGameGroup->m_vpLayers.size() - 1));
 	}
 
-	// the thinking time grows with the size of the zone
+	// the thinking itself already happened in the search, this is only the time the building is shown
 	const float Area = (float)W * (float)H;
-	const float aMax[3] = {4.0f, 90.0f, 300.0f};
-	const float aPerTile[3] = {0.0005f, 0.012f, 0.05f};
-	Job.m_Duration = std::clamp(Area * aPerTile[std::clamp(m_GeneratorThink, 0, 2)], 1.5f, aMax[std::clamp(m_GeneratorThink, 0, 2)]);
+	Job.m_Duration = std::clamp(Area * 0.0015f, 2.0f, 8.0f);
 }
 
 // Applies the next columns of the running job to the layers. With Finish everything that is left is applied

@@ -311,7 +311,8 @@ public:
 	void FreeDynamicPopupMenus();
 	void UpdateGenerator();
 	void RenderGeneratorOverlay();
-	void GenerateGameplay(int X0, int Y0, int X1, int Y1);
+	// Stage 0 starts the search for the best course, stage 1 builds and rates one candidate, stage 2 applies the best one
+	void GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage = 0);
 	void RenderMousePointer();
 	void RenderIngameEntities(const CLayerGroup &Group, const CLayerTiles &TilesLayer);
 
@@ -452,6 +453,18 @@ public:
 		std::vector<std::shared_ptr<IEditorAction>> m_vpActions;
 	};
 	SGeneratorJob m_GeneratorJob;
+	struct SGeneratorSearch
+	{
+		bool m_Active = false;
+		int m_X0 = 0, m_Y0 = 0, m_X1 = 0, m_Y1 = 0;
+		float m_Elapsed = 0.0f;
+		float m_Budget = 0.0f;
+		int m_Tries = 0;
+		int m_DetectedThickness = 0; // thickness of the walls of the map, 0 if unknown
+		float m_BestScore = -1.0e9f;
+		std::vector<unsigned char> m_vBuf, m_vTeleType, m_vTeleNum;
+	};
+	SGeneratorSearch m_GeneratorSearch;
 	void StepGeneratorJob(bool Finish);
 
 	IGraphics::CTextureHandle m_CheckerTexture;
