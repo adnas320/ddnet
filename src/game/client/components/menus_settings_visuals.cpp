@@ -83,11 +83,9 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClVisualsStarfield, "Звёздное небо");
 	DoToggle(Card, g_Config.m_ClVisualsMeteors, "Синие метеоры", true);
 
-	Card = BeginCard(Left, "Скорость и эффекты", 4);
-	DoToggle(Card, g_Config.m_ClVisualsSpeedLines, "Линии скорости (Speed Lines)");
-	DoToggle(Card, g_Config.m_ClVisualsSpeedReadout, "Показывать скорость цифрой");
-	DoToggle(Card, g_Config.m_ClVisualsCursorTrail, "Голографический след курсора");
-	DoToggle(Card, g_Config.m_ClVisualsTeleFx, "Эффект телепорта (вход и выход)", true);
+	Card = BeginCard(Left, "Курсор и телепорт", 2);
+	DoToggle(Card, g_Config.m_ClVisualsCursorTrail, "Белый след курсора");
+	DoToggle(Card, g_Config.m_ClVisualsTeleFx, "Телепорт как в Portal 2", true);
 
 	// средняя колонка
 	Card = BeginCard(Middle, "Эффекты тишки", 5);

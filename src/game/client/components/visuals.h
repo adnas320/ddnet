@@ -152,6 +152,11 @@ class CVisuals : public CComponent
 		ColorRGBA m_Body;
 		ColorRGBA m_Feet;
 		unsigned m_Seed;
+		float m_Size = 64.0f;
+		IGraphics::CTextureHandle m_BodyTex;
+		IGraphics::CTextureHandle m_BodyOutlineTex;
+		IGraphics::CTextureHandle m_FeetTex;
+		IGraphics::CTextureHandle m_FeetOutlineTex;
 	};
 
 	// shooting star
@@ -245,6 +250,17 @@ class CVisuals : public CComponent
 	vec2 m_PrevTeePos = vec2(0.0f, 0.0f);
 	bool m_HavePrevTee = false;
 	float m_SmoothSpeed = 0.0f; // pixels per tick
+	float m_TrailPower = 0.0f;
+	struct CPortal
+	{
+		vec2 m_Pos;
+		float m_Age;
+		float m_Life;
+		float m_Seed;
+		ColorRGBA m_Color;
+	};
+	std::vector<CPortal> m_vPortals;
+	void RenderPortals(float DeltaTime);
 	void CheckTeleport(vec2 Position, float Time);
 	void TeleportEffect(vec2 From, vec2 To);
 	void RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, double Time);

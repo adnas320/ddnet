@@ -65,6 +65,7 @@ void CVisuals::OnReset()
 	m_vMeteors.clear();
 	m_vEchoes.clear();
 	m_vCursorTrail.clear();
+	m_vPortals.clear();
 	m_HavePrevTee = false;
 	m_HavePrevMouse = false;
 	m_AutoSkinTimer = 0.0f;
@@ -1327,6 +1328,7 @@ void CVisuals::OnRender()
 		m_vMeteors.clear();
 		m_vEchoes.clear();
 		m_vCursorTrail.clear();
+		m_vPortals.clear();
 		m_HavePrevTee = false;
 		m_HavePrevMouse = false;
 		return;
@@ -1341,7 +1343,7 @@ void CVisuals::OnRender()
 	const bool Bubbles = g_Config.m_ClVisualsBubbles;
 	const bool Starfield = g_Config.m_ClVisualsStarfield;
 	const bool Meteors = g_Config.m_ClVisualsMeteors;
-	const bool SpeedFx = g_Config.m_ClVisualsSpeedLines || g_Config.m_ClVisualsCursorTrail || !m_vCursorTrail.empty();
+	const bool SpeedFx = g_Config.m_ClVisualsCursorTrail || !m_vCursorTrail.empty() || !m_vPortals.empty();
 	if(!SpeedFx && !Snow && !Fireflies && !Predict && !Petals && !Bubbles && !Starfield && !Meteors && m_vBlackHoles.empty() && m_vPixelTees.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty() && m_vMeteors.empty())
 		return;
 
@@ -1572,8 +1574,6 @@ void CVisuals::OnRender()
 			continue;
 		}
 		const float T = Tee.m_Age / Tee.m_Life;
-		const int Cells = T < 0.10f ? 16 : (T < 0.20f ? 10 : (T < 0.30f ? 6 : 4));
-		const float CellSize = 64.0f / Cells;
 		const auto Hash = [&](int X, int Y, int Salt) {
 			unsigned H = Tee.m_Seed ^ (unsigned)(X * 73856093) ^ (unsigned)(Y * 19349663) ^ (unsigned)(Salt * 83492791);
 			H ^= H >> 13;
@@ -1581,52 +1581,86 @@ void CVisuals::OnRender()
 			H ^= H >> 15;
 			return (H & 0xffffu) / 65535.0f;
 		};
-		Graphics()->TextureClear();
-		Graphics()->QuadsBegin();
-		for(int Y = 0; Y < Cells; Y++)
-		{
-			for(int X = 0; X < Cells; X++)
+		// the skin is cut into a grid of small pieces (about 110 for the body, a few for the feet).
+		// Every piece shows its own part of the real skin texture and flies away at its own moment.
+		constexpr int GRID = 12;
+		const float BodySize = Tee.m_Size;
+		const vec2 BodyCenter = Tee.m_Pos + vec2(0.0f, -0.06f * BodySize);
+		const auto DrawPiece = [&](IGraphics::CTextureHandle Tex, ColorRGBA Color, vec2 Center, float PieceSize, float U0, float V0, float U1, float V1, int X, int Y, int Salt, float Detach, vec2 Local) {
+			vec2 Pos = Center;
+			float Alpha = 1.0f;
+			float Rotation = 0.0f;
+			float Size = PieceSize;
+			if(T < Detach)
 			{
-				const vec2 Local((X + 0.5f) * CellSize - 32.0f, (Y + 0.5f) * CellSize - 32.0f);
-				if(length(Local) > 32.0f + CellSize * 0.15f)
-					continue;
-				const float Detach = 0.3f + 0.35f * (0.65f * Hash(X, Y, 1) + 0.35f * (Local.y + 32.0f) / 64.0f);
-				ColorRGBA Color = Local.y > 14.0f ? Tee.m_Feet : Tee.m_Body;
-				const float Shade = 0.86f + 0.28f * Hash(X, Y, 2);
-				Color = ColorRGBA(std::min(1.0f, Color.r * Shade), std::min(1.0f, Color.g * Shade), std::min(1.0f, Color.b * Shade), 1.0f);
-				// the two eyes
-				if(Cells >= 6 && std::abs(std::abs(Local.x) - 9.0f) < CellSize * 0.55f && std::abs(Local.y + 4.0f) < CellSize * 0.55f)
-					Color = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
-				vec2 Pos = Tee.m_Pos + Local;
-				float Alpha = 1.0f;
-				float Rotation = 0.0f;
-				float Size = CellSize;
-				if(T < Detach)
+				// the skin starts to tremble and tear before the pieces come off
+				const float Shake = std::clamp((T - 0.05f) / 0.4f, 0.0f, 1.0f) * 1.6f;
+				Pos += vec2((Hash(X, Y, Salt + 3) - 0.5f) * Shake, (Hash(X, Y, Salt + 4) - 0.5f) * Shake) * std::sin(Tee.m_Age * 45.0f + X * 3.0f + Y);
+			}
+			else
+			{
+				const float S = (T - Detach) * Tee.m_Life;
+				const vec2 Dir = Local.x == 0.0f && Local.y == 0.0f ? vec2(0.0f, -1.0f) : normalize(Local);
+				const float Speed = 40.0f + 150.0f * Hash(X, Y, Salt + 5);
+				const vec2 Vel = Dir * Speed + vec2((Hash(X, Y, Salt + 6) - 0.5f) * 60.0f, -40.0f - 80.0f * Hash(X, Y, Salt + 7));
+				Pos += Vel * S + vec2(0.0f, 0.5f * 480.0f * S * S);
+				Rotation = (Hash(X, Y, Salt + 8) - 0.5f) * 14.0f * S;
+				Alpha = std::clamp(1.0f - S / 1.0f, 0.0f, 1.0f);
+				Size *= 1.0f - 0.3f * std::clamp(S, 0.0f, 1.0f);
+			}
+			if(Alpha <= 0.0f)
+				return;
+			Graphics()->TextureSet(Tex);
+			Graphics()->QuadsBegin();
+			Graphics()->QuadsSetSubset(U0, V0, U1, V1);
+			Graphics()->SetColor(Color.r, Color.g, Color.b, Alpha);
+			Graphics()->QuadsSetRotation(Rotation);
+			// a tiny overlap hides the seams while the skin is still whole
+			const float Draw = T < Detach ? Size * 1.06f : Size;
+			IGraphics::CQuadItem Quad(Pos.x, Pos.y, Draw, Draw);
+			Graphics()->QuadsDraw(&Quad, 1);
+			Graphics()->QuadsSetRotation(0.0f);
+			Graphics()->QuadsEnd();
+		};
+		const float Piece = BodySize / GRID;
+		for(int Pass = 0; Pass < 2; Pass++)
+		{
+			const IGraphics::CTextureHandle Tex = Pass == 0 ? Tee.m_BodyOutlineTex : Tee.m_BodyTex;
+			if(!Tex.IsValid())
+				continue;
+			for(int Y = 0; Y < GRID; Y++)
+			{
+				for(int X = 0; X < GRID; X++)
 				{
-					// restless right before it falls apart
-					const float Shake = std::clamp((T - 0.15f) / 0.5f, 0.0f, 1.0f) * 1.8f;
-					Pos += vec2((Hash(X, Y, 3) - 0.5f) * Shake, (Hash(X, Y, 4) - 0.5f) * Shake) * std::sin(Tee.m_Age * 40.0f + X * 3.0f);
+					const vec2 Local(((X + 0.5f) / GRID - 0.5f) * BodySize, ((Y + 0.5f) / GRID - 0.5f) * BodySize);
+					if(length(Local) > BodySize * 0.5f)
+						continue;
+					const float Detach = 0.12f + 0.4f * (0.6f * Hash(X, Y, 1) + 0.4f * (Local.y / BodySize + 0.5f));
+					const float Shade = Pass == 1 ? 1.0f : 1.0f;
+					DrawPiece(Tex, ColorRGBA(Tee.m_Body.r * Shade, Tee.m_Body.g * Shade, Tee.m_Body.b * Shade, 1.0f), BodyCenter + Local, Piece, X / (float)GRID, Y / (float)GRID, (X + 1) / (float)GRID, (Y + 1) / (float)GRID, X, Y, 0, Detach, Local);
 				}
-				else
-				{
-					const float S = (T - Detach) * Tee.m_Life;
-					const float Dir = (Local.x >= 0.0f ? 1.0f : -1.0f);
-					const vec2 Vel(Local.x * 2.0f + Dir * Hash(X, Y, 5) * 40.0f, -30.0f - 90.0f * Hash(X, Y, 6));
-					Pos += Vel * S + vec2(0.0f, 0.5f * 520.0f * S * S);
-					Rotation = (Hash(X, Y, 7) - 0.5f) * 10.0f * S;
-					Alpha = std::clamp(1.0f - S / 0.75f, 0.0f, 1.0f);
-					Size *= 1.0f - 0.35f * std::clamp(S / 0.75f, 0.0f, 1.0f);
-				}
-				if(Alpha <= 0.0f)
-					continue;
-				Graphics()->SetColor(Color.r, Color.g, Color.b, Alpha);
-				Graphics()->QuadsSetRotation(Rotation);
-				IGraphics::CQuadItem Quad(Pos.x, Pos.y, Size, Size);
-				Graphics()->QuadsDraw(&Quad, 1);
 			}
 		}
-		Graphics()->QuadsSetRotation(0.0f);
-		Graphics()->QuadsEnd();
+		// the two feet: 4x2 pieces each
+		for(int Foot = 0; Foot < 2; Foot++)
+		{
+			for(int Pass = 0; Pass < 2; Pass++)
+			{
+				const IGraphics::CTextureHandle Tex = Pass == 0 ? Tee.m_FeetOutlineTex : Tee.m_FeetTex;
+				if(!Tex.IsValid())
+					continue;
+				const float FootW = BodySize * 0.5f, FootH = BodySize * 0.25f;
+				const vec2 FootCenter = Tee.m_Pos + vec2((Foot ? 1.0f : -1.0f) * 0.1f * BodySize, 0.25f * BodySize);
+				for(int Y = 0; Y < 2; Y++)
+				{
+					for(int X = 0; X < 4; X++)
+					{
+						const vec2 Local(((X + 0.5f) / 4.0f - 0.5f) * FootW, ((Y + 0.5f) / 2.0f - 0.5f) * FootH);
+						DrawPiece(Tex, Tee.m_Feet, FootCenter + Local, FootW / 4.0f, X / 4.0f, Y / 2.0f, (X + 1) / 4.0f, (Y + 1) / 2.0f, 20 + X + Foot * 4, 20 + Y, 40, 0.2f + 0.3f * Hash(X, Y + Foot * 2, 9), Local + vec2(0.0f, FootH));
+					}
+				}
+			}
+		}
 		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 		i++;
 	}
@@ -1666,64 +1700,97 @@ void CVisuals::OnRender()
 		if(P < 0.14f)
 		{
 			const float G = P / 0.14f;
-			Radius = 46.0f * (1.0f - (1.0f - G) * (1.0f - G));
+			Radius = 38.0f * (1.0f - (1.0f - G) * (1.0f - G));
 		}
 		else if(P < EXPLODE)
 		{
 			const float G = (P - 0.14f) / (EXPLODE - 0.14f);
-			Radius = 46.0f - 33.0f * G * G * (3.0f - 2.0f * G);
+			Radius = 38.0f - 27.0f * G * G * (3.0f - 2.0f * G);
 		}
 		const float Spin = Age * Age * 9.0f + Age * 3.0f;
-		const float Tilt = -0.35f;
+		// the whole picture turns a little and faster as the hole shrinks
+		const float Tilt = -0.18f + 0.35f * std::sin(Age * 1.1f) + 0.12f * Spin;
+		const float CosT = std::cos(Tilt), SinT = std::sin(Tilt);
+		const auto Rot = [&](vec2 Local) {
+			return Hole.m_Pos + vec2(Local.x * CosT - Local.y * SinT, Local.x * SinT + Local.y * CosT);
+		};
 
-		Graphics()->BlendAdditive();
 		if(Radius > 0.5f)
 		{
-			// big soft halo
-			DrawSprite(m_GlowTexture, Hole.m_Pos, Radius * 6.5f, Radius * 6.5f, 0.0f, false, ColorRGBA(1.0f, 0.4f, 0.05f, 0.55f));
-			// the accretion disc: a flattened ring with a bright spot that runs around it
+			const ColorRGBA Core(1.0f, 0.93f, 0.75f, 1.0f);
+			const ColorRGBA Mid(1.0f, 0.55f, 0.12f, 1.0f);
+			const ColorRGBA Deep(0.8f, 0.2f, 0.02f, 1.0f);
+			const float Fade = P < 0.1f ? P / 0.1f : 1.0f;
+			Graphics()->BlendAdditive();
+			// faint warm glow around everything
+			DrawSprite(m_GlowTexture, Hole.m_Pos, Radius * 7.0f, Radius * 5.0f, Tilt, false, ColorRGBA(0.9f, 0.3f, 0.04f, 0.3f * Fade));
+
+			// the flat accretion disc: long, thin and bright, stronger on one side (like on the photo)
+			Graphics()->TextureClear();
+			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 1.2f, Radius * 0.2f)), Radius * 13.0f, Radius * 1.5f, Tilt, false, ColorRGBA(Deep.r, Deep.g, Deep.b, 0.6f * Fade));
+			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 1.0f, Radius * 0.2f)), Radius * 10.0f, Radius * 0.8f, Tilt, false, ColorRGBA(Mid.r, Mid.g, Mid.b, 0.9f * Fade));
+			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 0.6f, Radius * 0.2f)), Radius * 6.5f, Radius * 0.34f, Tilt, false, ColorRGBA(Core.r, Core.g, Core.b, 1.0f * Fade));
+			DrawSprite(m_GlowTexture, Rot(vec2(-Radius * 2.2f, Radius * 0.22f)), Radius * 5.0f, Radius * 0.5f, Tilt, false, ColorRGBA(Mid.r, Mid.g, Mid.b, 0.5f * Fade));
+			// fine orbiting streaks in the disc
+			for(int Line = 0; Line < 5; Line++)
+			{
+				const float Off = (Line - 2) * Radius * 0.1f;
+				const float Wave = std::sin(Spin * 0.8f + Line * 1.7f);
+				DrawSprite(m_GlowTexture, Rot(vec2(Radius * (1.8f + 0.5f * Wave), Radius * 0.2f + Off)), Radius * (5.0f + Line), Radius * 0.12f, Tilt, false, ColorRGBA(1.0f, 0.7f, 0.3f, 0.35f * Fade));
+			}
+
+			// the lensed ring around the dark core, brighter on top and on the disc side
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			constexpr int SEGMENTS = 48;
-			const auto Point = [&](float Angle, float R) {
-				const float X = std::cos(Angle) * R;
-				const float Y = std::sin(Angle) * R * 0.36f;
-				return Hole.m_Pos + vec2(X * std::cos(Tilt) - Y * std::sin(Tilt), X * std::sin(Tilt) + Y * std::cos(Tilt));
-			};
+			constexpr int SEGMENTS = 64;
 			for(int Seg = 0; Seg < SEGMENTS; Seg++)
 			{
 				const float A0 = 2.0f * pi * Seg / SEGMENTS;
 				const float A1 = 2.0f * pi * (Seg + 1) / SEGMENTS;
-				const float B0 = 0.35f + 0.65f * std::pow(0.5f + 0.5f * std::cos(A0 - Spin), 2.0f);
-				const float B1 = 0.35f + 0.65f * std::pow(0.5f + 0.5f * std::cos(A1 - Spin), 2.0f);
-				const ColorRGBA In0(1.0f, 0.85f, 0.45f, B0), Out0(1.0f, 0.3f, 0.0f, 0.0f);
-				const ColorRGBA In1(1.0f, 0.85f, 0.45f, B1), Out1(1.0f, 0.3f, 0.0f, 0.0f);
-				Graphics()->SetColor4(In0, Out0, In1, Out1);
-				const IGraphics::CFreeformItem Item(Point(A0, Radius * 1.05f), Point(A0, Radius * 2.9f), Point(A1, Radius * 1.05f), Point(A1, Radius * 2.9f));
-				Graphics()->QuadsDrawFreeform(&Item, 1);
+				const auto Bright = [&](float A) { return 0.45f + 0.55f * std::pow(0.5f + 0.5f * std::cos(A + pi * 0.5f - 0.5f), 1.5f); };
+				const float B0 = Bright(A0) * Fade, B1 = Bright(A1) * Fade;
+				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A), std::sin(A)) * R); };
+				// wide soft part
+				Graphics()->SetColor4(ColorRGBA(Mid.r, Mid.g, Mid.b, 0.55f * B0), ColorRGBA(Deep.r, Deep.g, Deep.b, 0.0f), ColorRGBA(Mid.r, Mid.g, Mid.b, 0.55f * B1), ColorRGBA(Deep.r, Deep.g, Deep.b, 0.0f));
+				const IGraphics::CFreeformItem Soft(P2(A0, Radius * 1.0f), P2(A0, Radius * 1.75f), P2(A1, Radius * 1.0f), P2(A1, Radius * 1.75f));
+				Graphics()->QuadsDrawFreeform(&Soft, 1);
+				// bright thin ring
+				Graphics()->SetColor4(ColorRGBA(Core.r, Core.g, Core.b, B0), ColorRGBA(Mid.r, Mid.g, Mid.b, 0.5f * B0), ColorRGBA(Core.r, Core.g, Core.b, B1), ColorRGBA(Mid.r, Mid.g, Mid.b, 0.5f * B1));
+				const IGraphics::CFreeformItem Ring(P2(A0, Radius * 1.0f), P2(A0, Radius * 1.16f), P2(A1, Radius * 1.0f), P2(A1, Radius * 1.16f));
+				Graphics()->QuadsDrawFreeform(&Ring, 1);
+			}
+			// the mirrored lensed ring under the disc: a flat lower arc
+			for(int Seg = 0; Seg < 32; Seg++)
+			{
+				const float A0 = pi * Seg / 32.0f, A1 = pi * (Seg + 1) / 32.0f;
+				const float E0 = std::sin(A0) * 0.9f + 0.1f, E1 = std::sin(A1) * 0.9f + 0.1f;
+				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A) * Radius * 1.05f * R, Radius * 0.95f + std::sin(A) * Radius * 0.75f * R)); };
+				Graphics()->SetColor4(ColorRGBA(Mid.r, Mid.g, Mid.b, 0.55f * E0 * Fade), ColorRGBA(Deep.r, Deep.g, Deep.b, 0.0f), ColorRGBA(Mid.r, Mid.g, Mid.b, 0.55f * E1 * Fade), ColorRGBA(Deep.r, Deep.g, Deep.b, 0.0f));
+				const IGraphics::CFreeformItem Low(P2(A0, 1.0f), P2(A0, 1.18f), P2(A1, 1.0f), P2(A1, 1.18f));
+				Graphics()->QuadsDrawFreeform(&Low, 1);
 			}
 			Graphics()->QuadsEnd();
-			// matter that spirals into the hole
-			for(int Star = 0; Star < 14; Star++)
+
+			// a few stars around, like on the photo
+			for(int Star = 0; Star < 10; Star++)
 			{
-				const float Phase = std::fmod(Age * 0.9f + Star / 14.0f, 1.0f);
-				const float Angle = Spin * 1.4f + Star * 2.4f + Phase * 5.0f;
-				const float Dist = Radius * (3.2f - 2.1f * Phase);
-				const vec2 Off(std::cos(Angle) * Dist, std::sin(Angle) * Dist * 0.5f);
-				DrawSprite(m_StarTexture, Hole.m_Pos + Off, 14.0f * (1.0f - Phase * 0.5f), 14.0f * (1.0f - Phase * 0.5f), Angle, false, ColorRGBA(1.0f, 0.62f, 0.15f, 0.9f));
+				const float Angle = Star * 2.4f + Hole.m_Hue * 10.0f;
+				const float Dist = Radius * (2.6f + 0.35f * Star);
+				const float Twinkle = 0.5f + 0.5f * std::sin(Age * 5.0f + Star * 1.9f);
+				DrawSprite(m_StarTexture, Hole.m_Pos + vec2(std::cos(Angle), std::sin(Angle) * 0.7f) * Dist, 6.0f, 6.0f, Angle, false, ColorRGBA(1.0f, 0.9f, 0.7f, 0.6f * Twinkle * Fade));
 			}
-		}
-		Graphics()->BlendNormal();
-		if(Radius > 0.5f)
-		{
+			Graphics()->BlendNormal();
+
+			// the black core is drawn over the ring and the back of the disc
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(0.0f, 0.0f, 0.0f, 1.0f);
-			Graphics()->DrawCircle(Hole.m_Pos.x, Hole.m_Pos.y, Radius, 32);
+			Graphics()->SetColor(0.0f, 0.0f, 0.0f, Fade);
+			Graphics()->DrawCircle(Hole.m_Pos.x, Hole.m_Pos.y, Radius * 0.99f, 40);
 			Graphics()->QuadsEnd();
-			// thin bright photon ring around the core
+			// the front of the disc crosses the lower part of the core
 			Graphics()->BlendAdditive();
-			DrawSprite(m_GlowTexture, Hole.m_Pos, Radius * 2.5f, Radius * 2.5f, 0.0f, false, ColorRGBA(1.0f, 0.55f, 0.1f, 0.35f));
+			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 0.9f, Radius * 0.22f)), Radius * 8.5f, Radius * 0.55f, Tilt, false, ColorRGBA(Mid.r, Mid.g, Mid.b, 0.95f * Fade));
+			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 0.7f, Radius * 0.22f)), Radius * 6.0f, Radius * 0.26f, Tilt, false, ColorRGBA(Core.r, Core.g, Core.b, Fade));
 			Graphics()->BlendNormal();
 		}
 		else if(P >= EXPLODE)
@@ -1895,6 +1962,7 @@ void CVisuals::OnRender()
 	if(Predict)
 		RenderGunPredict(View);
 
+	RenderPortals(DeltaTime);
 	RenderSpeedAndCursor(View, DeltaTime, Time);
 }
 
@@ -2201,6 +2269,16 @@ void CVisuals::OnKill(int Killer, int Victim)
 		Tee.m_Body = Info.m_RenderInfo.m_CustomColoredSkin ? Info.m_RenderInfo.m_ColorBody : ColorRGBA(0.92f, 0.74f, 0.47f, 1.0f);
 		Tee.m_Feet = Info.m_RenderInfo.m_CustomColoredSkin ? Info.m_RenderInfo.m_ColorFeet : ColorRGBA(0.75f, 0.55f, 0.32f, 1.0f);
 		Tee.m_Seed = (unsigned)(random_float() * 4294967040.0f);
+		// the real skin of the victim is cut into pieces
+		const CTeeRenderInfo &Render = Info.m_RenderInfo;
+		const CSkin::CSkinTextures &Skin = Render.m_CustomColoredSkin ? Render.m_ColorableRenderSkin : Render.m_OriginalRenderSkin;
+		Tee.m_BodyTex = Skin.m_Body;
+		Tee.m_BodyOutlineTex = Skin.m_BodyOutline;
+		Tee.m_FeetTex = Skin.m_Feet;
+		Tee.m_FeetOutlineTex = Skin.m_FeetOutline;
+		Tee.m_Body = Render.m_CustomColoredSkin ? Render.m_ColorBody : ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+		Tee.m_Feet = Render.m_CustomColoredSkin ? Render.m_ColorFeet : ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+		Tee.m_Size = Render.m_Size > 8.0f ? Render.m_Size : 64.0f;
 		m_vPixelTees.push_back(Tee);
 	}
 	else if(Effect == 2)
@@ -2267,119 +2345,167 @@ void CVisuals::CheckTeleport(vec2 Position, float Time)
 
 void CVisuals::TeleportEffect(vec2 From, vec2 To)
 {
-	const ColorRGBA Cyan(0.25f, 0.8f, 1.0f, 1.0f);
-	const ColorRGBA Violet(0.85f, 0.4f, 1.0f, 1.0f);
-	const ColorRGBA White(1.0f, 1.0f, 1.0f, 1.0f);
+	// like in Portal 2: an orange portal opens where you went in, a blue one where you come out
+	if(m_vPortals.size() >= 6)
+		return;
+	const ColorRGBA Orange(1.0f, 0.5f, 0.08f, 1.0f);
+	const ColorRGBA Blue(0.1f, 0.55f, 1.0f, 1.0f);
+	CPortal A;
+	A.m_Pos = From;
+	A.m_Age = 0.0f;
+	A.m_Life = 1.5f;
+	A.m_Color = Orange;
+	A.m_Seed = random_float(0.0f, 6.0f);
+	m_vPortals.push_back(A);
+	CPortal B = A;
+	B.m_Pos = To;
+	B.m_Color = Blue;
+	B.m_Seed = random_float(0.0f, 6.0f);
+	m_vPortals.push_back(B);
+	SpawnFlash(From, 60.0f, 0.25f);
+	SpawnFlash(To, 60.0f, 0.25f);
+}
 
-	// departure: everything is sucked into the entrance
-	SpawnFlash(From, 80.0f, 0.3f);
-	SpawnRing(From, 70.0f, Cyan, false);
-	SpawnRing(From, 40.0f, White, false);
-	for(int i = 0; i < 18; i++)
+void CVisuals::RenderPortals(float DeltaTime)
+{
+	for(size_t i = 0; i < m_vPortals.size();)
 	{
-		const float Angle = random_float(0.0f, 2.0f * pi);
-		const vec2 Dir(std::cos(Angle), std::sin(Angle));
-		const float Radius = random_float(40.0f, 75.0f);
-		SpawnGlow(From + Dir * Radius, -Dir * Radius / 0.4f, 0.4f, random_float(9.0f, 16.0f), -0.5f, 0.95f, i % 2 ? Cyan : White);
-	}
+		CPortal &Portal = m_vPortals[i];
+		Portal.m_Age += DeltaTime;
+		if(Portal.m_Age >= Portal.m_Life)
+		{
+			Portal = m_vPortals.back();
+			m_vPortals.pop_back();
+			continue;
+		}
+		const float Age = Portal.m_Age;
+		// opens quickly with a little overshoot, stays, then closes
+		float Open;
+		if(Age < 0.22f)
+		{
+			const float G = Age / 0.22f;
+			Open = 1.12f * std::sin(G * pi * 0.5f);
+			if(G > 0.7f)
+				Open = 1.0f + 0.12f * std::sin((G - 0.7f) / 0.3f * pi);
+			Open = std::min(Open, 1.12f);
+		}
+		else if(Age > Portal.m_Life - 0.4f)
+		{
+			const float G = (Portal.m_Life - Age) / 0.4f;
+			Open = G * G;
+		}
+		else
+			Open = 1.0f;
+		const float Rx = 17.0f * Open;
+		const float Ry = 38.0f * Open;
+		const ColorRGBA C = Portal.m_Color;
+		const ColorRGBA Light = ColorRGBA(std::min(1.0f, C.r + 0.45f), std::min(1.0f, C.g + 0.45f), std::min(1.0f, C.b + 0.45f), 1.0f);
+		constexpr int SEG = 40;
+		const auto Pt = [&](float Angle, float Scale) {
+			return Portal.m_Pos + vec2(std::cos(Angle) * Rx * Scale, std::sin(Angle) * Ry * Scale);
+		};
 
-	// arrival: burst out of the exit
-	SpawnFlash(To, 130.0f, 0.45f);
-	SpawnRing(To, 110.0f, Violet, false);
-	SpawnRing(To, 70.0f, White, false);
-	for(int i = 0; i < 22; i++)
-	{
-		const float Angle = random_float(0.0f, 2.0f * pi);
-		const vec2 Dir(std::cos(Angle), std::sin(Angle));
-		SpawnStar(To + Dir * 10.0f, Dir * random_float(90.0f, 260.0f), random_float(0.5f, 0.9f), random_float(10.0f, 20.0f), 0.95f, i % 3 == 0 ? White : (i % 2 ? Violet : Cyan));
+		// dark inside with a tint
+		Graphics()->BlendNormal();
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		for(int s = 0; s < SEG; s++)
+		{
+			const float A0 = 2.0f * pi * s / SEG, A1 = 2.0f * pi * (s + 1) / SEG;
+			const ColorRGBA Centre(C.r * 0.15f, C.g * 0.15f, C.b * 0.2f, 0.8f);
+			const ColorRGBA Edge(C.r * 0.35f, C.g * 0.35f, C.b * 0.45f, 0.8f);
+			Graphics()->SetColor4(Centre, Edge, Centre, Edge);
+			const IGraphics::CFreeformItem Wedge(Portal.m_Pos, Pt(A0, 1.0f), Portal.m_Pos, Pt(A1, 1.0f));
+			Graphics()->QuadsDrawFreeform(&Wedge, 1);
+		}
+		Graphics()->QuadsEnd();
+
+		// glowing rim with a bright spot that runs around it
+		Graphics()->BlendAdditive();
+		Graphics()->QuadsBegin();
+		const float Spin = Age * 7.0f + Portal.m_Seed;
+		for(int s = 0; s < SEG; s++)
+		{
+			const float A0 = 2.0f * pi * s / SEG, A1 = 2.0f * pi * (s + 1) / SEG;
+			const float B0 = 0.55f + 0.45f * std::pow(0.5f + 0.5f * std::cos(A0 - Spin), 3.0f);
+			const float B1 = 0.55f + 0.45f * std::pow(0.5f + 0.5f * std::cos(A1 - Spin), 3.0f);
+			// soft outer glow
+			Graphics()->SetColor4(ColorRGBA(C.r, C.g, C.b, 0.55f * B0), ColorRGBA(C.r, C.g, C.b, 0.0f), ColorRGBA(C.r, C.g, C.b, 0.55f * B1), ColorRGBA(C.r, C.g, C.b, 0.0f));
+			const IGraphics::CFreeformItem Glow(Pt(A0, 0.98f), Pt(A0, 1.75f), Pt(A1, 0.98f), Pt(A1, 1.75f));
+			Graphics()->QuadsDrawFreeform(&Glow, 1);
+			// the bright ring itself
+			Graphics()->SetColor4(ColorRGBA(Light.r, Light.g, Light.b, B0), ColorRGBA(C.r, C.g, C.b, 0.9f * B0), ColorRGBA(Light.r, Light.g, Light.b, B1), ColorRGBA(C.r, C.g, C.b, 0.9f * B1));
+			const IGraphics::CFreeformItem Rim(Pt(A0, 0.84f), Pt(A0, 1.08f), Pt(A1, 0.84f), Pt(A1, 1.08f));
+			Graphics()->QuadsDrawFreeform(&Rim, 1);
+		}
+		Graphics()->QuadsEnd();
+		Graphics()->BlendNormal();
+
+		// motes that drift out of the portal
+		if(Open > 0.5f && random_float() < DeltaTime * 22.0f)
+		{
+			const float Angle = random_float(0.0f, 2.0f * pi);
+			const vec2 Dir(std::cos(Angle), std::sin(Angle));
+			SpawnGlow(Portal.m_Pos + vec2(Dir.x * Rx, Dir.y * Ry), Dir * random_float(10.0f, 40.0f) + vec2(0.0f, -15.0f), random_float(0.4f, 0.8f), random_float(3.0f, 6.0f), -0.6f, 0.9f, random_float() < 0.5f ? C : Light);
+		}
+		i++;
 	}
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, double Time)
 {
 	const bool Fresh = Time - m_TeePosTime < 0.25;
-	const vec2 Center = (View.m_TopLeft + View.m_BottomRight) * 0.5f;
 	const float ViewH = View.Size().y;
-	const float ViewW = View.Size().x;
 
-	Graphics()->TextureClear();
-
-	// ---- speed lines: streaks flying out from the middle of the screen, longer the faster you are
-	if(g_Config.m_ClVisualsSpeedLines && Fresh)
-	{
-		const float Intensity = std::clamp((m_SmoothSpeed - 8.0f) / 16.0f, 0.0f, 1.0f);
-		if(Intensity > 0.01f)
-		{
-			const float Radius = std::sqrt(ViewW * ViewW + ViewH * ViewH) * 0.5f;
-			Graphics()->BlendAdditive();
-			Graphics()->QuadsBegin();
-			const int NumLines = 40;
-			for(int i = 0; i < NumLines; i++)
-			{
-				// fixed pseudo random values per line
-				const float R1 = std::fmod(std::sin(i * 12.9898f) * 43758.5453f, 1.0f);
-				const float R2 = std::fmod(std::sin(i * 78.233f + 1.7f) * 24634.6345f, 1.0f);
-				const float R3 = std::fmod(std::sin(i * 39.346f + 4.1f) * 12345.6789f, 1.0f);
-				const float Angle = std::fabs(R1) * 2.0f * pi;
-				const float Phase = std::fabs(R2);
-				const float Rate = 1.4f + 1.6f * std::fabs(R3) + Intensity;
-				const float T = (float)std::fmod(Phase + Time * Rate, 1.0);
-				const vec2 Dir(std::cos(Angle), std::sin(Angle));
-				const vec2 Perp(-Dir.y, Dir.x);
-				const float R0 = Radius * (0.38f + 0.75f * T * T);
-				const float Len = Radius * (0.06f + 0.22f * Intensity) * (0.4f + T);
-				const float Width = ViewH * (0.0016f + 0.0016f * std::fabs(R3)) * (0.6f + Intensity);
-				const float Alpha = Intensity * 0.55f * std::sin(pi * T);
-				if(Alpha <= 0.01f)
-					continue;
-				const vec2 A = Center + Dir * R0;
-				const vec2 B = Center + Dir * (R0 + Len);
-				Graphics()->SetColor(0.85f, 0.95f, 1.0f, Alpha);
-				const IGraphics::CFreeformItem Streak(A.x - Perp.x * Width, A.y - Perp.y * Width, B.x - Perp.x * Width * 0.2f, B.y - Perp.y * Width * 0.2f,
-					A.x + Perp.x * Width, A.y + Perp.y * Width, B.x + Perp.x * Width * 0.2f, B.y + Perp.y * Width * 0.2f);
-				Graphics()->QuadsDrawFreeform(&Streak, 1);
-			}
-			Graphics()->QuadsEnd();
-			Graphics()->BlendNormal();
-		}
-	}
-
-	// ---- cursor trail: a fading holographic laser line when the mouse moves fast
+	// ---- cursor trail: a white drop-shaped brush stroke that ends exactly at the crosshair
 	if(g_Config.m_ClVisualsCursorTrail && Fresh)
 	{
 		const vec2 Mouse = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+		const vec2 Target = GameClient()->m_Controls.m_aTargetPos[g_Config.m_ClDummy];
 		if(m_HavePrevMouse && DeltaTime > 0.0f)
 		{
 			const float ScreenSpeed = length(Mouse - m_PrevMouse) / DeltaTime / ViewH; // screens per second
-			const float Power = std::clamp((ScreenSpeed - 1.0f) / 3.0f, 0.0f, 1.0f);
-			if(Power > 0.02f)
-				m_vCursorTrail.push_back({m_TeePos + Mouse, (float)Time, Power});
+			const float Wanted = std::clamp((ScreenSpeed - 0.6f) / 2.4f, 0.0f, 1.0f);
+			m_TrailPower += (Wanted - m_TrailPower) * std::min(1.0f, DeltaTime * (Wanted > m_TrailPower ? 18.0f : 6.0f));
+			const bool Moved = m_vCursorTrail.empty() || distance(m_vCursorTrail.back().m_Pos, Target) > 0.4f;
+			if(m_TrailPower > 0.03f && Moved)
+				m_vCursorTrail.push_back({Target, (float)Time, m_TrailPower});
 		}
 		m_PrevMouse = Mouse;
 		m_HavePrevMouse = true;
 	}
 	else
+	{
 		m_HavePrevMouse = false;
+		m_TrailPower = 0.0f;
+	}
 
-	const float Fade = 0.5f;
-	while(!m_vCursorTrail.empty() && Time - m_vCursorTrail.front().m_Time > Fade)
-		m_vCursorTrail.erase(m_vCursorTrail.begin());
-	if(m_vCursorTrail.size() > 400)
-		m_vCursorTrail.erase(m_vCursorTrail.begin(), m_vCursorTrail.begin() + (m_vCursorTrail.size() - 400));
+	const float Fade = 0.4f;
+	size_t Dead = 0;
+	while(Dead < m_vCursorTrail.size() && Time - m_vCursorTrail[Dead].m_Time > Fade)
+		Dead++;
+	if(Dead)
+		m_vCursorTrail.erase(m_vCursorTrail.begin(), m_vCursorTrail.begin() + Dead);
+	if(m_vCursorTrail.size() > 300)
+		m_vCursorTrail.erase(m_vCursorTrail.begin(), m_vCursorTrail.begin() + (m_vCursorTrail.size() - 300));
 
 	if(m_vCursorTrail.size() >= 2)
 	{
-		// smooth the recorded points with a Catmull-Rom spline so that the stroke is a continuous curve
 		struct CSample
 		{
 			vec2 m_Pos;
 			float m_Width;
 			float m_Alpha;
-			bool m_Break; // the stroke does not continue from the previous sample
+			bool m_Break;
 		};
 		std::vector<CSample> vSamples;
 		const int N = (int)m_vCursorTrail.size();
-		const int Sub = 4;
+		const int Sub = 6;
+		const auto WidthOf = [&](float PointTime, float Power) {
+			const float Life = 1.0f - std::clamp((float)(Time - PointTime) / Fade, 0.0f, 1.0f);
+			return ViewH * (0.0008f + 0.0042f * Power) * Life * Life;
+		};
 		for(int i = 0; i < N - 1; i++)
 		{
 			const CTrailPoint &P1 = m_vCursorTrail[i];
@@ -2391,37 +2517,33 @@ void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, do
 			{
 				const float t = s / (float)Sub;
 				const vec2 CatPos = ((P1.m_Pos * 2.0f) + (P2.m_Pos - P0.m_Pos) * t + (P0.m_Pos * 2.0f - P1.m_Pos * 5.0f + P2.m_Pos * 4.0f - P3.m_Pos) * (t * t) + (P1.m_Pos * 3.0f - P0.m_Pos - P2.m_Pos * 3.0f + P3.m_Pos) * (t * t * t)) * 0.5f;
-				const vec2 Pos = Gap ? P1.m_Pos : CatPos;
 				const float PointTime = mix(P1.m_Time, P2.m_Time, t);
 				const float Power = mix(P1.m_Power, P2.m_Power, t);
 				const float Life = 1.0f - std::clamp((float)(Time - PointTime) / Fade, 0.0f, 1.0f);
-				// drop shape: thin tail, thick toward the cursor
-				const float Width = ViewH * (0.004f + 0.017f * Power) * std::pow(Life, 1.4f);
-				vSamples.push_back({Pos, Width, Life * (0.5f + 0.5f * Power), Gap && s == 0});
+				vSamples.push_back({Gap ? P1.m_Pos : CatPos, WidthOf(PointTime, Power), Life, Gap && s == 0});
 			}
 		}
-		{
-			const CTrailPoint &Last = m_vCursorTrail.back();
-			const float Life = 1.0f - std::clamp((float)(Time - Last.m_Time) / Fade, 0.0f, 1.0f);
-			vSamples.push_back({Last.m_Pos, ViewH * (0.004f + 0.017f * Last.m_Power) * std::pow(Life, 1.4f), Life * (0.5f + 0.5f * Last.m_Power), false});
-		}
+		vSamples.push_back({m_vCursorTrail.back().m_Pos, WidthOf(m_vCursorTrail.back().m_Time, m_vCursorTrail.back().m_Power), 1.0f, false});
 
-		// a normal for each sample, shared by both neighbor quads so there are no seams
+		// light smoothing of the positions, then shared normals so that the stroke has no seams
+		for(int Pass = 0; Pass < 2; Pass++)
+			for(size_t k = 1; k + 1 < vSamples.size(); k++)
+				if(!vSamples[k].m_Break && !vSamples[k + 1].m_Break)
+					vSamples[k].m_Pos = vSamples[k].m_Pos * 0.5f + (vSamples[k - 1].m_Pos + vSamples[k + 1].m_Pos) * 0.25f;
 		std::vector<vec2> vNormals(vSamples.size());
 		for(size_t k = 0; k < vSamples.size(); k++)
 		{
-			const vec2 Prev = vSamples[k > 0 ? k - 1 : 0].m_Pos;
-			const vec2 Next = vSamples[std::min(k + 1, vSamples.size() - 1)].m_Pos;
-			vec2 Dir = Next - Prev;
+			vec2 Dir = vSamples[std::min(k + 1, vSamples.size() - 1)].m_Pos - vSamples[k > 0 ? k - 1 : 0].m_Pos;
 			const float Len = length(Dir);
 			Dir = Len > 0.001f ? Dir / Len : vec2(1.0f, 0.0f);
 			vNormals[k] = vec2(-Dir.y, Dir.x);
 		}
 
+		Graphics()->TextureClear();
 		Graphics()->BlendAdditive();
 		Graphics()->QuadsBegin();
-		const float Scale[3] = {2.1f, 1.1f, 0.45f};
-		const ColorRGBA Colors[3] = {ColorRGBA(0.1f, 0.55f, 1.0f, 0.3f), ColorRGBA(0.2f, 0.95f, 1.0f, 0.75f), ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f)};
+		const float Scale[3] = {2.2f, 1.2f, 0.55f};
+		const float Strength[3] = {0.16f, 0.45f, 1.0f};
 		for(int Layer = 0; Layer < 3; Layer++)
 		{
 			for(size_t k = 0; k + 1 < vSamples.size(); k++)
@@ -2432,30 +2554,17 @@ void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, do
 				const CSample &B = vSamples[k + 1];
 				const vec2 NA = vNormals[k] * A.m_Width * Scale[Layer];
 				const vec2 NB = vNormals[k + 1] * B.m_Width * Scale[Layer];
-				Graphics()->SetColor(Colors[Layer].r, Colors[Layer].g, Colors[Layer].b, Colors[Layer].a * A.m_Alpha);
+				Graphics()->SetColor4(ColorRGBA(1, 1, 1, Strength[Layer] * A.m_Alpha), ColorRGBA(1, 1, 1, Strength[Layer] * A.m_Alpha), ColorRGBA(1, 1, 1, Strength[Layer] * B.m_Alpha), ColorRGBA(1, 1, 1, Strength[Layer] * B.m_Alpha));
 				const IGraphics::CFreeformItem Seg(A.m_Pos.x - NA.x, A.m_Pos.y - NA.y, B.m_Pos.x - NB.x, B.m_Pos.y - NB.y,
 					A.m_Pos.x + NA.x, A.m_Pos.y + NA.y, B.m_Pos.x + NB.x, B.m_Pos.y + NB.y);
 				Graphics()->QuadsDrawFreeform(&Seg, 1);
 			}
-			// rounded head
 			const CSample &Head = vSamples.back();
-			Graphics()->SetColor(Colors[Layer].r, Colors[Layer].g, Colors[Layer].b, Colors[Layer].a * Head.m_Alpha);
+			Graphics()->SetColor(1.0f, 1.0f, 1.0f, Strength[Layer] * Head.m_Alpha);
 			Graphics()->DrawCircle(Head.m_Pos.x, Head.m_Pos.y, Head.m_Width * Scale[Layer], 16);
 		}
 		Graphics()->QuadsEnd();
 		Graphics()->BlendNormal();
 	}
 	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-	// ---- speed readout
-	if(g_Config.m_ClVisualsSpeedLines && g_Config.m_ClVisualsSpeedReadout && Fresh)
-	{
-		char aBuf[32];
-		str_format(aBuf, sizeof(aBuf), "%.1f т/с", m_SmoothSpeed * 50.0f / 32.0f);
-		const float Size = ViewH * 0.035f;
-		const float Width = TextRender()->TextWidth(Size, aBuf, -1, -1.0f);
-		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 0.8f);
-		TextRender()->Text(Center.x - Width * 0.5f, View.m_BottomRight.y - ViewH * 0.14f, Size, aBuf, -1.0f);
-		TextRender()->TextColor(TextRender()->DefaultTextColor());
-	}
 }

@@ -831,8 +831,6 @@ MACRO_CONFIG_COL(ClCombatPredictEndColor, cl_combat_predict_end_color, 524204, C
 MACRO_CONFIG_INT(ClVisualsPetals, cl_visuals_petals, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show falling blossom petals in the world")
 MACRO_CONFIG_INT(ClVisualsBubbles, cl_visuals_bubbles, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show rising soap bubbles in the world")
 MACRO_CONFIG_INT(ClVisualsMeteors, cl_visuals_meteors, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show shooting stars")
-MACRO_CONFIG_INT(ClVisualsSpeedLines, cl_visuals_speed_lines, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show speed lines when running fast")
-MACRO_CONFIG_INT(ClVisualsSpeedReadout, cl_visuals_speed_readout, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show the current speed under the speed lines")
 MACRO_CONFIG_INT(ClVisualsCursorTrail, cl_visuals_cursor_trail, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Holographic laser trail behind a fast moving cursor")
 MACRO_CONFIG_INT(ClVisualsTeleFx, cl_visuals_tele_fx, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Effects at the start and at the end of a teleport")
 MACRO_CONFIG_INT(ClTranslate, cl_translate, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Translate incoming chat messages")

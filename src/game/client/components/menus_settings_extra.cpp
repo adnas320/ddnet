@@ -502,55 +502,33 @@ void CMenus::RenderSettingsTranslate(CUIRect MainView)
 	CUIRect Left, Right;
 	MainView.VSplitMid(&Left, &Right, 10.0f);
 
-	static const char *s_apCodes[8] = {"ru", "en", "uk", "de", "es", "pl", "tr", "fr"};
-	static const char *s_apNames[8] = {"Русский", "English", "Українська", "Deutsch", "Español", "Polski", "Türkçe", "Français"};
-	static CButtonContainer s_aButtons[2][8];
-	static CLineInput s_InLang(g_Config.m_ClTranslateLang, sizeof(g_Config.m_ClTranslateLang));
-	static CLineInput s_OutLang(g_Config.m_ClTranslateSendLang, sizeof(g_Config.m_ClTranslateSendLang));
+	static const char *s_apCodes[3] = {"ru", "en", "zh-CN"};
+	static const char *s_apNames[3] = {"Русский", "English", "中文"};
+	static CButtonContainer s_aButtons[2][3];
 
-	// две строки кнопок с языками и поле для своего кода
-	const auto DoLanguages = [&](CUIRect &Card, int Which, char *pLang, size_t LangSize, CLineInput &Input) {
-		for(int Line = 0; Line < 2; Line++)
+	// три кнопки с языками
+	const auto DoLanguages = [&](CUIRect &Card, int Which, char *pLang, size_t LangSize) {
+		CUIRect Row = NextRow(Card);
+		const float Width = Row.w / 3.0f;
+		for(int k = 0; k < 3; k++)
 		{
-			CUIRect Row = NextRow(Card);
-			const float Width = Row.w / 4.0f;
-			for(int k = 0; k < 4; k++)
-			{
-				const int Index = Line * 4 + k;
-				CUIRect Button(Row.x + k * Width + 2.0f, Row.y, Width - 4.0f, Row.h);
-				if(DoButton_Menu(&s_aButtons[Which][Index], s_apNames[Index], str_comp(pLang, s_apCodes[Index]) == 0, &Button))
-					str_copy(pLang, s_apCodes[Index], LangSize);
-			}
+			CUIRect Button(Row.x + k * Width + 2.0f, Row.y, Width - 4.0f, Row.h);
+			if(DoButton_Menu(&s_aButtons[Which][k], s_apNames[k], str_comp(pLang, s_apCodes[k]) == 0, &Button))
+				str_copy(pLang, s_apCodes[k], LangSize);
 		}
-		CUIRect Row = NextRow(Card), Label, Edit;
-		Row.VSplitLeft(150.0f, &Label, &Edit);
-		Ui()->DoLabel(&Label, "Другой код языка:", 13.0f, TEXTALIGN_ML);
-		Ui()->DoEditBox(&Input, &Edit, 13.0f);
 	};
 
-	CUIRect Card = BeginCard(Left, "Входящие: перевод чужих сообщений", 7);
-	DoToggle(Card, g_Config.m_ClTranslate, "Переводить сообщения других игроков");
+	CUIRect Card = BeginCard(Left, "Мои сообщения", 5);
+	DoToggle(Card, g_Config.m_ClTranslateSend, "Переводить то, что я пишу");
+	DoText(Card, "На какой язык:");
+	DoLanguages(Card, 0, g_Config.m_ClTranslateSendLang, sizeof(g_Config.m_ClTranslateSendLang));
+	DoText(Card, "В чат сразу уходит перевод, от вашего имени.");
+	DoText(Card, "Команды (/...) не переводятся.", true);
+
+	Card = BeginCard(Right, "Сообщения других игроков", 5);
+	DoToggle(Card, g_Config.m_ClTranslate, "Переводить чужие сообщения");
+	DoText(Card, "На какой язык:");
+	DoLanguages(Card, 1, g_Config.m_ClTranslateLang, sizeof(g_Config.m_ClTranslateLang));
 	DoToggle(Card, g_Config.m_ClTranslateOwn, "Переводить и мои сообщения");
-	DoLanguages(Card, 0, g_Config.m_ClTranslateLang, sizeof(g_Config.m_ClTranslateLang), s_InLang);
-	DoText(Card, "Перевод идёт отдельной строкой [Перевод] под сообщением.", true);
-
-	Card = BeginCard(Right, "Исходящие: ваши сообщения", 7);
-	DoToggle(Card, g_Config.m_ClTranslateSend, "Переводить то, что я пишу, и отправлять от моего имени");
-	DoLanguages(Card, 1, g_Config.m_ClTranslateSendLang, sizeof(g_Config.m_ClTranslateSendLang), s_OutLang);
-	DoText(Card, "В чат сразу уходит перевод. Команды (/...) не трогаются.");
-	DoText(Card, "Если сервис перевода не ответил, уйдёт оригинал.", true);
-
-	Card = BeginCard(Left, "Состояние", 3);
-	{
-		char aBuf[64];
-		str_format(aBuf, sizeof(aBuf), "Запросов в очереди: %d", GameClient()->m_Translator.Pending());
-		DoText(Card, aBuf);
-	}
-	DoText(Card, "Сервисы: Google, MyMemory, Lingva (по очереди).");
-	DoText(Card, "Повторные ответы берутся из кэша, лимита по времени нет.", true);
-
-	Card = BeginCard(Right, "Разовый перевод", 3);
-	DoText(Card, "В консоли или чате:  tr_say en привет, как дела");
-	DoText(Card, "Переведёт на нужный язык и отправит в чат.");
-	DoText(Card, "Коды: en, de, es, fr, pl, tr, uk, ru и другие.", true);
+	DoText(Card, "Перевод идёт строкой [Перевод] под сообщением.", true);
 }
