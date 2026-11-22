@@ -1,6 +1,7 @@
 #ifndef GAME_CLIENT_COMPONENTS_TRANSLATOR_H
 #define GAME_CLIENT_COMPONENTS_TRANSLATOR_H
 
+#include <engine/console.h>
 #include <engine/http.h>
 
 #include <game/client/component.h>
