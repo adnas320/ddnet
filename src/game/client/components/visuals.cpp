@@ -789,7 +789,7 @@ void CVisuals::OnRender()
 	const bool Petals = g_Config.m_ClVisualsPetals;
 	const bool Bubbles = g_Config.m_ClVisualsBubbles;
 	const bool SpeedFx = g_Config.m_ClVisualsCursorTrail || !m_vCursorTrail.empty();
-	if(!SpeedFx && !Snow && !Fireflies && !Predict && !Petals && !Bubbles && m_vBlackHoles.empty() && m_vPixelTees.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty())
+	if(!SpeedFx && !Snow && !Fireflies && !Predict && !Petals && !Bubbles && m_vPixelTees.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty())
 		return;
 
 	// The game world is still mapped to the screen here, so everything below is drawn in world coordinates.
@@ -1107,165 +1107,6 @@ void CVisuals::OnRender()
 			}
 		}
 		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-		i++;
-	}
-
-	// black holes: a black core with a glowing orange disc spins, shrinks, bursts and leaves orange neon behind
-	for(size_t i = 0; i < m_vBlackHoles.size();)
-	{
-		CBlackHole &Hole = m_vBlackHoles[i];
-		Hole.m_Life -= DeltaTime;
-		if(Hole.m_Life <= 0.0f)
-		{
-			Hole = m_vBlackHoles.back();
-			m_vBlackHoles.pop_back();
-			continue;
-		}
-		const float Age = Hole.m_MaxLife - Hole.m_Life;
-		const float P = Age / Hole.m_MaxLife;
-		constexpr float EXPLODE = 0.58f;
-		const ColorRGBA Orange(1.0f, 0.42f, 0.04f, 1.0f);
-		const ColorRGBA Amber(1.0f, 0.78f, 0.25f, 1.0f);
-
-		if(P >= EXPLODE && !Hole.m_Exploded)
-		{
-			Hole.m_Exploded = true;
-			SpawnFlash(Hole.m_Pos, 150.0f, 0.35f);
-			SpawnRing(Hole.m_Pos, 130.0f, Orange, false);
-			SpawnRing(Hole.m_Pos, 80.0f, Amber, false);
-			for(int Spark = 0; Spark < 26; Spark++)
-			{
-				const float Angle = random_float(0.0f, 2.0f * pi);
-				SpawnGlow(Hole.m_Pos, vec2(std::cos(Angle), std::sin(Angle)) * random_float(60.0f, 230.0f), random_float(0.6f, 1.2f), random_float(10.0f, 20.0f), -0.6f, 0.95f, Spark % 2 ? Orange : Amber);
-			}
-		}
-
-		// size: grows in, shrinks while spinning faster and faster
-		float Radius = 0.0f;
-		if(P < 0.14f)
-		{
-			const float G = P / 0.14f;
-			Radius = 38.0f * (1.0f - (1.0f - G) * (1.0f - G));
-		}
-		else if(P < EXPLODE)
-		{
-			const float G = (P - 0.14f) / (EXPLODE - 0.14f);
-			Radius = 38.0f - 27.0f * G * G * (3.0f - 2.0f * G);
-		}
-		const float Spin = Age * Age * 9.0f + Age * 3.0f;
-		// the whole picture turns a little and faster as the hole shrinks
-		const float Tilt = -0.18f + 0.35f * std::sin(Age * 1.1f) + 0.12f * Spin;
-		const float CosT = std::cos(Tilt), SinT = std::sin(Tilt);
-		const auto Rot = [&](vec2 Local) {
-			return Hole.m_Pos + vec2(Local.x * CosT - Local.y * SinT, Local.x * SinT + Local.y * CosT);
-		};
-
-		if(Radius > 0.5f)
-		{
-			const ColorRGBA Core(1.0f, 0.95f, 0.82f, 1.0f);
-			const ColorRGBA Mid(1.0f, 0.58f, 0.14f, 1.0f);
-			const ColorRGBA Deep(0.85f, 0.25f, 0.03f, 1.0f);
-			const float Fade = std::clamp(P / 0.1f, 0.0f, 1.0f);
-			const auto Mix = [](ColorRGBA A, ColorRGBA B, float T) { return ColorRGBA(A.r + (B.r - A.r) * T, A.g + (B.g - A.g) * T, A.b + (B.b - A.b) * T, 1.0f); };
-			const auto WithAlpha = [](ColorRGBA C, float A) { return ColorRGBA(C.r, C.g, C.b, A); };
-
-			Graphics()->BlendAdditive();
-			// one soft warm glow behind everything
-			DrawSprite(m_GlowTexture, Hole.m_Pos, Radius * 6.0f, Radius * 4.0f, Tilt, false, ColorRGBA(0.9f, 0.32f, 0.05f, 0.22f * Fade));
-
-			Graphics()->TextureClear();
-			Graphics()->QuadsBegin();
-
-			// the light of the disc bent over the top of the hole: a wide soft arc
-			constexpr int ARC = 56;
-			for(int s = 0; s < ARC; s++)
-			{
-				const float A0 = pi + pi * s / ARC, A1 = pi + pi * (s + 1) / ARC;
-				const float E0 = std::pow(std::sin(pi * s / ARC), 0.6f) * 0.55f + 0.35f * std::pow(std::abs(std::cos(pi * s / ARC)), 3.0f);
-				const float E1 = std::pow(std::sin(pi * (s + 1) / ARC), 0.6f) * 0.55f + 0.35f * std::pow(std::abs(std::cos(pi * (s + 1) / ARC)), 3.0f);
-				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A), std::sin(A)) * R * Radius); };
-				Graphics()->SetColor4(WithAlpha(Mid, 0.8f * E0 * Fade), WithAlpha(Deep, 0.0f), WithAlpha(Mid, 0.8f * E1 * Fade), WithAlpha(Deep, 0.0f));
-				const IGraphics::CFreeformItem Item(P2(A0, 1.05f), P2(A0, 1.75f), P2(A1, 1.05f), P2(A1, 1.75f));
-				Graphics()->QuadsDrawFreeform(&Item, 1);
-			}
-			// the faint lower arc beneath the disc
-			for(int s = 0; s < 32; s++)
-			{
-				const float A0 = pi * s / 32.0f, A1 = pi * (s + 1) / 32.0f;
-				const float E0 = std::sin(A0) * 0.8f + 0.2f, E1 = std::sin(A1) * 0.8f + 0.2f;
-				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A) * 1.02f * R, std::sin(A) * 0.78f * R) * Radius); };
-				Graphics()->SetColor4(WithAlpha(Mid, 0.45f * E0 * Fade), WithAlpha(Deep, 0.0f), WithAlpha(Mid, 0.45f * E1 * Fade), WithAlpha(Deep, 0.0f));
-				const IGraphics::CFreeformItem Item(P2(A0, 1.04f), P2(A0, 1.3f), P2(A1, 1.04f), P2(A1, 1.3f));
-				Graphics()->QuadsDrawFreeform(&Item, 1);
-			}
-			Graphics()->QuadsEnd();
-
-			// the black core covers the middle of all this light
-			Graphics()->BlendNormal();
-			Graphics()->QuadsBegin();
-			Graphics()->SetColor(0.0f, 0.0f, 0.0f, Fade);
-			Graphics()->DrawCircle(Hole.m_Pos.x, Hole.m_Pos.y, Radius, 48);
-			Graphics()->QuadsEnd();
-
-			Graphics()->BlendAdditive();
-			Graphics()->QuadsBegin();
-			// thin bright photon ring right at the edge of the core
-			constexpr int RING = 64;
-			for(int s = 0; s < RING; s++)
-			{
-				const float A0 = 2.0f * pi * s / RING, A1 = 2.0f * pi * (s + 1) / RING;
-				const float B0 = 0.7f + 0.3f * std::sin(A0 - pi * 0.5f - 0.4f), B1 = 0.7f + 0.3f * std::sin(A1 - pi * 0.5f - 0.4f);
-				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A), std::sin(A)) * R * Radius); };
-				Graphics()->SetColor4(WithAlpha(Mid, 0.0f), WithAlpha(Core, B0 * Fade), WithAlpha(Mid, 0.0f), WithAlpha(Core, B1 * Fade));
-				const IGraphics::CFreeformItem Inner(P2(A0, 0.98f), P2(A0, 1.04f), P2(A1, 0.98f), P2(A1, 1.04f));
-				Graphics()->QuadsDrawFreeform(&Inner, 1);
-				Graphics()->SetColor4(WithAlpha(Core, B0 * Fade), WithAlpha(Mid, 0.0f), WithAlpha(Core, B1 * Fade), WithAlpha(Mid, 0.0f));
-				const IGraphics::CFreeformItem Outer(P2(A0, 1.04f), P2(A0, 1.2f), P2(A1, 1.04f), P2(A1, 1.2f));
-				Graphics()->QuadsDrawFreeform(&Outer, 1);
-			}
-			// the flat disc: a long thin lens with a white hot center line, drawn over the core
-			constexpr int STRIPS = 56;
-			const float Len = Radius * 5.5f;
-			for(int s = 0; s < STRIPS; s++)
-			{
-				const float X0 = (s / (float)STRIPS * 2.0f - 1.0f), X1 = ((s + 1) / (float)STRIPS * 2.0f - 1.0f);
-				const auto Env = [&](float X) { return std::pow(std::max(0.0f, 1.0f - std::abs(X)), 0.75f) * (X > 0.0f ? 1.0f : 0.78f); };
-				const auto Half = [&](float X) { return Radius * (0.035f + 0.12f * std::pow(std::max(0.0f, 1.0f - std::abs(X)), 1.4f)); };
-				const float E0 = Env(X0), E1 = Env(X1);
-				const float H0 = Half(X0), H1 = Half(X1);
-				const float Y = Radius * 0.2f; // the disc crosses slightly below the middle of the core
-				const auto Pt = [&](float X, float Dy) { return Rot(vec2(X * Len, Y + Dy)); };
-				const ColorRGBA C0 = Mix(Mid, Core, std::pow(E0, 1.5f)), C1 = Mix(Mid, Core, std::pow(E1, 1.5f));
-				// upper and lower halves fade from the white center line to nothing
-				Graphics()->SetColor4(WithAlpha(Deep, 0.0f), WithAlpha(C0, E0 * Fade), WithAlpha(Deep, 0.0f), WithAlpha(C1, E1 * Fade));
-				const IGraphics::CFreeformItem Up(Pt(X0, -H0 * 2.4f), Pt(X0, 0.0f), Pt(X1, -H1 * 2.4f), Pt(X1, 0.0f));
-				Graphics()->QuadsDrawFreeform(&Up, 1);
-				Graphics()->SetColor4(WithAlpha(C0, E0 * Fade), WithAlpha(Deep, 0.0f), WithAlpha(C1, E1 * Fade), WithAlpha(Deep, 0.0f));
-				const IGraphics::CFreeformItem Down(Pt(X0, 0.0f), Pt(X0, H0 * 2.4f), Pt(X1, 0.0f), Pt(X1, H1 * 2.4f));
-				Graphics()->QuadsDrawFreeform(&Down, 1);
-			}
-			Graphics()->QuadsEnd();
-
-			// a few tiny stars
-			for(int Star = 0; Star < 8; Star++)
-			{
-				const float Angle = Star * 2.4f + Hole.m_Hue * 10.0f;
-				const float Dist = Radius * (2.8f + 0.4f * Star);
-				const float Twinkle = 0.5f + 0.5f * std::sin(Age * 5.0f + Star * 1.9f);
-				DrawSprite(m_StarTexture, Hole.m_Pos + vec2(std::cos(Angle), std::sin(Angle) * 0.7f) * Dist, 5.0f, 5.0f, Angle, false, ColorRGBA(1.0f, 0.92f, 0.75f, 0.55f * Twinkle * Fade));
-			}
-			Graphics()->BlendNormal();
-		}
-		else if(P >= EXPLODE)
-		{
-			// after the burst only the orange neon is left, glowing and fading out
-			const float Q = std::clamp((P - EXPLODE) / (1.0f - EXPLODE), 0.0f, 1.0f);
-			const float Fade = std::pow(1.0f - Q, 1.4f);
-			Graphics()->BlendAdditive();
-			DrawSprite(m_GlowTexture, Hole.m_Pos, 150.0f * (0.7f + 0.5f * Q), 150.0f * (0.7f + 0.5f * Q), 0.0f, false, ColorRGBA(1.0f, 0.4f, 0.03f, 0.9f * Fade));
-			DrawSprite(m_GlowTexture, Hole.m_Pos, 70.0f * (1.0f + Q), 70.0f * (1.0f + Q), 0.0f, false, ColorRGBA(1.0f, 0.75f, 0.3f, 0.9f * Fade));
-			Graphics()->BlendNormal();
-		}
 		i++;
 	}
 
@@ -1635,16 +1476,7 @@ void CVisuals::OnKill(int Killer, int Victim)
 		Tee.m_Size = Render.m_Size > 8.0f ? Render.m_Size : 64.0f;
 		m_vPixelTees.push_back(Tee);
 	}
-	else if(Effect == 2)
-	{
-		CBlackHole Hole;
-		Hole.m_Pos = Pos;
-		Hole.m_MaxLife = 3.0f;
-		Hole.m_Life = Hole.m_MaxLife;
-		Hole.m_Hue = 0.07f;
-		m_vBlackHoles.push_back(Hole);
-	}
-	else if(Effect == 3 && m_vSouls.size() < MAX_SOULS)
+	else if(Effect == 2 && m_vSouls.size() < MAX_SOULS)
 	{
 		ColorRGBA Color(1.0f, 1.0f, 1.0f, 1.0f);
 		if(Info.m_RenderInfo.m_CustomColoredSkin)
@@ -1666,8 +1498,10 @@ void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, do
 {
 	const bool Fresh = Time - m_TeePosTime < 0.25;
 	const float ViewH = View.Size().y;
+	const vec2 CamCenter = GameClient()->m_Camera.m_Center;
 
-	// ---- cursor trail: a white drop-shaped brush stroke that ends exactly at the crosshair
+	// ---- cursor trail: a white stroke that ends exactly at the crosshair. The points are kept relative
+	// to the screen center, so moving the camera does not bend the stroke.
 	if(g_Config.m_ClVisualsCursorTrail && Fresh)
 	{
 		const vec2 Mouse = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
@@ -1675,11 +1509,12 @@ void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, do
 		if(m_HavePrevMouse && DeltaTime > 0.0f)
 		{
 			const float ScreenSpeed = length(Mouse - m_PrevMouse) / DeltaTime / ViewH; // screens per second
-			const float Wanted = std::clamp((ScreenSpeed - 0.6f) / 2.4f, 0.0f, 1.0f);
-			m_TrailPower += (Wanted - m_TrailPower) * std::min(1.0f, DeltaTime * (Wanted > m_TrailPower ? 18.0f : 6.0f));
-			const bool Moved = m_vCursorTrail.empty() || distance(m_vCursorTrail.back().m_Pos, Target) > 0.4f;
-			if(m_TrailPower > 0.03f && Moved)
-				m_vCursorTrail.push_back({Target, (float)Time, m_TrailPower});
+			const float Wanted = std::clamp((ScreenSpeed - 0.5f) / 2.0f, 0.0f, 1.0f);
+			m_TrailPower += (Wanted - m_TrailPower) * std::min(1.0f, DeltaTime * (Wanted > m_TrailPower ? 14.0f : 5.0f));
+			const vec2 Rel = Target - CamCenter;
+			const bool Moved = m_vCursorTrail.empty() || distance(m_vCursorTrail.back().m_Pos, Rel) > ViewH * 0.004f;
+			if(m_TrailPower > 0.04f && Moved)
+				m_vCursorTrail.push_back({Rel, (float)Time, m_TrailPower});
 		}
 		m_PrevMouse = Mouse;
 		m_HavePrevMouse = true;
@@ -1690,90 +1525,101 @@ void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, do
 		m_TrailPower = 0.0f;
 	}
 
-	const float Fade = 0.4f;
+	const float Fade = 0.35f;
 	size_t Dead = 0;
 	while(Dead < m_vCursorTrail.size() && Time - m_vCursorTrail[Dead].m_Time > Fade)
 		Dead++;
 	if(Dead)
 		m_vCursorTrail.erase(m_vCursorTrail.begin(), m_vCursorTrail.begin() + Dead);
-	if(m_vCursorTrail.size() > 300)
-		m_vCursorTrail.erase(m_vCursorTrail.begin(), m_vCursorTrail.begin() + (m_vCursorTrail.size() - 300));
+	if(m_vCursorTrail.size() > 200)
+		m_vCursorTrail.erase(m_vCursorTrail.begin(), m_vCursorTrail.begin() + (m_vCursorTrail.size() - 200));
 
-	if(m_vCursorTrail.size() >= 2)
+	if(m_vCursorTrail.size() >= 3)
 	{
-		struct CSample
+		struct CNode
 		{
 			vec2 m_Pos;
-			float m_Width;
-			float m_Alpha;
+			float m_Age; // 0 new .. 1 old
+			float m_Power;
 			bool m_Break;
 		};
-		std::vector<CSample> vSamples;
-		const int N = (int)m_vCursorTrail.size();
-		const int Sub = 6;
-		const auto WidthOf = [&](float PointTime, float Power) {
-			const float Life = 1.0f - std::clamp((float)(Time - PointTime) / Fade, 0.0f, 1.0f);
-			return ViewH * (0.0008f + 0.0042f * Power) * Life * Life;
-		};
-		for(int i = 0; i < N - 1; i++)
+		std::vector<CNode> vNodes;
+		for(size_t i = 0; i < m_vCursorTrail.size(); i++)
 		{
-			const CTrailPoint &P1 = m_vCursorTrail[i];
-			const CTrailPoint &P2 = m_vCursorTrail[i + 1];
-			const CTrailPoint &P0 = m_vCursorTrail[std::max(i - 1, 0)];
-			const CTrailPoint &P3 = m_vCursorTrail[std::min(i + 2, N - 1)];
-			const bool Gap = P2.m_Time - P1.m_Time > 0.1f;
-			for(int s = 0; s < Sub; s++)
+			const CTrailPoint &P = m_vCursorTrail[i];
+			const bool Gap = i > 0 && P.m_Time - m_vCursorTrail[i - 1].m_Time > 0.08f;
+			vNodes.push_back({P.m_Pos, std::clamp((float)(Time - P.m_Time) / Fade, 0.0f, 1.0f), P.m_Power, Gap});
+		}
+		// corner cutting makes the polyline a smooth curve; the last point stays where it is
+		for(int Pass = 0; Pass < 3; Pass++)
+		{
+			std::vector<CNode> vNext;
+			vNext.reserve(vNodes.size() * 2);
+			vNext.push_back(vNodes.front());
+			for(size_t i = 0; i + 1 < vNodes.size(); i++)
 			{
-				const float t = s / (float)Sub;
-				const vec2 CatPos = ((P1.m_Pos * 2.0f) + (P2.m_Pos - P0.m_Pos) * t + (P0.m_Pos * 2.0f - P1.m_Pos * 5.0f + P2.m_Pos * 4.0f - P3.m_Pos) * (t * t) + (P1.m_Pos * 3.0f - P0.m_Pos - P2.m_Pos * 3.0f + P3.m_Pos) * (t * t * t)) * 0.5f;
-				const float PointTime = mix(P1.m_Time, P2.m_Time, t);
-				const float Power = mix(P1.m_Power, P2.m_Power, t);
-				const float Life = 1.0f - std::clamp((float)(Time - PointTime) / Fade, 0.0f, 1.0f);
-				vSamples.push_back({Gap ? P1.m_Pos : CatPos, WidthOf(PointTime, Power), Life, Gap && s == 0});
+				const CNode &A = vNodes[i], &B = vNodes[i + 1];
+				if(B.m_Break)
+				{
+					vNext.push_back(A);
+					vNext.push_back(B);
+					continue;
+				}
+				CNode Q = A, R = B;
+				Q.m_Pos = A.m_Pos * 0.75f + B.m_Pos * 0.25f;
+				R.m_Pos = A.m_Pos * 0.25f + B.m_Pos * 0.75f;
+				Q.m_Age = A.m_Age * 0.75f + B.m_Age * 0.25f;
+				R.m_Age = A.m_Age * 0.25f + B.m_Age * 0.75f;
+				Q.m_Power = A.m_Power * 0.75f + B.m_Power * 0.25f;
+				R.m_Power = A.m_Power * 0.25f + B.m_Power * 0.75f;
+				Q.m_Break = false;
+				R.m_Break = false;
+				if(i > 0 && vNext.size() > 1)
+					vNext.push_back(Q);
+				else if(i == 0)
+					vNext.push_back(Q);
+				vNext.push_back(R);
 			}
+			vNext.push_back(vNodes.back());
+			vNodes.swap(vNext);
 		}
-		vSamples.push_back({m_vCursorTrail.back().m_Pos, WidthOf(m_vCursorTrail.back().m_Time, m_vCursorTrail.back().m_Power), 1.0f, false});
 
-		// light smoothing of the positions, then shared normals so that the stroke has no seams
-		for(int Pass = 0; Pass < 2; Pass++)
-			for(size_t k = 1; k + 1 < vSamples.size(); k++)
-				if(!vSamples[k].m_Break && !vSamples[k + 1].m_Break)
-					vSamples[k].m_Pos = vSamples[k].m_Pos * 0.5f + (vSamples[k - 1].m_Pos + vSamples[k + 1].m_Pos) * 0.25f;
-		std::vector<vec2> vNormals(vSamples.size());
-		for(size_t k = 0; k < vSamples.size(); k++)
+		// drop-shaped width: zero at the old end, widest at the cursor, round cap
+		const size_t Count = vNodes.size();
+		std::vector<float> vWidth(Count);
+		for(size_t i = 0; i < Count; i++)
 		{
-			vec2 Dir = vSamples[std::min(k + 1, vSamples.size() - 1)].m_Pos - vSamples[k > 0 ? k - 1 : 0].m_Pos;
-			const float Len = length(Dir);
-			Dir = Len > 0.001f ? Dir / Len : vec2(1.0f, 0.0f);
-			vNormals[k] = vec2(-Dir.y, Dir.x);
+			const float Life = 1.0f - vNodes[i].m_Age;
+			const float Along = (float)i / (float)(Count - 1);
+			vWidth[i] = ViewH * (0.0008f + 0.0040f * vNodes[i].m_Power) * std::pow(Life, 1.2f) * std::pow(Along, 0.55f);
 		}
+		vWidth[Count - 1] = ViewH * (0.0008f + 0.0040f * vNodes[Count - 1].m_Power);
 
 		Graphics()->TextureClear();
-		Graphics()->BlendAdditive();
+		Graphics()->BlendNormal();
 		Graphics()->QuadsBegin();
-		const float Scale[3] = {2.2f, 1.2f, 0.55f};
-		const float Strength[3] = {0.16f, 0.45f, 1.0f};
-		for(int Layer = 0; Layer < 3; Layer++)
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.95f);
+		for(size_t i = 0; i < Count; i++)
 		{
-			for(size_t k = 0; k + 1 < vSamples.size(); k++)
+			const vec2 P = CamCenter + vNodes[i].m_Pos;
+			// round joint: no gaps and no corners anywhere along the stroke
+			if(vWidth[i] > 0.05f)
+				Graphics()->DrawCircle(P.x, P.y, vWidth[i], 14);
+			if(i + 1 < Count && !vNodes[i + 1].m_Break)
 			{
-				if(vSamples[k + 1].m_Break)
+				const vec2 Q = CamCenter + vNodes[i + 1].m_Pos;
+				vec2 D = Q - P;
+				const float Len = length(D);
+				if(Len < 0.001f)
 					continue;
-				const CSample &A = vSamples[k];
-				const CSample &B = vSamples[k + 1];
-				const vec2 NA = vNormals[k] * A.m_Width * Scale[Layer];
-				const vec2 NB = vNormals[k + 1] * B.m_Width * Scale[Layer];
-				Graphics()->SetColor4(ColorRGBA(1, 1, 1, Strength[Layer] * A.m_Alpha), ColorRGBA(1, 1, 1, Strength[Layer] * A.m_Alpha), ColorRGBA(1, 1, 1, Strength[Layer] * B.m_Alpha), ColorRGBA(1, 1, 1, Strength[Layer] * B.m_Alpha));
-				const IGraphics::CFreeformItem Seg(A.m_Pos.x - NA.x, A.m_Pos.y - NA.y, B.m_Pos.x - NB.x, B.m_Pos.y - NB.y,
-					A.m_Pos.x + NA.x, A.m_Pos.y + NA.y, B.m_Pos.x + NB.x, B.m_Pos.y + NB.y);
+				D = D / Len;
+				const vec2 N(-D.y, D.x);
+				const vec2 NA = N * vWidth[i], NB = N * vWidth[i + 1];
+				const IGraphics::CFreeformItem Seg(P.x - NA.x, P.y - NA.y, Q.x - NB.x, Q.y - NB.y, P.x + NA.x, P.y + NA.y, Q.x + NB.x, Q.y + NB.y);
 				Graphics()->QuadsDrawFreeform(&Seg, 1);
 			}
-			const CSample &Head = vSamples.back();
-			Graphics()->SetColor(1.0f, 1.0f, 1.0f, Strength[Layer] * Head.m_Alpha);
-			Graphics()->DrawCircle(Head.m_Pos.x, Head.m_Pos.y, Head.m_Width * Scale[Layer], 16);
 		}
 		Graphics()->QuadsEnd();
-		Graphics()->BlendNormal();
 	}
 	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }

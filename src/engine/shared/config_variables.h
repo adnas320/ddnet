@@ -849,7 +849,7 @@ MACRO_CONFIG_COL(ClVisualsNameColor2, cl_visuals_name_color2, 8847270, CFGFLAG_C
 MACRO_CONFIG_COL(ClVisualsNameColor3, cl_visuals_name_color3, 2228134, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Third color of the shimmering name")
 MACRO_CONFIG_INT(ClVisualsCape, cl_visuals_cape, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Cape on your tee (0 = off, 1 = royal, 2 = RGB, 3 = dark with mask)")
 MACRO_CONFIG_INT(ClVisualsAura, cl_visuals_aura, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show a glowing aura around your own tee")
-MACRO_CONFIG_INT(ClVisualsKillEffect, cl_visuals_kill_effect, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Effect where a tee was killed (0 = off, 1 = pixels, 2 = black hole, 3 = ghost)")
+MACRO_CONFIG_INT(ClVisualsKillEffect, cl_visuals_kill_effect, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Effect where a tee was killed (0 = off, 1 = skin shatter, 2 = ghost)")
 MACRO_CONFIG_INT(ClVisualsKillOwnOnly, cl_visuals_kill_own_only, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show kill effects only for your own kills")
 MACRO_CONFIG_INT(ClVisualsMagicCircle, cl_visuals_magic_circle, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show a rotating magic circle under your own tee")
 MACRO_CONFIG_INT(ClVisualsAutoSkin, cl_visuals_auto_skin, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Change your skin and colors automatically")

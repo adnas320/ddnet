@@ -121,12 +121,12 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	Card = BeginCard(Right, "Эффект убийства", 2);
 	{
 		static CButtonContainer s_KillButton;
-		const char *apKills[4] = {"Выключен", "Пиксельный распад", "Чёрная дыра", "Призрак"};
+		const char *apKills[3] = {"Выключен", "Распад скина", "Призрак"};
 		char aText[64];
-		str_format(aText, sizeof(aText), "Эффект: %s", apKills[std::clamp(g_Config.m_ClVisualsKillEffect, 0, 3)]);
+		str_format(aText, sizeof(aText), "Эффект: %s", apKills[std::clamp(g_Config.m_ClVisualsKillEffect, 0, 2)]);
 		CUIRect Button = NextRow(Card, false);
 		if(DoButton_Menu(&s_KillButton, aText, 0, &Button))
-			g_Config.m_ClVisualsKillEffect = (g_Config.m_ClVisualsKillEffect + 1) % 4;
+			g_Config.m_ClVisualsKillEffect = (g_Config.m_ClVisualsKillEffect + 1) % 3;
 		DoToggle(Card, g_Config.m_ClVisualsKillOwnOnly, "Только мои убийства", true);
 	}
 

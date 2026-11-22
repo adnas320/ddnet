@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <unordered_map>
 #include <vector>
 
 using namespace std::chrono_literals;
@@ -164,73 +165,47 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 {
 	const bool MouseInside = Ui()->HotItem() == pButtonContainer;
 	CUIRect Rect = *pRect;
+	(void)pAnimator;
 
-	if(pAnimator != nullptr)
+	// every tab grows smoothly when the mouse is over it (or when it is selected a little)
+	static std::unordered_map<const void *, float> s_Grow;
+	float &Grow = s_Grow[pButtonContainer];
 	{
-		auto Time = time_get_nanoseconds();
-
-		if(pAnimator->m_Time + 100ms < Time)
-		{
-			pAnimator->m_Value = pAnimator->m_Active ? 1 : 0;
-			pAnimator->m_Time = Time;
-		}
-
-		pAnimator->m_Active = Checked || MouseInside;
-
-		if(pAnimator->m_Active)
-			pAnimator->m_Value = std::clamp<float>(pAnimator->m_Value + (Time - pAnimator->m_Time).count() / (double)std::chrono::nanoseconds(100ms).count(), 0, 1);
-		else
-			pAnimator->m_Value = std::clamp<float>(pAnimator->m_Value - (Time - pAnimator->m_Time).count() / (double)std::chrono::nanoseconds(100ms).count(), 0, 1);
-
-		Rect.w += pAnimator->m_Value * pAnimator->m_WOffset;
-		Rect.h += pAnimator->m_Value * pAnimator->m_HOffset;
-		Rect.x += pAnimator->m_Value * pAnimator->m_XOffset;
-		Rect.y += pAnimator->m_Value * pAnimator->m_YOffset;
-
-		pAnimator->m_Time = Time;
+		const float Target = MouseInside ? 1.0f : (Checked ? 0.35f : 0.0f);
+		const float Step = std::min(1.0f, Client()->RenderFrameTime() * 16.0f);
+		Grow += (Target - Grow) * Step;
 	}
+	Rect.x -= 3.0f * Grow;
+	Rect.w += 6.0f * Grow;
+	Rect.y -= 2.5f * Grow;
+	Rect.h += 5.0f * Grow;
 
-	if(Checked)
+	const bool CustomColors = pDefaultColor || pActiveColor || pHoverColor;
+	bool MintLabel = false;
+	if(CustomColors)
 	{
-		ColorRGBA ColorMenuTab = ms_ColorTabbarActive;
-		if(pActiveColor)
-			ColorMenuTab = *pActiveColor;
-
-		Rect.Draw(ColorMenuTab, Corners, EdgeRounding);
+		if(Checked)
+			Rect.Draw(pActiveColor ? *pActiveColor : ms_ColorTabbarActive, Corners, EdgeRounding);
+		else if(MouseInside)
+			Rect.Draw(pHoverColor ? *pHoverColor : ms_ColorTabbarHover, Corners, EdgeRounding);
+		else
+			Rect.Draw(pDefaultColor ? *pDefaultColor : ms_ColorTabbarInactive, Corners, EdgeRounding);
 	}
 	else
 	{
-		if(MouseInside)
-		{
-			ColorRGBA HoverColorMenuTab = ms_ColorTabbarHover;
-			if(pHoverColor)
-				HoverColorMenuTab = *pHoverColor;
-
-			Rect.Draw(HoverColorMenuTab, Corners, EdgeRounding);
-		}
-		else
-		{
-			ColorRGBA ColorMenuTab = ms_ColorTabbarInactive;
-			if(pDefaultColor)
-				ColorMenuTab = *pDefaultColor;
-
-			Rect.Draw(ColorMenuTab, Corners, EdgeRounding);
-		}
+		// soft mint to white gradient
+		const float Boost = MouseInside ? 1.0f : (Checked ? 0.8f : 0.0f);
+		const float AlphaMint = 0.50f + 0.45f * Boost;
+		const float AlphaWhite = 0.40f + 0.55f * Boost;
+		const ColorRGBA Mint(0.50f + 0.06f * Boost, 0.92f, 0.76f + 0.04f * Boost, AlphaMint);
+		const ColorRGBA White(1.0f, 1.0f, 1.0f, AlphaWhite);
+		Rect.Draw4(Mint, White, Mint, White, Corners, EdgeRounding);
+		MintLabel = true;
 	}
 
 	if(pAnimator != nullptr)
 	{
-		if(pAnimator->m_RepositionLabel)
-		{
-			Rect.x += Rect.w - pRect->w + Rect.x - pRect->x;
-			Rect.y += Rect.h - pRect->h + Rect.y - pRect->y;
-		}
-
-		if(!pAnimator->m_ScaleLabel)
-		{
-			Rect.w = pRect->w;
-			Rect.h = pRect->h;
-		}
+		Rect.x += 0.0f;
 	}
 
 	if(pCommunityIcon)
@@ -243,7 +218,11 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 	{
 		CUIRect Label;
 		Rect.HMargin(2.0f, &Label);
+		if(MintLabel)
+			TextRender()->TextColor(0.04f, 0.2f, 0.17f, 1.0f);
 		Ui()->DoLabel(&Label, pText, Label.h * CUi::ms_FontmodHeight, TEXTALIGN_MC);
+		if(MintLabel)
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
 	}
 
 	return Ui()->DoButtonLogic(pButtonContainer, Checked, pRect, BUTTONFLAG_LEFT);

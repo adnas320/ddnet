@@ -387,7 +387,7 @@ void CMenus::RenderSettingsMusic(CUIRect MainView)
 	MainView.VSplitMid(&Left, &Right, 10.0f);
 	CMusicPlayer &Music = GameClient()->m_MusicPlayer;
 
-	CUIRect Card = BeginCard(Left, "Музыка", 12);
+	CUIRect Card = BeginCard(Left, "Музыка", 11);
 	{
 		char aText[256];
 		if(Music.Current() >= 0 && Music.Current() < (int)Music.Tracks().size())
@@ -437,36 +437,11 @@ void CMenus::RenderSettingsMusic(CUIRect MainView)
 		CUIRect Row = NextRow(Card);
 		Ui()->DoLabel(&Row, aFolder, 10.0f, TEXTALIGN_ML);
 	}
-	DoText(Card, "Песни из интернета: Kevin MacLeod, incompetech.com (CC BY 4.0)");
 	if(Music.Error()[0] != '\0')
 		DoText(Card, Music.Error(), true);
 
 	Right.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f), IGraphics::CORNER_ALL, 10.0f);
 	Right.Margin(CARD_PADDING, &Right);
-	CUIRect OnlineArea;
-	Right.HSplitMid(&OnlineArea, &Right, 8.0f);
-
-	// песни из интернета: скачиваются один раз сами и сразу играют
-	{
-		CUIRect Title;
-		OnlineArea.HSplitTop(CARD_TITLE_HEIGHT, &Title, &OnlineArea);
-		Ui()->DoLabel(&Title, Music.IsDownloading() ? "Песни из интернета (скачивается...)" : "Песни из интернета (нажмите, чтобы слушать)", 16.0f, TEXTALIGN_ML);
-		static CListBox s_OnlineList;
-		int OnlineSelected = Music.OnlineCurrent();
-		s_OnlineList.DoStart(24.0f, CMusicPlayer::NumOnlineTracks(), 1, 3, OnlineSelected, &OnlineArea);
-		for(int i = 0; i < CMusicPlayer::NumOnlineTracks(); i++)
-		{
-			const CListboxItem Item = s_OnlineList.DoNextItem(&CMusicPlayer::OnlineTrack(i), OnlineSelected == i);
-			if(!Item.m_Visible)
-				continue;
-			char aName[128];
-			str_format(aName, sizeof(aName), "%s%s", CMusicPlayer::OnlineTrack(i).m_pTitle, Music.DownloadIndex() == i ? "  ..." : "");
-			Ui()->DoLabel(&Item.m_Rect, aName, 13.0f, TEXTALIGN_ML);
-		}
-		const int NewOnline = s_OnlineList.DoEnd();
-		if(NewOnline != OnlineSelected && NewOnline >= 0)
-			Music.PlayOnline(NewOnline);
-	}
 
 	CUIRect Title;
 	Right.HSplitTop(CARD_TITLE_HEIGHT, &Title, &Right);
