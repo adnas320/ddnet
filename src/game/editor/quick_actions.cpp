@@ -66,6 +66,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 
 	// teleporters are only possible when the tele layer (if there is one) covers the zone
 	std::shared_ptr<CLayerTele> pTeleLayer = Map()->m_pTeleLayer;
+	const bool Fly = m_GeneratorFly && m_GeneratorStyle == 1;
 	bool Teleports = m_GeneratorTeleports && W >= 64;
 	if(pTeleLayer && (pTeleLayer->m_Width <= X1 || pTeleLayer->m_Height <= Y1))
 		Teleports = false;
@@ -94,6 +95,8 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		T_START = TILE_START,
 		T_FINISH = TILE_FINISH,
 		T_SPAWN = ENTITY_OFFSET + ENTITY_SPAWN,
+		T_JETON = TILE_JETPACK_ENABLE,
+		T_JETOFF = TILE_JETPACK_DISABLE,
 	};
 	std::vector<unsigned char> vBuf((size_t)W * H, (unsigned char)T_SOLID);
 	std::vector<unsigned char> vTeleType((size_t)W * H, 0);
@@ -157,10 +160,11 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		S_FRLINES,
 		S_TELELINE,
 		S_HALL,
+		S_FLY,
 		NUM_SECTIONS,
 	};
 	// minimum height of the chamber a section needs
-	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10};
+	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10, 14};
 	static const int s_aNovice[] = {S_HALL, S_HALL, S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
 	static const int s_aModerate[] = {S_TELELINE, S_HALL, S_TELELINE, S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
 	static const int s_aBrutal[] = {S_TELELINE, S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
@@ -347,8 +351,64 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 			}
 			break;
 		}
+		case S_FLY:
+		{
+			// a fly part: a big open space with jetpack on at the entrance and off at the exit, freeze on the ceiling and floor and freeze obstacles to fly around
+			if(Height < 12)
+			{
+				for(int xx = x0 + 1; xx < x1 - 1; xx++)
+					FreezeAir(xx, f);
+				break;
+			}
+			for(int yy = c; yy <= f; yy++)
+			{
+				Put(x0 + 1, yy, T_JETON);
+				Put(x1 - 2, yy, T_JETOFF);
+			}
+			for(int xx = x0 + 2; xx < x1 - 2; xx++)
+			{
+				for(int Layer = 0; Layer < 3; Layer++)
+				{
+					FreezeAir(xx, c + Layer);
+					FreezeAir(xx, f - Layer);
+				}
+			}
+			int Side = Rand(0, 1);
+			for(int px = x0 + 7; px + 8 < x1 - 3; px += Rand(9, 13))
+			{
+				const int Len = Rand(4, std::max(4, Height - 9));
+				const int Top = Side ? c + 3 : f - 2 - Len;
+				for(int dx = 0; dx < 3; dx++)
+					for(int yy = Top; yy < Top + Len; yy++)
+						FreezeAir(px + dx, yy);
+				Side ^= 1;
+				// a loose block of freeze in the middle of the free part
+				if(Rand(0, 99) < 55)
+				{
+					const int by = Side ? c + 4 : f - 6;
+					for(int dx = 0; dx < 3; dx++)
+						for(int dy = 0; dy < 3; dy++)
+							FreezeAir(px + 5 + dx, by + dy);
+				}
+			}
+			break;
+		}
 		case S_HALL:
 		{
+			// long freeze bars across the hall, like the crosses of the studied maps
+			if(Diff >= 1)
+			{
+				for(int px = x0 + 6; px + 4 < x1 - 3; px += Rand(12, 20))
+				{
+					const bool Down = Rand(0, 1);
+					const int Len = Rand(Height / 2, std::max(Height / 2, Height - 3));
+					for(int yy = 0; yy < Len; yy++)
+						FreezeAir(px, Down ? c + yy : f - yy);
+					if(Rand(0, 99) < 40)
+						for(int dx = 0; dx < Rand(8, 18); dx++)
+							FreezeAir(px + dx, Down ? c + Len : f - Len);
+				}
+			}
 			// a big hall: notched ledges on the walls, ceiling and floor like stacked blocks, an unhookable strip in the ceiling
 			for(int px = x0 + 2; px < x1 - 8; px += Rand(8, 14))
 			{
@@ -529,6 +589,8 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	while(x < FinishStart - 8)
 	{
 		int Id = pPool[Rand(0, PoolSize - 1)];
+		if(Fly && Rand(0, 99) < 30)
+			Id = S_FLY;
 		const int Len = Rand(Diff == 0 ? 18 : 16, Diff == 0 ? 28 : 26) + (B == 3 ? 4 : 0);
 		int End = std::min(x + Len, FinishStart);
 		if(FinishStart - End < 14)
