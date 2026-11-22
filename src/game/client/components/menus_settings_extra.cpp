@@ -493,3 +493,38 @@ void CMenus::RenderSettingsMusic(CUIRect MainView)
 	if(NewSelected != Selected && NewSelected >= 0)
 		Music.Play(NewSelected);
 }
+
+// ---------------------------------------------------------------- Перевод
+
+void CMenus::RenderSettingsTranslate(CUIRect MainView)
+{
+	CARD_HELPERS
+	CUIRect Left, Right;
+	MainView.VSplitMid(&Left, &Right, 10.0f);
+
+	CUIRect Card = BeginCard(Left, "Переводчик чата", 7);
+	DoToggle(Card, g_Config.m_ClTranslate, "Переводить сообщения других игроков");
+	DoToggle(Card, g_Config.m_ClTranslateOwn, "Переводить и мои сообщения");
+	{
+		CUIRect Row = NextRow(Card), Label, Edit;
+		Row.VSplitLeft(190.0f, &Label, &Edit);
+		Ui()->DoLabel(&Label, "Язык перевода (ru, en, uk, de...):", 13.0f, TEXTALIGN_ML);
+		static CLineInput s_LangInput(g_Config.m_ClTranslateLang, sizeof(g_Config.m_ClTranslateLang));
+		Ui()->DoEditBox(&s_LangInput, &Edit, 13.0f);
+	}
+	DoText(Card, "Перевод появляется в чате отдельной строкой [Перевод].");
+	DoText(Card, "Если сообщение уже на вашем языке, оно не повторяется.");
+	{
+		char aBuf[64];
+		str_format(aBuf, sizeof(aBuf), "В очереди: %d", GameClient()->m_Translator.Pending());
+		DoText(Card, aBuf);
+	}
+	DoText(Card, "Есть кэш, запасные сервисы и повторные попытки.", true);
+
+	CUIRect Info = BeginCard(Right, "Перевести своё сообщение", 5);
+	DoText(Info, "Команда в консоли или в чате (F1):");
+	DoText(Info, "tr_say en привет, как дела");
+	DoText(Info, "Переведёт на английский и отправит в чат.");
+	DoText(Info, "Код языка: en, de, es, fr, pl, tr, uk...");
+	DoText(Info, "Работает без ограничения по времени.", true);
+}

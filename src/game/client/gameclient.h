@@ -69,6 +69,7 @@
 #include "components/touch_controls.h"
 #include "components/bindwheel.h"
 #include "components/musicplayer.h"
+#include "components/translator.h"
 #include "components/paint.h"
 #include "components/visuals.h"
 #include "components/voting.h"
@@ -182,6 +183,7 @@ public:
 	CVisuals m_Visuals;
 	CBindWheel m_BindWheel;
 	CMusicPlayer m_MusicPlayer;
+	CTranslator m_Translator;
 	CPaint m_Paint;
 	CTouchControls m_TouchControls;
 	CVoting m_Voting;

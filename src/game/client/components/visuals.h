@@ -230,6 +230,25 @@ class CVisuals : public CComponent
 	float m_DustAccumulator = 0.0f;
 	float m_EchoTimer = 0.0f;
 
+	// speed lines, holographic cursor trail and teleport effect
+	struct CTrailPoint
+	{
+		vec2 m_Pos;
+		float m_Time;
+		float m_Power;
+	};
+	std::vector<CTrailPoint> m_vCursorTrail;
+	vec2 m_PrevMouse = vec2(0.0f, 0.0f);
+	bool m_HavePrevMouse = false;
+	vec2 m_TeePos = vec2(0.0f, 0.0f);
+	float m_TeePosTime = -100.0f;
+	vec2 m_PrevTeePos = vec2(0.0f, 0.0f);
+	bool m_HavePrevTee = false;
+	float m_SmoothSpeed = 0.0f; // pixels per tick
+	void CheckTeleport(vec2 Position, float Time);
+	void TeleportEffect(vec2 From, vec2 To);
+	void RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, double Time);
+
 	// state of the pet that follows the own tee
 	bool m_PetInitialized = false;
 	vec2 m_PetPos = vec2(0.0f, 0.0f);

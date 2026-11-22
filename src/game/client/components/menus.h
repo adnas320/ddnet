@@ -574,6 +574,7 @@ protected:
 	void RenderSettingsGunpack(CUIRect MainView);
 	void RenderSettingsPaint(CUIRect MainView);
 	void RenderSettingsMusic(CUIRect MainView);
+	void RenderSettingsTranslate(CUIRect MainView);
 
 	// found in menus_settings_appearance.cpp
 	void RenderSettingsAppearance(CUIRect MainView);
@@ -732,6 +733,7 @@ public:
 		SETTINGS_GUNPACK,
 		SETTINGS_PAINT,
 		SETTINGS_MUSIC,
+		SETTINGS_TRANSLATE,
 
 		SETTINGS_LENGTH,
 	};

@@ -784,6 +784,8 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine)
 		return;
 	}
 
+	GameClient()->m_Translator.RequestChat(ClientId, pLine);
+
 	m_CurrentLine = (m_CurrentLine + 1) % MAX_LINES;
 
 	CLine &CurrentLine = m_aLines[m_CurrentLine];

@@ -64,6 +64,9 @@ void CVisuals::OnReset()
 	m_vPixelTees.clear();
 	m_vMeteors.clear();
 	m_vEchoes.clear();
+	m_vCursorTrail.clear();
+	m_HavePrevTee = false;
+	m_HavePrevMouse = false;
 	m_AutoSkinTimer = 0.0f;
 	m_vBalloons.clear();
 	m_PetCelebrate = 0.0f;
@@ -437,6 +440,11 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 	const float DeltaTime = std::min(Client()->RenderFrameTime(), 0.05f);
 	const vec2 Feet = Position + vec2(0.0f, 14.0f);
 	const ColorRGBA RingColor = Lighten(TeeColor, 0.5f);
+
+	m_TeePos = Position;
+	m_TeePosTime = Time;
+	m_SmoothSpeed += (length(Vel) - m_SmoothSpeed) * std::min(1.0f, DeltaTime * 8.0f);
+	CheckTeleport(Position, Time);
 
 	// dark cape: a mask over the eyes (the cape itself is drawn behind the tee)
 	if(g_Config.m_ClVisualsCape == 3)
@@ -1318,6 +1326,9 @@ void CVisuals::OnRender()
 	m_vPixelTees.clear();
 		m_vMeteors.clear();
 		m_vEchoes.clear();
+		m_vCursorTrail.clear();
+		m_HavePrevTee = false;
+		m_HavePrevMouse = false;
 		return;
 	}
 
@@ -1330,7 +1341,8 @@ void CVisuals::OnRender()
 	const bool Bubbles = g_Config.m_ClVisualsBubbles;
 	const bool Starfield = g_Config.m_ClVisualsStarfield;
 	const bool Meteors = g_Config.m_ClVisualsMeteors;
-	if(!Snow && !Fireflies && !Predict && !Petals && !Bubbles && !Starfield && !Meteors && m_vBlackHoles.empty() && m_vPixelTees.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty() && m_vMeteors.empty())
+	const bool SpeedFx = g_Config.m_ClVisualsSpeedLines || g_Config.m_ClVisualsCursorTrail || !m_vCursorTrail.empty();
+	if(!SpeedFx && !Snow && !Fireflies && !Predict && !Petals && !Bubbles && !Starfield && !Meteors && m_vBlackHoles.empty() && m_vPixelTees.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty() && m_vMeteors.empty())
 		return;
 
 	// The game world is still mapped to the screen here, so everything below is drawn in world coordinates.
@@ -1882,6 +1894,8 @@ void CVisuals::OnRender()
 
 	if(Predict)
 		RenderGunPredict(View);
+
+	RenderSpeedAndCursor(View, DeltaTime, Time);
 }
 
 void CVisuals::RenderGunPredict(const CScreenRect &View) const
@@ -2211,5 +2225,194 @@ void CVisuals::OnKill(int Killer, int Victim)
 		Soul.m_Phase = random_float(0.0f, 2.0f * pi);
 		Soul.m_Color = Color;
 		m_vSouls.push_back(Soul);
+	}
+}
+
+// ---------------------------------------------------------------- teleport, speed lines, cursor trail
+
+void CVisuals::CheckTeleport(vec2 Position, float Time)
+{
+	const bool Fx = g_Config.m_ClVisualsTeleFx && Collision();
+	if(Fx && m_HavePrevTee && distance(Position, m_PrevTeePos) > 110.0f)
+	{
+		// a jump: look for a teleporter next to the place where the tee was a moment ago
+		float Best = 3.0f * 32.0f;
+		bool Found = false;
+		vec2 Tile(0.0f, 0.0f);
+		const int BaseX = (int)(m_PrevTeePos.x / 32.0f);
+		const int BaseY = (int)(m_PrevTeePos.y / 32.0f);
+		for(int Y = BaseY - 2; Y <= BaseY + 2; Y++)
+		{
+			for(int X = BaseX - 2; X <= BaseX + 2; X++)
+			{
+				const vec2 Center(X * 32.0f + 16.0f, Y * 32.0f + 16.0f);
+				const int Index = Collision()->GetPureMapIndex(Center);
+				if(Index < 0 || (!Collision()->IsTeleport(Index) && !Collision()->IsEvilTeleport(Index)))
+					continue;
+				const float Dist = distance(Center, m_PrevTeePos);
+				if(Dist < Best)
+				{
+					Best = Dist;
+					Tile = Center;
+					Found = true;
+				}
+			}
+		}
+		if(Found)
+			TeleportEffect(Tile, Position);
+	}
+	m_PrevTeePos = Position;
+	m_HavePrevTee = true;
+}
+
+void CVisuals::TeleportEffect(vec2 From, vec2 To)
+{
+	const ColorRGBA Cyan(0.25f, 0.8f, 1.0f, 1.0f);
+	const ColorRGBA Violet(0.85f, 0.4f, 1.0f, 1.0f);
+	const ColorRGBA White(1.0f, 1.0f, 1.0f, 1.0f);
+
+	// departure: everything is sucked into the entrance
+	SpawnFlash(From, 80.0f, 0.3f);
+	SpawnRing(From, 70.0f, Cyan, false);
+	SpawnRing(From, 40.0f, White, false);
+	for(int i = 0; i < 18; i++)
+	{
+		const float Angle = random_float(0.0f, 2.0f * pi);
+		const vec2 Dir(std::cos(Angle), std::sin(Angle));
+		const float Radius = random_float(40.0f, 75.0f);
+		SpawnGlow(From + Dir * Radius, -Dir * Radius / 0.4f, 0.4f, random_float(9.0f, 16.0f), -0.5f, 0.95f, i % 2 ? Cyan : White);
+	}
+
+	// arrival: burst out of the exit
+	SpawnFlash(To, 130.0f, 0.45f);
+	SpawnRing(To, 110.0f, Violet, false);
+	SpawnRing(To, 70.0f, White, false);
+	for(int i = 0; i < 22; i++)
+	{
+		const float Angle = random_float(0.0f, 2.0f * pi);
+		const vec2 Dir(std::cos(Angle), std::sin(Angle));
+		SpawnStar(To + Dir * 10.0f, Dir * random_float(90.0f, 260.0f), random_float(0.5f, 0.9f), random_float(10.0f, 20.0f), 0.95f, i % 3 == 0 ? White : (i % 2 ? Violet : Cyan));
+	}
+}
+
+void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, double Time)
+{
+	const bool Fresh = Time - m_TeePosTime < 0.25;
+	const vec2 Center = (View.m_TopLeft + View.m_BottomRight) * 0.5f;
+	const float ViewH = View.Size().y;
+	const float ViewW = View.Size().x;
+
+	Graphics()->TextureClear();
+
+	// ---- speed lines: streaks flying out from the middle of the screen, longer the faster you are
+	if(g_Config.m_ClVisualsSpeedLines && Fresh)
+	{
+		const float Intensity = std::clamp((m_SmoothSpeed - 8.0f) / 16.0f, 0.0f, 1.0f);
+		if(Intensity > 0.01f)
+		{
+			const float Radius = std::sqrt(ViewW * ViewW + ViewH * ViewH) * 0.5f;
+			Graphics()->BlendAdditive();
+			Graphics()->QuadsBegin();
+			const int NumLines = 40;
+			for(int i = 0; i < NumLines; i++)
+			{
+				// fixed pseudo random values per line
+				const float R1 = std::fmod(std::sin(i * 12.9898f) * 43758.5453f, 1.0f);
+				const float R2 = std::fmod(std::sin(i * 78.233f + 1.7f) * 24634.6345f, 1.0f);
+				const float R3 = std::fmod(std::sin(i * 39.346f + 4.1f) * 12345.6789f, 1.0f);
+				const float Angle = std::fabs(R1) * 2.0f * pi;
+				const float Phase = std::fabs(R2);
+				const float Rate = 1.4f + 1.6f * std::fabs(R3) + Intensity;
+				const float T = (float)std::fmod(Phase + Time * Rate, 1.0);
+				const vec2 Dir(std::cos(Angle), std::sin(Angle));
+				const vec2 Perp(-Dir.y, Dir.x);
+				const float R0 = Radius * (0.38f + 0.75f * T * T);
+				const float Len = Radius * (0.06f + 0.22f * Intensity) * (0.4f + T);
+				const float Width = ViewH * (0.0016f + 0.0016f * std::fabs(R3)) * (0.6f + Intensity);
+				const float Alpha = Intensity * 0.55f * std::sin(pi * T);
+				if(Alpha <= 0.01f)
+					continue;
+				const vec2 A = Center + Dir * R0;
+				const vec2 B = Center + Dir * (R0 + Len);
+				Graphics()->SetColor(0.85f, 0.95f, 1.0f, Alpha);
+				const IGraphics::CFreeformItem Streak(A.x - Perp.x * Width, A.y - Perp.y * Width, B.x - Perp.x * Width * 0.2f, B.y - Perp.y * Width * 0.2f,
+					A.x + Perp.x * Width, A.y + Perp.y * Width, B.x + Perp.x * Width * 0.2f, B.y + Perp.y * Width * 0.2f);
+				Graphics()->QuadsDrawFreeform(&Streak, 1);
+			}
+			Graphics()->QuadsEnd();
+			Graphics()->BlendNormal();
+		}
+	}
+
+	// ---- cursor trail: a fading holographic laser line when the mouse moves fast
+	if(g_Config.m_ClVisualsCursorTrail && Fresh)
+	{
+		const vec2 Mouse = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+		if(m_HavePrevMouse && DeltaTime > 0.0f)
+		{
+			const float ScreenSpeed = length(Mouse - m_PrevMouse) / DeltaTime / ViewH; // screens per second
+			const float Power = std::clamp((ScreenSpeed - 1.0f) / 3.0f, 0.0f, 1.0f);
+			if(Power > 0.02f)
+				m_vCursorTrail.push_back({m_TeePos + Mouse, (float)Time, Power});
+		}
+		m_PrevMouse = Mouse;
+		m_HavePrevMouse = true;
+	}
+	else
+		m_HavePrevMouse = false;
+
+	const float Fade = 0.55f;
+	while(!m_vCursorTrail.empty() && Time - m_vCursorTrail.front().m_Time > Fade)
+		m_vCursorTrail.erase(m_vCursorTrail.begin());
+	if(m_vCursorTrail.size() > 400)
+		m_vCursorTrail.erase(m_vCursorTrail.begin(), m_vCursorTrail.begin() + (m_vCursorTrail.size() - 400));
+
+	if(m_vCursorTrail.size() >= 2)
+	{
+		Graphics()->BlendAdditive();
+		Graphics()->QuadsBegin();
+		for(size_t i = 1; i < m_vCursorTrail.size(); i++)
+		{
+			const CTrailPoint &A = m_vCursorTrail[i - 1];
+			const CTrailPoint &B = m_vCursorTrail[i];
+			if(B.m_Time - A.m_Time > 0.1f)
+				continue; // a pause: do not connect
+			const vec2 D = B.m_Pos - A.m_Pos;
+			const float DLen = length(D);
+			if(DLen < 0.01f)
+				continue;
+			const vec2 Perp = vec2(-D.y, D.x) / DLen;
+			const float Age = std::clamp((float)(Time - B.m_Time) / Fade, 0.0f, 1.0f);
+			const float Life = 1.0f - Age;
+			const float Width = ViewH * (0.003f + 0.010f * B.m_Power) * Life;
+			const float Alpha = Life * Life * (0.35f + 0.65f * B.m_Power);
+			const vec2 Shift = Perp * Width * 0.9f;
+			const vec2 Layers[3] = {-Shift, Shift, vec2(0.0f, 0.0f)};
+			const ColorRGBA Colors[3] = {ColorRGBA(1.0f, 0.2f, 0.9f, Alpha * 0.55f), ColorRGBA(0.1f, 0.9f, 1.0f, Alpha * 0.7f), ColorRGBA(1.0f, 1.0f, 1.0f, Alpha)};
+			const float Widths[3] = {Width * 0.7f, Width * 0.7f, Width * 0.3f};
+			for(int Layer = 0; Layer < 3; Layer++)
+			{
+				const vec2 P = Perp * Widths[Layer];
+				const vec2 S = A.m_Pos + Layers[Layer], E = B.m_Pos + Layers[Layer];
+				Graphics()->SetColor(Colors[Layer]);
+				const IGraphics::CFreeformItem Seg(S.x - P.x, S.y - P.y, E.x - P.x, E.y - P.y, S.x + P.x, S.y + P.y, E.x + P.x, E.y + P.y);
+				Graphics()->QuadsDrawFreeform(&Seg, 1);
+			}
+		}
+		Graphics()->QuadsEnd();
+		Graphics()->BlendNormal();
+	}
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+	// ---- speed readout
+	if(g_Config.m_ClVisualsSpeedLines && g_Config.m_ClVisualsSpeedReadout && Fresh)
+	{
+		char aBuf[32];
+		str_format(aBuf, sizeof(aBuf), "%.1f т/с", m_SmoothSpeed * 50.0f / 32.0f);
+		const float Size = ViewH * 0.035f;
+		const float Width = TextRender()->TextWidth(Size, aBuf, -1, -1.0f);
+		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 0.8f);
+		TextRender()->Text(Center.x - Width * 0.5f, View.m_BottomRight.y - ViewH * 0.14f, Size, aBuf, -1.0f);
+		TextRender()->TextColor(TextRender()->DefaultTextColor());
 	}
 }
