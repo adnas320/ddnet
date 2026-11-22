@@ -35,7 +35,7 @@ void CTranslator::OnConsoleInit()
 
 void CTranslator::ConTrSay(IConsole::IResult *pResult, void *pUserData)
 {
-	static_cast<CTranslator *>(pUserData)->Translate(pResult->GetString(1), pResult->GetString(0), true);
+	static_cast<CTranslator *>(pUserData)->Translate(pResult->GetString(1), pResult->GetString(0), true, "", 0);
 }
 
 void CTranslator::OnReset()
@@ -59,9 +59,10 @@ void CTranslator::RequestChat(int ClientId, const char *pText)
 	Translate(pText, g_Config.m_ClTranslateLang, false, GameClient()->m_aClients[ClientId].m_aName);
 }
 
-void CTranslator::Translate(const char *pText, const char *pTarget, bool Say, const char *pName)
+void CTranslator::Translate(const char *pText, const char *pTarget, bool Say, const char *pName, int Team)
 {
 	SJob Job;
+	Job.m_Team = Team;
 	Job.m_Text = pText;
 	Job.m_Target = pTarget[0] ? pTarget : "ru";
 	Job.m_Say = Say;
@@ -160,7 +161,9 @@ void CTranslator::Deliver(const SJob &Job, const std::string &Result)
 {
 	if(Job.m_Say)
 	{
-		GameClient()->m_Chat.SendChat(0, Result.c_str());
+		GameClient()->m_Chat.m_SkipTranslate = true;
+		GameClient()->m_Chat.SendChat(Job.m_Team, Result.c_str());
+		GameClient()->m_Chat.m_SkipTranslate = false;
 		return;
 	}
 	char aBuf[1024];
@@ -216,7 +219,9 @@ void CTranslator::OnRender()
 		}
 		else if(Job.m_Say)
 		{
-			GameClient()->m_Chat.SendChat(0, Job.m_Text.c_str()); // do not lose the message
+			GameClient()->m_Chat.m_SkipTranslate = true;
+			GameClient()->m_Chat.SendChat(Job.m_Team, Job.m_Text.c_str()); // do not lose the message
+			GameClient()->m_Chat.m_SkipTranslate = false;
 		}
 		m_vActive.erase(m_vActive.begin() + i);
 		m_NextStart = Now + std::min(0.4f * m_Failures, 3.0f);
@@ -229,4 +234,12 @@ void CTranslator::OnRender()
 		Start(Job);
 		m_vActive.push_back(std::move(Job));
 	}
+}
+
+bool CTranslator::SendTranslated(int Team, const char *pLine)
+{
+	if(!g_Config.m_ClTranslateSend || str_length(pLine) < 2 || pLine[0] == '/' || !HasLetters(pLine))
+		return false;
+	Translate(pLine, g_Config.m_ClTranslateSendLang, true, "", Team);
+	return true;
 }

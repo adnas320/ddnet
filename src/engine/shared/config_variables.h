@@ -837,6 +837,8 @@ MACRO_CONFIG_INT(ClVisualsCursorTrail, cl_visuals_cursor_trail, 0, 0, 1, CFGFLAG
 MACRO_CONFIG_INT(ClVisualsTeleFx, cl_visuals_tele_fx, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Effects at the start and at the end of a teleport")
 MACRO_CONFIG_INT(ClTranslate, cl_translate, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Translate incoming chat messages")
 MACRO_CONFIG_INT(ClTranslateOwn, cl_translate_own, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Also translate own chat messages")
+MACRO_CONFIG_INT(ClTranslateSend, cl_translate_send, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Translate own messages before sending them")
+MACRO_CONFIG_STR(ClTranslateSendLang, cl_translate_send_lang, 8, "en", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Language own messages are translated into before sending")
 MACRO_CONFIG_STR(ClTranslateLang, cl_translate_lang, 8, "ru", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Language to translate chat messages into")
 MACRO_CONFIG_INT(ClVisualsGrenadeTrail, cl_visuals_grenade_trail, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Let grenades leave a tail of fire")
 MACRO_CONFIG_INT(ClVisualsBulletTrail, cl_visuals_bullet_trail, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Let bullets leave a glowing spiral")

@@ -2361,7 +2361,7 @@ void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, do
 	else
 		m_HavePrevMouse = false;
 
-	const float Fade = 0.55f;
+	const float Fade = 0.5f;
 	while(!m_vCursorTrail.empty() && Time - m_vCursorTrail.front().m_Time > Fade)
 		m_vCursorTrail.erase(m_vCursorTrail.begin());
 	if(m_vCursorTrail.size() > 400)
@@ -2369,35 +2369,78 @@ void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, do
 
 	if(m_vCursorTrail.size() >= 2)
 	{
+		// smooth the recorded points with a Catmull-Rom spline so that the stroke is a continuous curve
+		struct CSample
+		{
+			vec2 m_Pos;
+			float m_Width;
+			float m_Alpha;
+			bool m_Break; // the stroke does not continue from the previous sample
+		};
+		std::vector<CSample> vSamples;
+		const int N = (int)m_vCursorTrail.size();
+		const int Sub = 4;
+		for(int i = 0; i < N - 1; i++)
+		{
+			const CTrailPoint &P1 = m_vCursorTrail[i];
+			const CTrailPoint &P2 = m_vCursorTrail[i + 1];
+			const CTrailPoint &P0 = m_vCursorTrail[std::max(i - 1, 0)];
+			const CTrailPoint &P3 = m_vCursorTrail[std::min(i + 2, N - 1)];
+			const bool Gap = P2.m_Time - P1.m_Time > 0.1f;
+			for(int s = 0; s < Sub; s++)
+			{
+				const float t = s / (float)Sub;
+				const vec2 CatPos = ((P1.m_Pos * 2.0f) + (P2.m_Pos - P0.m_Pos) * t + (P0.m_Pos * 2.0f - P1.m_Pos * 5.0f + P2.m_Pos * 4.0f - P3.m_Pos) * (t * t) + (P1.m_Pos * 3.0f - P0.m_Pos - P2.m_Pos * 3.0f + P3.m_Pos) * (t * t * t)) * 0.5f;
+				const vec2 Pos = Gap ? P1.m_Pos : CatPos;
+				const float PointTime = mix(P1.m_Time, P2.m_Time, t);
+				const float Power = mix(P1.m_Power, P2.m_Power, t);
+				const float Life = 1.0f - std::clamp((float)(Time - PointTime) / Fade, 0.0f, 1.0f);
+				// drop shape: thin tail, thick toward the cursor
+				const float Width = ViewH * (0.004f + 0.017f * Power) * std::pow(Life, 1.4f);
+				vSamples.push_back({Pos, Width, Life * (0.5f + 0.5f * Power), Gap && s == 0});
+			}
+		}
+		{
+			const CTrailPoint &Last = m_vCursorTrail.back();
+			const float Life = 1.0f - std::clamp((float)(Time - Last.m_Time) / Fade, 0.0f, 1.0f);
+			vSamples.push_back({Last.m_Pos, ViewH * (0.004f + 0.017f * Last.m_Power) * std::pow(Life, 1.4f), Life * (0.5f + 0.5f * Last.m_Power), false});
+		}
+
+		// a normal for each sample, shared by both neighbor quads so there are no seams
+		std::vector<vec2> vNormals(vSamples.size());
+		for(size_t k = 0; k < vSamples.size(); k++)
+		{
+			const vec2 Prev = vSamples[k > 0 ? k - 1 : 0].m_Pos;
+			const vec2 Next = vSamples[std::min(k + 1, vSamples.size() - 1)].m_Pos;
+			vec2 Dir = Next - Prev;
+			const float Len = length(Dir);
+			Dir = Len > 0.001f ? Dir / Len : vec2(1.0f, 0.0f);
+			vNormals[k] = vec2(-Dir.y, Dir.x);
+		}
+
 		Graphics()->BlendAdditive();
 		Graphics()->QuadsBegin();
-		for(size_t i = 1; i < m_vCursorTrail.size(); i++)
+		const float Scale[3] = {2.1f, 1.1f, 0.45f};
+		const ColorRGBA Colors[3] = {ColorRGBA(0.1f, 0.55f, 1.0f, 0.3f), ColorRGBA(0.2f, 0.95f, 1.0f, 0.75f), ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f)};
+		for(int Layer = 0; Layer < 3; Layer++)
 		{
-			const CTrailPoint &A = m_vCursorTrail[i - 1];
-			const CTrailPoint &B = m_vCursorTrail[i];
-			if(B.m_Time - A.m_Time > 0.1f)
-				continue; // a pause: do not connect
-			const vec2 D = B.m_Pos - A.m_Pos;
-			const float DLen = length(D);
-			if(DLen < 0.01f)
-				continue;
-			const vec2 Perp = vec2(-D.y, D.x) / DLen;
-			const float Age = std::clamp((float)(Time - B.m_Time) / Fade, 0.0f, 1.0f);
-			const float Life = 1.0f - Age;
-			const float Width = ViewH * (0.003f + 0.010f * B.m_Power) * Life;
-			const float Alpha = Life * Life * (0.35f + 0.65f * B.m_Power);
-			const vec2 Shift = Perp * Width * 0.9f;
-			const vec2 Layers[3] = {-Shift, Shift, vec2(0.0f, 0.0f)};
-			const ColorRGBA Colors[3] = {ColorRGBA(1.0f, 0.2f, 0.9f, Alpha * 0.55f), ColorRGBA(0.1f, 0.9f, 1.0f, Alpha * 0.7f), ColorRGBA(1.0f, 1.0f, 1.0f, Alpha)};
-			const float Widths[3] = {Width * 0.7f, Width * 0.7f, Width * 0.3f};
-			for(int Layer = 0; Layer < 3; Layer++)
+			for(size_t k = 0; k + 1 < vSamples.size(); k++)
 			{
-				const vec2 P = Perp * Widths[Layer];
-				const vec2 S = A.m_Pos + Layers[Layer], E = B.m_Pos + Layers[Layer];
-				Graphics()->SetColor(Colors[Layer]);
-				const IGraphics::CFreeformItem Seg(S.x - P.x, S.y - P.y, E.x - P.x, E.y - P.y, S.x + P.x, S.y + P.y, E.x + P.x, E.y + P.y);
+				if(vSamples[k + 1].m_Break)
+					continue;
+				const CSample &A = vSamples[k];
+				const CSample &B = vSamples[k + 1];
+				const vec2 NA = vNormals[k] * A.m_Width * Scale[Layer];
+				const vec2 NB = vNormals[k + 1] * B.m_Width * Scale[Layer];
+				Graphics()->SetColor(Colors[Layer].r, Colors[Layer].g, Colors[Layer].b, Colors[Layer].a * A.m_Alpha);
+				const IGraphics::CFreeformItem Seg(A.m_Pos.x - NA.x, A.m_Pos.y - NA.y, B.m_Pos.x - NB.x, B.m_Pos.y - NB.y,
+					A.m_Pos.x + NA.x, A.m_Pos.y + NA.y, B.m_Pos.x + NB.x, B.m_Pos.y + NB.y);
 				Graphics()->QuadsDrawFreeform(&Seg, 1);
 			}
+			// rounded head
+			const CSample &Head = vSamples.back();
+			Graphics()->SetColor(Colors[Layer].r, Colors[Layer].g, Colors[Layer].b, Colors[Layer].a * Head.m_Alpha);
+			Graphics()->DrawCircle(Head.m_Pos.x, Head.m_Pos.y, Head.m_Width * Scale[Layer], 16);
 		}
 		Graphics()->QuadsEnd();
 		Graphics()->BlendNormal();

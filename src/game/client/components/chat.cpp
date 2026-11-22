@@ -1386,6 +1386,10 @@ void CChat::SendChat(int Team, const char *pLine)
 	if(*str_utf8_skip_whitespaces(pLine) == '\0')
 		return;
 
+	// translate-before-send: the translated text is sent in your name instead of the original
+	if(!m_SkipTranslate && GameClient()->m_Translator.SendTranslated(Team, pLine))
+		return;
+
 	m_LastChatSend = time();
 
 	if(GameClient()->Client()->IsSixup())

@@ -173,6 +173,7 @@ public:
 	void DisableMode();
 	void RegisterCommand(const char *pName, const char *pParams, const char *pHelpText);
 	void UnregisterCommand(const char *pName);
+	bool m_SkipTranslate = false; // set while the translator sends the translated message
 	void Echo(const char *pString);
 	void EchoConfig(const char *pName);
 

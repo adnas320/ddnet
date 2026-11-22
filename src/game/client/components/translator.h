@@ -20,6 +20,7 @@ class CTranslator : public CComponent
 		std::string m_Text;
 		std::string m_Name; // empty: no name prefix
 		std::string m_Target;
+		int m_Team = 0;
 		bool m_Say = false; // send the translation to the chat instead of showing it
 		int m_Service = 0; // 0 = Google, 1 = MyMemory, 2 = Lingva
 		int m_Attempt = 0;
@@ -44,7 +45,9 @@ public:
 
 	// Called for each new chat line from another player.
 	void RequestChat(int ClientId, const char *pText);
-	void Translate(const char *pText, const char *pTarget, bool Say, const char *pName = "");
+	void Translate(const char *pText, const char *pTarget, bool Say, const char *pName = "", int Team = 0);
+	// Translates the own message and sends the translation instead of it. Returns false if it was not handled.
+	bool SendTranslated(int Team, const char *pLine);
 	int Pending() const { return (int)(m_Queue.size() + m_vActive.size()); }
 };
 
