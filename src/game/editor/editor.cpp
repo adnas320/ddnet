@@ -4163,11 +4163,13 @@ void CEditor::UpdateGenerator()
 {
 	if(m_GeneratorJob.m_Running)
 	{
-		// the course is being built: clicks are blocked, escape or a click finishes it right away
+		// the course is being built: clicks are blocked and the building cannot be skipped
 		static char s_GeneratorBusyButton;
-		const int Result = DoButtonLogic(&s_GeneratorBusyButton, 0, Ui()->Screen(), BUTTONFLAG_ALL, "The course is being generated. Click or press escape to finish it at once.");
+		const int Result = DoButtonLogic(&s_GeneratorBusyButton, 0, Ui()->Screen(), BUTTONFLAG_ALL, "The course is being generated, please wait.");
 		m_GeneratorJob.m_Elapsed += Client()->RenderFrameTime();
-		StepGeneratorJob(Result != 0 || Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE));
+		(void)Result;
+		Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE);
+		StepGeneratorJob(false);
 		return;
 	}
 	if(!m_GeneratorActive)
@@ -4242,7 +4244,8 @@ void CEditor::RenderGeneratorOverlay()
 		Panel.Margin(6.0f, &Panel);
 		Panel.HSplitTop(16.0f, &Label, &Bar);
 		char aText[128];
-		str_format(aText, sizeof(aText), "Generating: %s", s_apStages[Stage]);
+		const int Left = (int)std::ceil(std::max(0.0f, m_GeneratorJob.m_Duration - m_GeneratorJob.m_Elapsed));
+		str_format(aText, sizeof(aText), "Generating: %s (%d:%02d left)", s_apStages[Stage], Left / 60, Left % 60);
 		Ui()->DoLabel(&Label, aText, 10.0f, TEXTALIGN_ML);
 		Bar.HSplitTop(4.0f, nullptr, &Bar);
 		Bar.h = 10.0f;
@@ -4318,7 +4321,7 @@ void CEditor::RenderGeneratorOverlay()
 			Row.VSplitLeft(62.0f, &Button, &Row);
 			Ui()->DoLabel(&Button, "Parts", 10.0f, TEXTALIGN_ML);
 			Row.VSplitLeft(70.0f, &Button, &Row);
-			if(DoButton_Editor(&s_Fly, "Fly", m_GeneratorFly, &Button, BUTTONFLAG_LEFT, "Adds fly parts: open halls with freeze obstacles where you fly with the jetpack."))
+			if(DoButton_Editor(&s_Fly, "Fly", m_GeneratorFly, &Button, BUTTONFLAG_LEFT, "Adds fly parts for a dummy (pseudofly): corridors, gaps and lanes that cannot be passed alone."))
 				m_GeneratorFly = !m_GeneratorFly;
 		}
 

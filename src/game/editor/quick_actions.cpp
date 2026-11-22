@@ -78,7 +78,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	// connected from the spawn to the finish and is rated by variety.
 	std::vector<unsigned char> vOutBuf, vOutTeleType, vOutTeleNum;
 	float BestScore = -1.0f;
-	const int aAttempts[3] = {1, 8, 30};
+	const int aAttempts[3] = {1, 12, 120};
 	const int Attempts = aAttempts[std::clamp(m_GeneratorThink, 0, 2)];
 	for(int Attempt = 0; Attempt < Attempts; Attempt++)
 	{
@@ -161,10 +161,13 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		S_TELELINE,
 		S_HALL,
 		S_FLY,
+		S_PSEUDO,
+		S_DUMMYGAP,
+		S_PSEUDOV,
 		NUM_SECTIONS,
 	};
 	// minimum height of the chamber a section needs
-	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10, 14};
+	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10, 14, 10, 12, 17};
 	static const int s_aNovice[] = {S_HALL, S_HALL, S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
 	static const int s_aModerate[] = {S_TELELINE, S_HALL, S_TELELINE, S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
 	static const int s_aBrutal[] = {S_TELELINE, S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
@@ -172,6 +175,8 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	const int PoolSize = Diff == 0 ? (int)std::size(s_aNovice) : (Diff == 1 ? (int)std::size(s_aModerate) : (int)std::size(s_aBrutal));
 
 	int TeleUsed = 0;
+	int DummyParts = 0;
+	unsigned UsedMask = 0;
 	bool UsedFreeze = false;
 	const auto FreezeAir = [&](int x, int y) {
 		if(Inside(x, y) && At(x, y) == T_AIR)
@@ -349,6 +354,71 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 					}
 				}
 			}
+			break;
+		}
+		case S_PSEUDO:
+		{
+			// pseudofly corridor: 3 tiles high with freeze on the floor and the ceiling, nothing to hook.
+			// It cannot be passed alone, the tee has to be flown by hammering a partner (dummy).
+			DummyParts++;
+			const int Top = f - 4;
+			Fill(x0 + 2, c, x1 - x0 - 4, std::max(0, Top - c), T_SOLID);
+			for(int xx = x0 + 2; xx < x1 - 2; xx++)
+			{
+				Put(xx, Top, T_FREEZE);
+				Put(xx, f, T_FREEZE);
+			}
+			// the tee waits in a small pocket before and after the corridor
+			Put(x0 + 1, f, T_UNFREEZE);
+			Put(x1 - 2, f, T_UNFREEZE);
+			UsedFreeze = true;
+			break;
+		}
+		case S_DUMMYGAP:
+		{
+			// a wide gap of freeze under an unhookable ceiling, it is too wide to jump and there is nothing to hook.
+			// The partner hooks the tee over it.
+			DummyParts++;
+			const int Plat = 6;
+			Fill(x0 + 1, c, x1 - x0 - 2, std::max(2, Height / 3), T_NOHOOK);
+			for(int xx = x0 + 1 + Plat; xx < x1 - 1 - Plat; xx++)
+			{
+				Fill(xx, f - 1, 1, 2, T_FREEZE);
+				Put(xx, f + 1, T_NOHOOK);
+			}
+			// a nohook bar and a freeze block floating above the gap make it look like a real part
+			const int Mid = (x0 + x1) / 2;
+			Fill(Mid - 3, (c + f) / 2, 6, 1, T_NOHOOK);
+			Fill(Mid, (c + f) / 2 + 2, 3, 3, T_FREEZE);
+			UsedFreeze = true;
+			break;
+		}
+		case S_PSEUDOV:
+		{
+			// stacked pseudofly corridors, 3 tiles high with freeze above and below, joined at alternating ends
+			DummyParts++;
+			Fill(x0 + 1, c, x1 - x0 - 2, Height, T_SOLID);
+			const int Lanes = std::max(1, (Height - 2) / 7);
+			for(int Lane = 0; Lane < Lanes; Lane++)
+			{
+				const int yy = c + 1 + Lane * 7;
+				Fill(x0 + 2, yy, x1 - x0 - 4, 3, T_AIR);
+				for(int xx = x0 + 2; xx < x1 - 2; xx++)
+				{
+					Put(xx, yy - 1, T_FREEZE);
+					Put(xx, yy + 3, T_FREEZE);
+				}
+			}
+			for(int Lane = 0; Lane + 1 < Lanes; Lane++)
+			{
+				const int yy = c + 1 + Lane * 7;
+				const int Cx = Lane % 2 == 0 ? x1 - 5 : x0 + 2;
+				Fill(Cx, yy + 3, 3, 5, T_AIR);
+			}
+			// open the first and the last lane towards the neighbours
+			Fill(x0 + 1, c + 1, 1, 3, T_AIR);
+			Fill(x1 - 2, c + 1 + (Lanes - 1) * 7, 1, 3, T_AIR);
+			UsedFreeze = true;
 			break;
 		}
 		case S_FLY:
@@ -589,9 +659,17 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 	while(x < FinishStart - 8)
 	{
 		int Id = pPool[Rand(0, PoolSize - 1)];
-		if(Fly && Rand(0, 99) < 30)
-			Id = S_FLY;
-		const int Len = Rand(Diff == 0 ? 18 : 16, Diff == 0 ? 28 : 26) + (B == 3 ? 4 : 0);
+		if(Fly && Rand(0, 99) < 45)
+		{
+			static const int s_aDummy[] = {S_PSEUDO, S_PSEUDO, S_DUMMYGAP, S_PSEUDOV};
+			Id = s_aDummy[Rand(0, 3)];
+		}
+		UsedMask |= 1u << Id;
+		int Len = Rand(Diff == 0 ? 18 : 16, Diff == 0 ? 28 : 26) + (B == 3 ? 4 : 0);
+		if(Id == S_PSEUDO || Id == S_DUMMYGAP)
+			Len = Rand(30, 44);
+		else if(Id == S_PSEUDOV)
+			Len = Rand(26, 36);
 		int End = std::min(x + Len, FinishStart);
 		if(FinishStart - End < 14)
 			End = FinishStart;
@@ -793,7 +871,12 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1)
 		const float FreezeFraction = (float)FreezeCount / (float)std::max(1, AirCount);
 		Score += 100.0f - std::abs(AirFraction - 0.45f) * 200.0f;
 		Score += 60.0f - std::abs(FreezeFraction - (Diff == 0 ? 0.04f : 0.09f)) * 400.0f;
-		Score += (float)TeleUsed * 15.0f + (float)(Rng() % 1000) / 100.0f;
+		int Variety = 0;
+		for(unsigned Mask = UsedMask; Mask; Mask >>= 1)
+			Variety += Mask & 1u;
+		Score += (float)Variety * 12.0f + (float)TeleUsed * 15.0f + (float)(Rng() % 1000) / 100.0f;
+		if(Fly)
+			Score += (float)std::min(DummyParts, 6) * 40.0f;
 		if(Score > BestScore)
 		{
 			BestScore = Score;
