@@ -27,6 +27,7 @@ class CMusicPlayer : public CComponent
 	bool LoadFile(const char *pPath);
 	void StartPlayback();
 
+	static int ScanCallback(const char *pName, int IsDir, int StorageType, void *pUser);
 	static int RemoveOldDownloadCallback(const char *pName, int IsDir, int StorageType, void *pUser);
 
 public:
