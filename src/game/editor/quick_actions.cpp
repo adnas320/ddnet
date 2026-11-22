@@ -117,8 +117,10 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 	const bool MixThickness = m_GeneratorStyle == 1 && DetectedThickness == 0; // 3x3 mostly, with strips between
 	const int BaseB = DetectedThickness > 0 ? DetectedThickness : (m_GeneratorStyle == 1 ? 3 : 1);
 	int B = BaseB; // thickness of blocks and walls
-	const int aHMin[3] = {12, 8, 6};
-	const int aHMax[3] = {20, 14, 11};
+	// the halls use the whole height of the zone: tall zones get tall halls
+	const int Avail0 = std::max(10, H - 6);
+	const int aHMin[3] = {std::max(12, Avail0 * 40 / 100), std::max(8, Avail0 * 30 / 100), std::max(6, Avail0 * 22 / 100)};
+	const int aHMax[3] = {std::max(20, Avail0 * 90 / 100), std::max(14, Avail0 * 70 / 100), std::max(11, Avail0 * 55 / 100)};
 
 	// teleporters are only possible when the tele layer (if there is one) covers the zone
 	std::shared_ptr<CLayerTele> pTeleLayer = Map()->m_pTeleLayer;
@@ -241,7 +243,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 		for(int Try = 0; Try < 60; Try++)
 		{
 			const int h = Rand(HMin, HMax);
-			const int Center = (PrevC + PrevF) / 2 + Rand(-7, 7);
+			const int Center = (PrevC + PrevF) / 2 + Rand(-std::max(7, H / 7), std::max(7, H / 7));
 			c = std::clamp(Center - h / 2, MinC, MaxF - h + 1);
 			f = c + h - 1;
 			if(!NeedOverlap || std::min(f, PrevF) - std::max(c, PrevC) + 1 >= 3)
@@ -798,6 +800,77 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 		}
 	};
 
+	// Big halls get extra furniture on several levels so that they are not empty: floating bars, hanging T pillars
+	// and a comb of bars on the wall (jump between them, hook the bars), as in the maps that were studied.
+	const auto AllAir = [&](int xx, int yy, int w, int h) {
+		for(int dy = 0; dy < h; dy++)
+			for(int dx = 0; dx < w; dx++)
+				if(xx + dx < 0 || yy + dy < 0 || xx + dx >= W || yy + dy >= H || At(xx + dx, yy + dy) != T_AIR)
+					return false;
+		return true;
+	};
+	const auto Decorate = [&](int Id, int x0, int x1, int c, int f) {
+		const int Height = f - c + 1;
+		if(Height < 14 || Id == S_PSEUDO || Id == S_DUMMYGAP || Id == S_PSEUDOV || Id == S_FLY || Id == S_SQUEEZE || Id == S_TELELINE)
+			return;
+		const int Wd = x1 - x0;
+		// floating bars on several levels
+		const int Bars = Wd * Height / 170;
+		for(int i = 0; i < Bars; i++)
+		{
+			const int w = Rand(4, 10);
+			const int bx = Rand(x0 + 4, std::max(x0 + 4, x1 - 4 - w));
+			const int by = Rand(c + 4, std::max(c + 4, f - 5));
+			if(!AllAir(bx - 1, by - 2, w + 2, B + 4))
+				continue;
+			const int Roll = Rand(0, 99);
+			Fill(bx, by, w, B, Roll < 55 ? T_NOHOOK : (Roll < 85 ? T_STICK : T_HOOKTHROUGH));
+			if(Diff >= 1 && Rand(0, 99) < 40)
+				for(int dx = 0; dx < w; dx++)
+					Put(bx + dx, by - 1, T_FREEZE);
+		}
+		// a lake of freeze on the floor with islands, the main thing of the novice parts
+		if(Rand(0, 99) < (Diff == 0 ? 65 : 45))
+		{
+			const int LakeW = Rand(std::min(Wd - 8, 14), std::max(std::min(Wd - 8, 14), Wd * 2 / 3));
+			const int LakeX = Rand(x0 + 4, std::max(x0 + 4, x1 - 4 - LakeW));
+			const int Depth = Rand(std::max(3, Height / 5), std::max(4, Height / 3));
+			for(int xx = LakeX; xx < LakeX + LakeW; xx++)
+				for(int yy = f - Depth + 1; yy <= f; yy++)
+					if(At(xx, yy) == T_AIR)
+						Put(xx, yy, T_FREEZE);
+			for(int px = LakeX + 5; px + 8 < LakeX + LakeW; px += Rand(9, 14))
+			{
+				const int w = Rand(4, 8);
+				const int by = f - Rand(Depth / 2, Depth);
+				Fill(px, by, w, B, T_STICK);
+				for(int dx = 0; dx < w; dx++)
+					Put(px + dx, by - 1, T_UNFREEZE);
+			}
+		}
+		// T pillars that hang from the ceiling
+		for(int px = x0 + 6; px + 8 < x1 - 3; px += Rand(12, 20))
+		{
+			const int Stem = Rand(3, std::max(3, Height / 3));
+			if(!AllAir(px - 2, c, 5, Stem + B + 1))
+				continue;
+			Fill(px, c, B, Stem, T_NOHOOK);
+			Fill(px - 2, c + Stem, 4 + B, B, T_NOHOOK);
+			if(Diff >= 1)
+				for(int dx = -2; dx < 2 + B; dx++)
+					Put(px + dx, c + Stem + B, T_FREEZE);
+		}
+		// a comb of bars on the right wall, the top and the bottom stay free for the way on
+		if(Height >= 18 && Wd >= 30 && Rand(0, 99) < 50)
+		{
+			const int Len = Rand(8, 14);
+			const int Pitch = B + 2 + (Diff == 0 ? 1 : 0);
+			for(int by = c + 5; by + B < f - 4; by += Pitch)
+				if(AllAir(x1 - 2 - Len, by, Len, B))
+					Fill(x1 - 2 - Len, by, Len, B, T_NOHOOK);
+		}
+	};
+
 	// ---- start room (or the entrance of a part) ----
 	const int StartHeight = Diff == 0 ? 8 : 6;
 	int PrevC = std::clamp(H / 2 - StartHeight / 2, MinC, MaxF - StartHeight + 1);
@@ -971,6 +1044,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 		if(MixThickness)
 			B = Rand(0, 99) < 65 ? 3 : 1;
 		Section(Id, x + 1, End, c, f);
+		Decorate(Id, x + 1, End, c, f);
 		B = BaseB;
 		// unfreeze strip at the start of parts with freeze, so a freeze from before never carries over
 		if(UsedFreeze && Diff >= 1)
@@ -1178,7 +1252,36 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 					vNew[(size_t)yy * W + xx] = (((unsigned)(xx / 4) * 7919u + (unsigned)(yy / 4) * 104729u + (unsigned)((xx / 4) * (yy / 4)) * 31u) % 100u < (unsigned)HookPercent) ? TILE_SOLID : TILE_NOHOOK;
 			}
 		}
-		// freeze lines that hug the floors (and on brutal also the ceilings) of the halls in long runs
+		// freeze lines that hug the floors (and on brutal also the ceilings) of the halls in long runs,
+		// only where the course really is and not in the empty rock that was hollowed out
+		std::vector<unsigned char> vReach((size_t)W * H, 0);
+		{
+			std::vector<int> vStack;
+			const int Seed = Part ? ((PartEntryC + PartEntryF) / 2) * W : [&]() {
+				for(int i = 0; i < W * H; i++)
+					if(vOutBuf[i] == (ENTITY_OFFSET + ENTITY_SPAWN))
+						return i;
+				return 0;
+			}();
+			vStack.push_back(Seed);
+			vReach[Seed] = 1;
+			while(!vStack.empty())
+			{
+				const int Cur = vStack.back();
+				vStack.pop_back();
+				const int cx = Cur % W, cy = Cur / W;
+				const int aNext[4] = {cx > 0 ? Cur - 1 : -1, cx < W - 1 ? Cur + 1 : -1, cy > 0 ? Cur - W : -1, cy < H - 1 ? Cur + W : -1};
+				for(const int Next : aNext)
+				{
+					const unsigned char Tile = Next >= 0 ? vOutBuf[Next] : (unsigned char)TILE_SOLID;
+					if(Next >= 0 && !vReach[Next] && Tile != TILE_SOLID && Tile != TILE_NOHOOK && Tile != 250 && Tile != TILE_THROUGH_CUT)
+					{
+						vReach[Next] = 1;
+						vStack.push_back(Next);
+					}
+				}
+			}
+		}
 		if(Diff >= 1)
 		{
 			for(int Pass = 0; Pass < (Diff == 2 ? 2 : 1); Pass++)
@@ -1190,7 +1293,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 					Run = 0;
 					for(int xx = 14; xx < W - 14; xx++)
 					{
-						const bool Floor = vNew[(size_t)yy * W + xx] == TILE_AIR && vNew[(size_t)(yy + Dy) * W + xx] != TILE_AIR && vNew[(size_t)(yy + Dy) * W + xx] <= TILE_NOHOOK && vNew[(size_t)(yy + Dy) * W + xx] != 0;
+						const bool Floor = vReach[(size_t)yy * W + xx] && vNew[(size_t)yy * W + xx] == TILE_AIR && vNew[(size_t)(yy + Dy) * W + xx] != TILE_AIR && vNew[(size_t)(yy + Dy) * W + xx] <= TILE_NOHOOK && vNew[(size_t)(yy + Dy) * W + xx] != 0;
 						if(Run > 0 && Floor)
 						{
 							vNew[(size_t)yy * W + xx] = TILE_FREEZE;
