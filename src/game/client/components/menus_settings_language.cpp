@@ -43,7 +43,7 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 
 	// only English, Russian and Chinese are offered
 	const auto Allowed = [](const CLanguage &Language) {
-		return Language.m_Filename.empty() || Language.m_Filename == "russian" || Language.m_Filename == "simplified_chinese";
+		return Language.m_Filename.empty() || Language.m_Filename == "languages/russian.txt" || Language.m_Filename == "languages/simplified_chinese.txt";
 	};
 	int NumAllowed = 0;
 	int SelectedShown = -1;

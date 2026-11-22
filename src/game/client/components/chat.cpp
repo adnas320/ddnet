@@ -984,7 +984,7 @@ void CChat::OnPrepareLines(float y)
 		// own name shimmers, so those lines are rebuilt 20 times per second
 		const bool OwnShimmer = GameClient()->m_Visuals.ShouldShimmer(Line.m_ClientId) && Line.m_aName[0] != '\0';
 		const int ShimmerStamp = OwnShimmer ? (int)(Client()->LocalTime() * 20.0f) : 0;
-		const bool ShimmerChanged = OwnShimmer && ShimmerStamp != Line.m_ShimmerStamp;
+		const bool ShimmerChanged = ShimmerStamp != Line.m_ShimmerStamp;
 		Line.m_ShimmerStamp = ShimmerStamp;
 
 		if(Line.m_TextContainerIndex.Valid() && !ForceRecreate && !ShimmerChanged)

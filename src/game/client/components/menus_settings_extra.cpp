@@ -376,9 +376,6 @@ void CMenus::RenderSettingsPaint(CUIRect MainView)
 			Paint.Undo();
 	}
 
-	Right.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f), IGraphics::CORNER_ALL, 10.0f);
-	Right.Margin(CARD_PADDING, &Right);
-	Ui()->DoLabel(&Right, "Как пользоваться:\n\n1. Выберите клавишу выше.\n2. В игре зажмите её и водите курсором: рисунок появится там, где курсор (в том числе когда вы наблюдаете).\n3. Рисунки видите только вы.\n\nКоманды консоли: paint_clear, paint_undo.", 14.0f, TEXTALIGN_TL);
 }
 
 // ---------------------------------------------------------------- Музыка

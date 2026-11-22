@@ -65,13 +65,10 @@ void CVisuals::OnReset()
 	m_vMeteors.clear();
 	m_vEchoes.clear();
 	m_vCursorTrail.clear();
-	m_vPortals.clear();
 	m_HavePrevTee = false;
 	m_HavePrevMouse = false;
 	m_AutoSkinTimer = 0.0f;
 	m_vBalloons.clear();
-	m_PetCelebrate = 0.0f;
-	m_PetInitialized = false;
 	m_JumpedInitialized = false;
 	m_FlakesInitialized = false;
 	m_HatInitialized = false;
@@ -445,7 +442,6 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 	m_TeePos = Position;
 	m_TeePosTime = Time;
 	m_SmoothSpeed += (length(Vel) - m_SmoothSpeed) * std::min(1.0f, DeltaTime * 8.0f);
-	CheckTeleport(Position, Time);
 
 	// dark cape: a mask over the eyes (the cape itself is drawn behind the tee)
 	if(g_Config.m_ClVisualsCape == 3)
@@ -558,15 +554,6 @@ void CVisuals::RenderTeeAccessories(vec2 Position, vec2 BodyPos, float TeeSize, 
 	}
 	else
 		m_EchoTimer = 0.045f;
-
-	// pet
-	if(g_Config.m_ClVisualsPet > 0)
-	{
-		UpdatePet(Position, TeeSize, LookDir, Vel, Jumped, DeltaTime);
-		DrawPanda(m_PetPos, TeeSize, Alpha, m_PetVel);
-	}
-	else
-		m_PetInitialized = false;
 
 	const bool Hat = g_Config.m_ClVisualsWinterHat;
 	if(!Hat)
@@ -724,545 +711,6 @@ void CVisuals::DrawFlake(vec2 Center, float Size, float Angle, int Type) const
 	}
 }
 
-void CVisuals::OnFinish()
-{
-	if(g_Config.m_ClVisualsPet <= 0)
-		return;
-	m_PetCelebrate = 14.0f;
-	m_PetSpawnBalloons = true;
-	m_AfkTimer = 0.0f;
-}
-
-void CVisuals::UpdatePet(vec2 Position, float TeeSize, vec2 LookDir, vec2 Vel, int Jumped, float DeltaTime)
-{
-	// the owner turns around: the panda rolls over to the other side
-	float Desired = m_PetFacing;
-	if(LookDir.x > 0.25f)
-		Desired = 1.0f;
-	else if(LookDir.x < -0.25f)
-		Desired = -1.0f;
-	if(Desired != m_PetFacing)
-	{
-		m_PetFacing = Desired;
-		m_PetRoll = m_PetSleep > 0.5f ? 1.0f : 0.0f;
-	}
-	m_PetRoll = std::min(1.0f, m_PetRoll + DeltaTime / 1.1f);
-
-	// afk detection: any movement, aiming or input wakes the panda
-	const CNetObj_PlayerInput &Input = GameClient()->m_Controls.m_aInputData[g_Config.m_ClDummy];
-	const int InputBits = Input.m_Direction * 8 + Input.m_Jump * 2 + Input.m_Hook * 4 + Input.m_Fire * 16 + Jumped * 64;
-	const bool Active = distance(Position, m_AfkLastPos) > 0.5f || distance(LookDir, m_AfkLastLook) > 0.01f || InputBits != m_AfkLastInput || length(Vel) > 0.1f;
-	m_AfkLastPos = Position;
-	m_AfkLastLook = LookDir;
-	m_AfkLastInput = InputBits;
-	if(Active)
-	{
-		if(m_PetSleep > 0.5f)
-			m_PetWake = 1.0f;
-		m_AfkTimer = 0.0f;
-	}
-	else
-		m_AfkTimer += DeltaTime;
-	const float SleepTarget = m_AfkTimer > 180.0f ? 1.0f : 0.0f;
-	m_PetSleep += std::clamp(SleepTarget - m_PetSleep, -DeltaTime / 0.8f, DeltaTime / 2.0f);
-	m_PetWake = std::max(0.0f, m_PetWake - DeltaTime / 0.9f);
-
-	// the panda flies above and behind the owner on a soft spring
-	const float Time = Client()->LocalTime();
-	const vec2 Target = vec2(Position.x - m_PetFacing * 1.5f * TeeSize, Position.y - (0.85f - 0.15f * m_PetSleep) * TeeSize);
-	if(!m_PetInitialized || distance(m_PetPos, Target) > 900.0f)
-	{
-		m_PetInitialized = true;
-		m_PetPos = Target;
-		m_PetVel = vec2(0.0f, 0.0f);
-	}
-	else
-	{
-		const int Steps = std::clamp((int)std::ceil(DeltaTime / (1.0f / 120.0f)), 1, 12);
-		const float Step = DeltaTime / Steps;
-		for(int i = 0; i < Steps; i++)
-		{
-			m_PetVel += ((Target - m_PetPos) * 16.0f - m_PetVel * 7.0f) * Step;
-			m_PetPos += m_PetVel * Step;
-		}
-	}
-
-	// party: balloons fly up next to the panda
-	if(m_PetSpawnBalloons)
-	{
-		m_PetSpawnBalloons = false;
-		static const ColorRGBA s_aColors[6] = {ColorRGBA(1.0f, 0.3f, 0.35f, 1.0f), ColorRGBA(1.0f, 0.8f, 0.2f, 1.0f), ColorRGBA(0.3f, 0.85f, 0.4f, 1.0f), ColorRGBA(0.3f, 0.6f, 1.0f, 1.0f), ColorRGBA(0.8f, 0.4f, 1.0f, 1.0f), ColorRGBA(1.0f, 0.55f, 0.8f, 1.0f)};
-		for(int i = 0; i < 10; i++)
-		{
-			CBalloon Balloon;
-			Balloon.m_Pos = m_PetPos + vec2(random_float(-1.0f, 1.0f) * 0.9f * TeeSize, -0.4f * TeeSize);
-			Balloon.m_Vel = vec2(random_float(-8.0f, 8.0f), -random_float(35.0f, 70.0f));
-			Balloon.m_Life = random_float(6.0f, 10.0f);
-			Balloon.m_Phase = random_float(0.0f, 6.28f);
-			Balloon.m_Color = s_aColors[i % 6];
-			m_vBalloons.push_back(Balloon);
-		}
-		for(int i = 0; i < 18; i++)
-			SpawnGlow(m_PetPos + vec2(0.0f, -0.6f * TeeSize), vec2(random_float(-110.0f, 110.0f), -random_float(60.0f, 170.0f)), 1.3f, 6.0f, -0.5f, 0.95f, s_aColors[i % 6], 220.0f);
-	}
-	for(CBalloon &Balloon : m_vBalloons)
-	{
-		Balloon.m_Life -= DeltaTime;
-		Balloon.m_Pos += Balloon.m_Vel * DeltaTime;
-		Balloon.m_Pos.x += std::sin(Time * 1.7f + Balloon.m_Phase) * 12.0f * DeltaTime;
-	}
-	m_vBalloons.erase(std::remove_if(m_vBalloons.begin(), m_vBalloons.end(), [](const CBalloon &B) { return B.m_Life <= 0.0f; }), m_vBalloons.end());
-	m_PetCelebrate = std::max(0.0f, m_PetCelebrate - DeltaTime);
-}
-
-// A chubby pixel art panda that hovers in the sky on four paws and rests on a little cloud.
-// Feet is the middle of the paws.
-void CVisuals::DrawPanda(vec2 Feet, float Size, float Alpha, vec2 Vel) const
-{
-	const float Time = Client()->LocalTime();
-	const float Sleep = m_PetSleep;
-	const bool Asleep = Sleep > 0.5f;
-	const bool Celebrating = m_PetCelebrate > 0.0f;
-	constexpr float PARTY = 14.0f;
-	const float Party = PARTY - m_PetCelebrate; // seconds since the party began
-	const float PartyFade = Celebrating ? std::min(1.0f, m_PetCelebrate / 0.8f) : 0.0f;
-	const auto Smooth = [](float X) {
-		X = std::clamp(X, 0.0f, 1.0f);
-		return X * X * (3.0f - 2.0f * X);
-	};
-
-	// roll over: eased somersault with a hop; the panda turns like a card while it spins
-	const float R = m_PetRoll;
-	const float E = R * R * R * (R * (6.0f * R - 15.0f) + 10.0f);
-	const bool Rolling = R < 1.0f;
-	const float RollAngle = Rolling ? E * 2.0f * pi * m_PetFacing : 0.0f;
-	const float ScaleX = Rolling ? -m_PetFacing * std::cos(pi * E) : m_PetFacing;
-	const float RollHop = Rolling ? std::sin(pi * E) * 0.5f : 0.0f;
-	const float Tuck = Rolling ? std::sin(pi * E) : 0.0f;
-	float SquashY = 1.0f;
-	if(Rolling && R < 0.12f)
-		SquashY -= 0.1f * std::sin(R / 0.12f * pi);
-	else if(R > 0.88f && Rolling)
-		SquashY -= 0.08f * std::sin((R - 0.88f) / 0.12f * pi);
-
-	// hovering: slow bob, and when celebrating jumps and sways
-	const float Bob = std::sin(Time * 2.1f) * 0.025f;
-	const float Dance = Celebrating ? Smooth((Party - 1.5f) / 0.5f) * PartyFade : 0.0f;
-	const float Jump = Dance * std::fabs(std::sin(Time * 5.0f)) * 0.28f;
-	const float WakeJump = m_PetWake > 0.0f ? std::sin(m_PetWake * pi) * 0.2f : 0.0f;
-	const float Lift = Bob + RollHop + Jump + WakeJump;
-	const float Sway = (Asleep ? 0.0f : std::sin(Time * 1.5f) * 0.05f) + Dance * std::sin(Time * 5.0f) * 0.14f;
-	const float Breath = 1.0f + (Asleep ? 0.03f : 0.015f) * std::sin(Time * (Asleep ? 1.4f : 2.4f));
-
-	const float Rot = RollAngle + Sway;
-	const vec2 Pivot(0.0f, -0.5f);
-	const float CosR = std::cos(Rot), SinR = std::sin(Rot);
-	const auto Tr = [&](vec2 P) {
-		P.y *= SquashY * Breath;
-		vec2 D = P - Pivot;
-		D.x *= ScaleX;
-		const vec2 Rotated(D.x * CosR - D.y * SinR, D.x * SinR + D.y * CosR);
-		const vec2 W = Pivot + Rotated;
-		return Feet + vec2(W.x * Size, (W.y - Lift) * Size);
-	};
-
-	const auto Shade = [&](ColorRGBA C, float A) { return ColorRGBA(C.r, C.g, C.b, C.a * A); };
-	Graphics()->TextureClear();
-	Graphics()->QuadsBegin();
-
-	// ---- the little cloud under the paws (world coordinates, it does not roll) ----
-	{
-		const float CloudBob = -Bob * 0.5f;
-		const float Grow = 1.0f + 0.25f * Sleep;
-		struct SPuff
-		{
-			float m_X, m_Y, m_Rx, m_Ry;
-		};
-		static const SPuff s_aPuffs[6] = {{-0.55f, 0.06f, 0.26f, 0.11f}, {-0.25f, 0.0f, 0.3f, 0.15f}, {0.1f, 0.03f, 0.34f, 0.16f}, {0.45f, 0.06f, 0.28f, 0.12f}, {0.0f, 0.1f, 0.6f, 0.09f}, {0.65f, 0.09f, 0.18f, 0.08f}};
-		for(int Layer = 0; Layer < 2; Layer++)
-		{
-			const ColorRGBA CloudColor = Layer == 0 ? ColorRGBA(0.72f, 0.82f, 0.98f, 0.55f * Alpha) : ColorRGBA(1.0f, 1.0f, 1.0f, 0.85f * Alpha);
-			Graphics()->SetColor(CloudColor);
-			for(const SPuff &Puff : s_aPuffs)
-			{
-				const vec2 C = Feet + vec2(Puff.m_X * Grow, Puff.m_Y + CloudBob + (Layer == 0 ? 0.03f : 0.0f)) * Size;
-				const float Rx = Puff.m_Rx * Grow * Size * (Layer == 0 ? 1.1f : 1.0f);
-				const float Ry = Puff.m_Ry * Size * (Layer == 0 ? 1.1f : 1.0f);
-				constexpr int N = 14;
-				vec2 aP[N + 1];
-				for(int i = 0; i <= N; i++)
-					aP[i] = C + vec2(std::cos(2.0f * pi * i / N) * Rx, std::sin(2.0f * pi * i / N) * Ry);
-				for(int i = 0; i < N; i++)
-				{
-					const IGraphics::CFreeformItem Item(C, aP[i], aP[i + 1], aP[i + 1]);
-					Graphics()->QuadsDrawFreeform(&Item, 1);
-				}
-			}
-		}
-	}
-
-	const auto Line = [&](vec2 A, vec2 B, float Width, ColorRGBA Color) {
-		Graphics()->SetColor(Color);
-		const vec2 PA = Tr(A), PB = Tr(B);
-		vec2 Dir = PB - PA;
-		const float Len = length(Dir);
-		if(Len < 0.001f)
-			return;
-		Dir /= Len;
-		const vec2 Nrm(-Dir.y, Dir.x);
-		const float W = Width * Size * 0.5f;
-		const IGraphics::CFreeformItem Item(PA + Nrm * W, PA - Nrm * W, PB + Nrm * W, PB - Nrm * W);
-		Graphics()->QuadsDrawFreeform(&Item, 1);
-	};
-
-	// ---- pixel art ----
-	// One pixel is PX units of Size. The picture is 64 x 46 pixels, its origin is the middle of the paws.
-	constexpr float PX = 0.024f;
-	const auto PixelColor = [&](char C, float Dim, float A) {
-		ColorRGBA Color;
-		switch(C)
-		{
-		case 'W': Color = ColorRGBA(0.98f, 0.98f, 0.98f, 1.0f); break;
-		case 'w': Color = ColorRGBA(0.87f, 0.89f, 0.92f, 1.0f); break;
-		case 'K': Color = ColorRGBA(0.11f, 0.11f, 0.13f, 1.0f); break;
-		case 'O': Color = ColorRGBA(0.27f, 0.28f, 0.34f, 1.0f); break;
-		case 'P': Color = ColorRGBA(1.0f, 0.59f, 0.67f, 1.0f); break;
-		case 'E': Color = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f); break;
-		case 'N': Color = ColorRGBA(0.05f, 0.05f, 0.06f, 1.0f); break;
-		case 'G': Color = ColorRGBA(0.31f, 0.31f, 0.36f, 1.0f); break;
-		case 'R': Color = ColorRGBA(1.0f, 0.39f, 0.55f, 1.0f); break;
-		case 'Y': Color = ColorRGBA(1.0f, 0.86f, 0.31f, 1.0f); break;
-		default: Color = ColorRGBA(0.39f, 0.75f, 1.0f, 1.0f); break;
-		}
-		return ColorRGBA(Color.r * Dim, Color.g * Dim, Color.b * Dim, A * Alpha);
-	};
-	const auto Pixels = [&](const char *const *ppRows, int NumRows, int Width, float Px, float Py, float Angle, vec2 PivotPx, float Dim = 1.0f, float A = 1.0f) {
-		const float Ca = std::cos(Angle), Sa = std::sin(Angle);
-		const auto ToLocal = [&](float X, float Y) {
-			const float Dx = X - PivotPx.x, Dy = Y - PivotPx.y;
-			const float Rx = PivotPx.x + Dx * Ca - Dy * Sa, Ry = PivotPx.y + Dx * Sa + Dy * Ca;
-			return Tr(vec2((Rx - 32.0f) * PX, (Ry - 46.0f) * PX));
-		};
-		for(int Row = 0; Row < NumRows; Row++)
-		{
-			for(int Col = 0; Col < Width;)
-			{
-				const char C = ppRows[Row][Col];
-				if(C == '.')
-				{
-					Col++;
-					continue;
-				}
-				int End = Col + 1;
-				while(End < Width && ppRows[Row][End] == C)
-					End++;
-				Graphics()->SetColor(PixelColor(C, Dim, A));
-				const float X0 = Px + Col, X1 = Px + End, Y0 = Py + Row, Y1 = Py + Row + 1.0f;
-				const IGraphics::CFreeformItem Item(ToLocal(X0, Y0), ToLocal(X1, Y0), ToLocal(X0, Y1), ToLocal(X1, Y1));
-				Graphics()->QuadsDrawFreeform(&Item, 1);
-				Col = End;
-			}
-		}
-	};
-
-	static const char *const s_apHeadOpen[30] = {
-		"....OOOOOO..............OOOOOO....",
-		"...OKKKKKKO............OKKKKKKO...",
-		"..OKKKKKKKKO..........OKKKKKKKKO..",
-		".OKKKKKKKKKKOOOOOOOOOOKKKKKKKKKKO.",
-		".OKKKKGGKKKWWWWWWWWWWWWKKKGGKKKKO.",
-		".OKKKGGGGWWWWWWWWWWWWWWWWGGGGKKKO.",
-		".OKKKGGWWWWWWWWWWWWWWWWWWWWGGKKKO.",
-		".OKKKGWWWWWWWWWWWWWWWWWWWWWWGKKKO.",
-		".OKKKWWWWWWWWWWWWWWWWWWWWWWWWKKKO.",
-		"..OKWWWWWWKWWWWWWWWWWWWKWWWWWWKO..",
-		"..OWWWWWKKKKKWWWWWWWWKKKKKWWWWWO..",
-		"..OWWWWKKKKKKKWWWWWWKKKKKKKWWWWO..",
-		".OWWWWKKKKKKKKWWWWWWKKKKKKKKWWWWO.",
-		".OWWWKKKEEKKKKWWWWWWKKKEEKKKKWWWO.",
-		".OWWWKKKEEKKKKWWWWWWKKKEEKKKKWWWO.",
-		".OWWWKKKEKKKKKWWWWWWKKKEKKKKKWWWO.",
-		".OWWWKKKKKKKKKWWWWWWKKKKKKKKKWWWO.",
-		".OWWWKKKKKKKKWWWWWWWWKKKKKKKKWWWO.",
-		".OWWWKKKKKKKWWWWWWWWWWKKKKKKKWWWO.",
-		".OWWWWKKKKKWWWWNNNNWWWWKKKKKWWWWO.",
-		".OWPPPPPKWWwwwNNNNNNwwwWWKPPPPPWO.",
-		".OWPPPPPwwwwwwNNNNNNwwwwwwPPPPPWO.",
-		".OWPPPPPwwwwwwwNNNNwwwwwwwPPPPPWO.",
-		".OWPPPPPwwwwwwwNwNwNwwwwwwPPPPPWO.",
-		"..OwwwwwwwwwwwwwNwNwwwwwwwwwwwwO..",
-		"...OOwwwwwwwwwwwwNwwwwwwwwwwwOO...",
-		".....OwwwwwwwwwwwwwwwwwwwwwwO.....",
-		"......OOOwwwwwwwwwwwwwwwwOOO......",
-		".........OOOOOOOOOOOOOOOO.........",
-		".................................."
-};
-	static const char *const s_apHeadClosed[30] = {
-		"....OOOOOO..............OOOOOO....",
-		"...OKKKKKKO............OKKKKKKO...",
-		"..OKKKKKKKKO..........OKKKKKKKKO..",
-		".OKKKKKKKKKKOOOOOOOOOOKKKKKKKKKKO.",
-		".OKKKKGGKKKWWWWWWWWWWWWKKKGGKKKKO.",
-		".OKKKGGGGWWWWWWWWWWWWWWWWGGGGKKKO.",
-		".OKKKGGWWWWWWWWWWWWWWWWWWWWGGKKKO.",
-		".OKKKGWWWWWWWWWWWWWWWWWWWWWWGKKKO.",
-		".OKKKWWWWWWWWWWWWWWWWWWWWWWWWKKKO.",
-		"..OKWWWWWWKWWWWWWWWWWWWKWWWWWWKO..",
-		"..OWWWWWKKKKKWWWWWWWWKKKKKWWWWWO..",
-		"..OWWWWKKKKKKKWWWWWWKKKKKKKWWWWO..",
-		".OWWWWKKKKKKKKWWWWWWKKKKKKKKWWWWO.",
-		".OWWWKKKKKKKKKWWWWWWKKKKKKKKKWWWO.",
-		".OWWWKKKKKKKKKWWWWWWKKKKKKKKKWWWO.",
-		".OWWWKKKwwwKKKWWWWWWKKKwwwKKKWWWO.",
-		".OWWWKKKKKKKKKWWWWWWKKKKKKKKKWWWO.",
-		".OWWWKKKKKKKKWWWWWWWWKKKKKKKKWWWO.",
-		".OWWWKKKKKKKWWWWWWWWWWKKKKKKKWWWO.",
-		".OWWWWKKKKKWWWWNNNNWWWWKKKKKWWWWO.",
-		".OWPPPPPKWWwwwNNNNNNwwwWWKPPPPPWO.",
-		".OWPPPPPwwwwwwNNNNNNwwwwwwPPPPPWO.",
-		".OWPPPPPwwwwwwwNNNNwwwwwwwPPPPPWO.",
-		".OWPPPPPwwwwwwwNwNwNwwwwwwPPPPPWO.",
-		"..OwwwwwwwwwwwwwNwNwwwwwwwwwwwwO..",
-		"...OOwwwwwwwwwwwwNwwwwwwwwwwwOO...",
-		".....OwwwwwwwwwwwwwwwwwwwwwwO.....",
-		"......OOOwwwwwwwwwwwwwwwwOOO......",
-		".........OOOOOOOOOOOOOOOO.........",
-		".................................."
-};
-	static const char *const s_apHeadHappy[30] = {
-		"....OOOOOO..............OOOOOO....",
-		"...OKKKKKKO............OKKKKKKO...",
-		"..OKKKKKKKKO..........OKKKKKKKKO..",
-		".OKKKKKKKKKKOOOOOOOOOOKKKKKKKKKKO.",
-		".OKKKKGGKKKWWWWWWWWWWWWKKKGGKKKKO.",
-		".OKKKGGGGWWWWWWWWWWWWWWWWGGGGKKKO.",
-		".OKKKGGWWWWWWWWWWWWWWWWWWWWGGKKKO.",
-		".OKKKGWWWWWWWWWWWWWWWWWWWWWWGKKKO.",
-		".OKKKWWWWWWWWWWWWWWWWWWWWWWWWKKKO.",
-		"..OKWWWWWWKWWWWWWWWWWWWKWWWWWWKO..",
-		"..OWWWWWKKKKKWWWWWWWWKKKKKWWWWWO..",
-		"..OWWWWKKKKKKKWWWWWWKKKKKKKWWWWO..",
-		".OWWWWKKKKKKKKWWWWWWKKKKKKKKWWWWO.",
-		".OWWWKKKKKKKKKWWWWWWKKKKKKKKKWWWO.",
-		".OWWWKKKKKKKKKWWWWWWKKKKKKKKKWWWO.",
-		".OWWWKKKKwKKKKWWWWWWKKKKwKKKKWWWO.",
-		".OWWWKKKwKwKKKWWWWWWKKKwKwKKKWWWO.",
-		".OWWWKKKKKKKKWWWWWWWWKKKKKKKKWWWO.",
-		".OWWWKKKKKKKWWWWWWWWWWKKKKKKKWWWO.",
-		".OWWWWKKKKKWWWWNNNNWWWWKKKKKWWWWO.",
-		".OWPPPPPKWWwwwNNNNNNwwwWWKPPPPPWO.",
-		".OWPPPPPwwwwwwNNNNNNwwwwwwPPPPPWO.",
-		".OWPPPPPwwwwwwwNNNNwwwwwwwPPPPPWO.",
-		".OWPPPPPwwwwwwwwwNwwwwwwwwPPPPPWO.",
-		"..OwwwwwwwwwwwwNRRRNwwwwwwwwwwwO..",
-		"...OOwwwwwwwwwwNNNNNwwwwwwwwwOO...",
-		".....OwwwwwwwwwwwwwwwwwwwwwwO.....",
-		"......OOOwwwwwwwwwwwwwwwwOOO......",
-		".........OOOOOOOOOOOOOOOO.........",
-		".................................."
-};
-	static const char *const s_apBody[26] = {
-		"............................................",
-		"................OOOOOOOOOOOO................",
-		"............OOOOWWWWWWWWWWWWOOOO............",
-		".........OOOWWWWWWWWWWWWWWWWWWKKOOO.........",
-		".......OOWWWWWWWWWWWWWWWWWWWWKKKKKKOO.......",
-		"......OWWWWWWWWWWWWWWWWWWWWWKKKKKKKKKO......",
-		".....OWWWWWWWWWWWWWWWWWWWWWWKKKKKKKKKKO.....",
-		"....OWWWWWWWWWWWWWWWWWWWWWWWKKKKKKKKKKWO....",
-		"...OWWWWWWWWWWWWWWWWWWWWWWWKKKKKKKKKKKKWO...",
-		"..OWWWWWWWWWWWWWWWWWWWWWWWWKKKKKKKKKKKKWWO..",
-		"..OWWWWWWWWWWWWWWWWWWWWWWWWKKKKKKKKKKKKWWO..",
-		".OWWWWKKKKKKKKWWWWWWWWWWWWWKKKKKKKKKKKKWWWO.",
-		".OWWWKKKKKKKKKKWWWWWWWWWWWWKKKKKKKKKKKKWWWO.",
-		".OWWKKKKKKKKKKKKWWWWWWWWWWWKKKKKKKKKKKKWWWO.",
-		".OWKKKKKKKKKKKKKKWWWWWWWWWWKKKKKKKKKKKKWWWO.",
-		"..OKKKKKKKKKKKKKKWWWWWWWWWWKKKKKKKKKKKKWWO..",
-		"..OKKKKKKKKKKKKKKWWWWWWWWWWKKKKKKKKKKKKwwO..",
-		"...OKKKKKKKKKKKKKwwwwwwwwwwKKKKKKKKKKKKwO...",
-		"....OKKKKKKKKKKKKwwwwwwwwwwwKKKKKKKKKKwO....",
-		".....OKKKKKKKKKKKwwwwwwwwwwwKKKKKKKKKKO.....",
-		"......OKKKKKKKKKKwwwwwwwwwwwKKKKKKKKKO......",
-		".......OOKKKKKKKKwwwwwwwwwwwwKKKKKKOO.......",
-		".........OOOKKKKwwwwwwwwwwwwwwKKOOO.........",
-		"............OOOOwwwwwwwwwwwwOOOO............",
-		"................OOOOOOOOOOOO................",
-		"............................................"
-};
-	static const char *const s_apLeg[14] = {
-		"...OOOOO...",
-		"..OKKKKKO..",
-		".OKKKKKKKO.",
-		".OKKKKKKKO.",
-		"OKKKKKKKKKO",
-		"OKKKKKKKKKO",
-		"OKKKKKKKKKO",
-		"OKKKKKKKKKO",
-		"OKKKKKKKKKO",
-		"OKKKKKKKKKO",
-		"OKGGGGGGGKO",
-		"OKGGGGGGGKO",
-		"OKKKKKKKKKO",
-		".OOKKKKKOO."
-};
-	static const char *const s_apTail[9] = {
-		"...OOO...",
-		"..OWWWO..",
-		".OWWWWWO.",
-		"OWWWWWWWO",
-		"OWwwwwwWO",
-		"OwwwwwwwO",
-		".OwwwwwO.",
-		"..OwwwO..",
-		"...OOO..."
-};
-	static const char *const s_apHat[20] = {
-		".....OWWWO.....",
-		"....OWWYWWO....",
-		"....OWWWWWO....",
-		".....OWWWO.....",
-		".....ORRYO.....",
-		".....ORYYO.....",
-		"....ORYYYRO....",
-		"....OYYYRRO....",
-		"....OYYRRRO....",
-		"...OYYRRRYYO...",
-		"...OYRRRYYYO...",
-		"...ORRRYYYRO...",
-		"..ORRRYYYRRRO..",
-		"..ORRYYYRRRYO..",
-		".ORRYYYRRRYYYO.",
-		".ORYYYRRRYYYRO.",
-		".OYYYRRRYYYRRO.",
-		"OBBBBBBBBBBBBBO",
-		"OBBBBBBBBBBBBBO",
-		".OOOOOOOOOOOOO."
-};
-	static const char *const s_apLie[22] = {
-		"..............................................",
-		"..............OOOOOOOOOOOOOOOOOO..............",
-		"..........OOOOWWWWWWWWWWWWWWWWWWOOOO..........",
-		"........OOWWWWWWWWWWWWWWWWWWWWWWWWWWOO........",
-		"......OOWWWWWWWWWWWWWWWWWWWWWWWWKKKKWWOO......",
-		".....OWWWWWWWWWWWWWWWWWWWWWWWWKKKKKKKKWWO.....",
-		"...OOWWWWWWWWWWWWWWWWWWWWWWWWWKKKKKKKKWWWOO...",
-		"..OWWWWWWWWWWWWWWWWWWWWWWWWWWKKKKKKKKKKWWWWO..",
-		"..OWWWWKKKKKKWWWWWWWWWWWWWWWKKKKKKKKKKKKWWWO..",
-		".OWWWKKKKKKKKKKWWWWWWWWWWWWWKKKKKKKKKKKKWWWWO.",
-		".OWWKKKKKKKKKKKKWWWWWWWWWWWWKKKKKKKKKKKKWWWWO.",
-		".OWWKKKKKKKKKKKKWWWWWWWWWWWWKKKKKKKKKKKKWWWWO.",
-		".OWKKKKKKKKKKKKKKWWWWWWWWWWWKKKKKKKKKKKKWWWWO.",
-		"..OKKKKKKKKKKKKKKWWWWWWWWWWWKKKKKKKKKKKKWWWO..",
-		"..OKKKKKKKKKKKKKKWWWWWWWWWWWKKKKKKKKKKKKwwwO..",
-		"...OOKKKKKKKKKKKKWWWWWWWWWWWKKKKKKKKKKKKwOO...",
-		".....OKKKKKKKKKKWWWWWWWWWWWWKKKKKKKKKKKKO.....",
-		"......OOKKKKKKKKWWWWWWWWWWWWKKKKKKKKKKOO......",
-		"........OOKKKKKwwwwwwwwwwwwwwKKKKKKKOO........",
-		"..........OOOOwwwwwwwwwwwwwwwwKKOOOO..........",
-		"..............OOOOOOOOOOOOOOOOOO..............",
-		".............................................."
-};
-
-	const bool Blink = std::fmod(Time + 1.3f, 3.5f) < 0.12f;
-	const bool Happy = Celebrating && Party > 0.3f;
-	const char *const *ppHead = (Asleep || Blink) ? s_apHeadClosed : (Happy ? s_apHeadHappy : s_apHeadOpen);
-
-	// head: nods, looks around, bounces along with the dance
-	const float Nod = Asleep ? 1.5f + std::sin(Time * 1.4f) * 0.5f : std::sin(Time * 2.0f + 0.8f) * 0.8f;
-	const float Tilt = Asleep ? 0.14f : std::sin(Time * 1.3f) * 0.06f + Dance * std::sin(Time * 5.0f + 1.0f) * 0.14f;
-
-	if(!Asleep)
-	{
-		// legs hang down and paddle a little, curling up while rolling
-		const float Speed = std::min(1.0f, length(Vel) / 160.0f);
-		const auto LegAngle = [&](float Phase) {
-			return std::sin(Time * 3.0f + Phase) * (0.12f + 0.25f * Speed) - Tuck * 1.1f;
-		};
-		// party: the paws wave, one of them puts the hat on first
-		const float HoldRaise = Celebrating ? Smooth(Party / 0.45f) * (1.0f - Smooth((Party - 1.3f) / 0.35f)) : 0.0f;
-		const float DanceRaise = Dance;
-		const float NearFront = -2.45f * HoldRaise + (-1.9f + std::sin(Time * 6.0f) * 0.55f) * DanceRaise + (1.0f - HoldRaise) * (1.0f - DanceRaise) * LegAngle(0.0f);
-		const float FarFront = (-1.9f + std::sin(Time * 6.0f + pi) * 0.55f) * DanceRaise + (1.0f - DanceRaise) * LegAngle(pi);
-
-		Pixels(s_apLeg, 14, 11, 11.0f, 32.0f, LegAngle(pi * 0.5f), vec2(16.5f, 34.0f), 0.78f);
-		Pixels(s_apLeg, 14, 11, 33.0f, 32.0f, FarFront, vec2(38.5f, 34.0f), 0.78f);
-		Pixels(s_apTail, 9, 9, 0.0f, 24.0f, std::sin(Time * 4.0f) * (Celebrating ? 0.35f : 0.12f), vec2(5.0f, 28.0f));
-		Pixels(s_apBody, 26, 44, 3.0f, 16.0f, 0.0f, vec2(0.0f, 0.0f));
-		Pixels(s_apLeg, 14, 11, 6.0f, 32.0f, LegAngle(0.0f), vec2(11.5f, 34.0f));
-		Pixels(s_apLeg, 14, 11, 29.0f, 32.0f, NearFront, vec2(34.5f, 34.0f));
-		Pixels(ppHead, 30, 34, 29.0f, 0.0f + Nod, Tilt, vec2(46.0f, 26.0f));
-
-		// the party hat: first held in the paw, then set on the head
-		if(Celebrating)
-		{
-			const float Appear = Smooth(Party / 0.25f) * PartyFade;
-			const float Move = Smooth((Party - 0.45f) / 0.7f);
-			const vec2 Tip = vec2(34.5f, 34.0f) + vec2(-11.0f * std::sin(NearFront), 11.0f * std::cos(NearFront));
-			const vec2 HeadSpot(37.0f, -14.0f + Nod);
-			const vec2 Held = Tip - vec2(7.5f, 19.0f);
-			const vec2 Pos = Held + (HeadSpot - Held) * Move;
-			Pixels(s_apHat, 20, 15, Pos.x, Pos.y, Tilt * Move, vec2(46.0f, 26.0f), 1.0f, Appear);
-		}
-	}
-	else
-	{
-		// asleep: lying curled up on the cloud with the head on the front paws
-		const float Breathe = std::sin(Time * 1.4f) * 0.4f;
-		Pixels(s_apTail, 9, 9, 1.0f, 33.0f, 0.0f, vec2(5.0f, 38.0f));
-		Pixels(s_apLie, 22, 46, 5.0f, 24.0f - Breathe, 0.0f, vec2(0.0f, 0.0f));
-		Pixels(s_apHeadClosed, 30, 34, 31.0f, 13.0f + Nod, Tilt, vec2(48.0f, 38.0f));
-		Pixels(s_apLeg, 14, 11, 44.5f, 36.0f, -1.5f, vec2(50.0f, 41.0f));
-		Pixels(s_apLeg, 14, 11, 48.5f, 38.0f, -1.5f, vec2(54.0f, 43.0f));
-
-		// floating Z letters like in a comic
-		for(int i = 0; i < 3; i++)
-		{
-			const float Phase = std::fmod(Time * 0.4f + i / 3.0f, 1.0f);
-			const float Scale = (0.5f + Phase * 0.8f) * 0.15f * Sleep;
-			const vec2 Pos(0.55f + Phase * 0.35f, -0.85f - Phase * 0.7f);
-			const float A = std::sin(Phase * pi) * Sleep * Alpha;
-			const ColorRGBA ZColor(0.8f, 0.88f, 1.0f, A);
-			Line(Pos + vec2(-Scale, -Scale), Pos + vec2(Scale, -Scale), Scale * 0.35f, ZColor);
-			Line(Pos + vec2(Scale, -Scale), Pos + vec2(-Scale, Scale), Scale * 0.35f, ZColor);
-			Line(Pos + vec2(-Scale, Scale), Pos + vec2(Scale, Scale), Scale * 0.35f, ZColor);
-		}
-	}
-	(void)Shade;
-
-	// balloons of the party, they live in world coordinates
-	for(const CBalloon &Balloon : m_vBalloons)
-	{
-		const float Fade = std::min(1.0f, Balloon.m_Life);
-		const ColorRGBA Color(Balloon.m_Color.r, Balloon.m_Color.g, Balloon.m_Color.b, Fade * Alpha);
-		const float Rx = Size * 0.17f, Ry = Size * 0.21f;
-		Graphics()->SetColor(Color);
-		constexpr int N = 16;
-		vec2 aP[N + 1];
-		for(int i = 0; i <= N; i++)
-			aP[i] = Balloon.m_Pos + vec2(std::cos(2.0f * pi * i / N) * Rx, std::sin(2.0f * pi * i / N) * Ry);
-		for(int i = 0; i < N; i++)
-		{
-			const IGraphics::CFreeformItem Item(Balloon.m_Pos, aP[i], aP[i + 1], aP[i + 1]);
-			Graphics()->QuadsDrawFreeform(&Item, 1);
-		}
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.5f * Fade * Alpha);
-		const vec2 Shine = Balloon.m_Pos + vec2(-Rx * 0.4f, -Ry * 0.4f);
-		const IGraphics::CFreeformItem ShineItem(Shine + vec2(-2.0f, 0.0f), Shine + vec2(0.0f, -2.0f), Shine + vec2(0.0f, 2.0f), Shine + vec2(2.0f, 0.0f));
-		Graphics()->QuadsDrawFreeform(&ShineItem, 1);
-		Graphics()->SetColor(Color);
-		const vec2 Knot = Balloon.m_Pos + vec2(0.0f, Ry);
-		const IGraphics::CFreeformItem KnotItem(Knot, Knot + vec2(-3.0f, 5.0f), Knot + vec2(3.0f, 5.0f), Knot + vec2(3.0f, 5.0f));
-		Graphics()->QuadsDrawFreeform(&KnotItem, 1);
-		Graphics()->SetColor(0.9f, 0.9f, 0.9f, 0.7f * Fade * Alpha);
-		const vec2 StringEnd = Knot + vec2(std::sin(Time * 2.0f + Balloon.m_Phase) * 5.0f, Size * 0.45f);
-		const IGraphics::CFreeformItem StringItem(Knot + vec2(-0.5f, 5.0f), Knot + vec2(0.5f, 5.0f), StringEnd + vec2(-0.5f, 0.0f), StringEnd + vec2(0.5f, 0.0f));
-		Graphics()->QuadsDrawFreeform(&StringItem, 1);
-	}
-
-	Graphics()->QuadsEnd();
-	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-}
-
 bool CVisuals::ShouldShimmer(int ClientId) const
 {
 	if(!g_Config.m_ClVisualsNameShimmer || ClientId < 0 || ClientId >= MAX_CLIENTS)
@@ -1328,7 +776,6 @@ void CVisuals::OnRender()
 		m_vMeteors.clear();
 		m_vEchoes.clear();
 		m_vCursorTrail.clear();
-		m_vPortals.clear();
 		m_HavePrevTee = false;
 		m_HavePrevMouse = false;
 		return;
@@ -1341,10 +788,8 @@ void CVisuals::OnRender()
 	const bool Predict = false; // drawn behind the tee instead, see RenderBehindTee
 	const bool Petals = g_Config.m_ClVisualsPetals;
 	const bool Bubbles = g_Config.m_ClVisualsBubbles;
-	const bool Starfield = g_Config.m_ClVisualsStarfield;
-	const bool Meteors = g_Config.m_ClVisualsMeteors;
-	const bool SpeedFx = g_Config.m_ClVisualsCursorTrail || !m_vCursorTrail.empty() || !m_vPortals.empty();
-	if(!SpeedFx && !Snow && !Fireflies && !Predict && !Petals && !Bubbles && !Starfield && !Meteors && m_vBlackHoles.empty() && m_vPixelTees.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty() && m_vMeteors.empty())
+	const bool SpeedFx = g_Config.m_ClVisualsCursorTrail || !m_vCursorTrail.empty();
+	if(!SpeedFx && !Snow && !Fireflies && !Predict && !Petals && !Bubbles && m_vBlackHoles.empty() && m_vPixelTees.empty() && m_vBurstFlakes.empty() && m_vFlashes.empty() && m_vRings.empty() && m_vGlows.empty() && m_vSouls.empty())
 		return;
 
 	// The game world is still mapped to the screen here, so everything below is drawn in world coordinates.
@@ -1717,80 +1162,98 @@ void CVisuals::OnRender()
 
 		if(Radius > 0.5f)
 		{
-			const ColorRGBA Core(1.0f, 0.93f, 0.75f, 1.0f);
-			const ColorRGBA Mid(1.0f, 0.55f, 0.12f, 1.0f);
-			const ColorRGBA Deep(0.8f, 0.2f, 0.02f, 1.0f);
-			const float Fade = P < 0.1f ? P / 0.1f : 1.0f;
+			const ColorRGBA Core(1.0f, 0.95f, 0.82f, 1.0f);
+			const ColorRGBA Mid(1.0f, 0.58f, 0.14f, 1.0f);
+			const ColorRGBA Deep(0.85f, 0.25f, 0.03f, 1.0f);
+			const float Fade = std::clamp(P / 0.1f, 0.0f, 1.0f);
+			const auto Mix = [](ColorRGBA A, ColorRGBA B, float T) { return ColorRGBA(A.r + (B.r - A.r) * T, A.g + (B.g - A.g) * T, A.b + (B.b - A.b) * T, 1.0f); };
+			const auto WithAlpha = [](ColorRGBA C, float A) { return ColorRGBA(C.r, C.g, C.b, A); };
+
 			Graphics()->BlendAdditive();
-			// faint warm glow around everything
-			DrawSprite(m_GlowTexture, Hole.m_Pos, Radius * 7.0f, Radius * 5.0f, Tilt, false, ColorRGBA(0.9f, 0.3f, 0.04f, 0.3f * Fade));
+			// one soft warm glow behind everything
+			DrawSprite(m_GlowTexture, Hole.m_Pos, Radius * 6.0f, Radius * 4.0f, Tilt, false, ColorRGBA(0.9f, 0.32f, 0.05f, 0.22f * Fade));
 
-			// the flat accretion disc: long, thin and bright, stronger on one side (like on the photo)
-			Graphics()->TextureClear();
-			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 1.2f, Radius * 0.2f)), Radius * 13.0f, Radius * 1.5f, Tilt, false, ColorRGBA(Deep.r, Deep.g, Deep.b, 0.6f * Fade));
-			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 1.0f, Radius * 0.2f)), Radius * 10.0f, Radius * 0.8f, Tilt, false, ColorRGBA(Mid.r, Mid.g, Mid.b, 0.9f * Fade));
-			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 0.6f, Radius * 0.2f)), Radius * 6.5f, Radius * 0.34f, Tilt, false, ColorRGBA(Core.r, Core.g, Core.b, 1.0f * Fade));
-			DrawSprite(m_GlowTexture, Rot(vec2(-Radius * 2.2f, Radius * 0.22f)), Radius * 5.0f, Radius * 0.5f, Tilt, false, ColorRGBA(Mid.r, Mid.g, Mid.b, 0.5f * Fade));
-			// fine orbiting streaks in the disc
-			for(int Line = 0; Line < 5; Line++)
-			{
-				const float Off = (Line - 2) * Radius * 0.1f;
-				const float Wave = std::sin(Spin * 0.8f + Line * 1.7f);
-				DrawSprite(m_GlowTexture, Rot(vec2(Radius * (1.8f + 0.5f * Wave), Radius * 0.2f + Off)), Radius * (5.0f + Line), Radius * 0.12f, Tilt, false, ColorRGBA(1.0f, 0.7f, 0.3f, 0.35f * Fade));
-			}
-
-			// the lensed ring around the dark core, brighter on top and on the disc side
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			constexpr int SEGMENTS = 64;
-			for(int Seg = 0; Seg < SEGMENTS; Seg++)
+
+			// the light of the disc bent over the top of the hole: a wide soft arc
+			constexpr int ARC = 56;
+			for(int s = 0; s < ARC; s++)
 			{
-				const float A0 = 2.0f * pi * Seg / SEGMENTS;
-				const float A1 = 2.0f * pi * (Seg + 1) / SEGMENTS;
-				const auto Bright = [&](float A) { return 0.45f + 0.55f * std::pow(0.5f + 0.5f * std::cos(A + pi * 0.5f - 0.5f), 1.5f); };
-				const float B0 = Bright(A0) * Fade, B1 = Bright(A1) * Fade;
-				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A), std::sin(A)) * R); };
-				// wide soft part
-				Graphics()->SetColor4(ColorRGBA(Mid.r, Mid.g, Mid.b, 0.55f * B0), ColorRGBA(Deep.r, Deep.g, Deep.b, 0.0f), ColorRGBA(Mid.r, Mid.g, Mid.b, 0.55f * B1), ColorRGBA(Deep.r, Deep.g, Deep.b, 0.0f));
-				const IGraphics::CFreeformItem Soft(P2(A0, Radius * 1.0f), P2(A0, Radius * 1.75f), P2(A1, Radius * 1.0f), P2(A1, Radius * 1.75f));
-				Graphics()->QuadsDrawFreeform(&Soft, 1);
-				// bright thin ring
-				Graphics()->SetColor4(ColorRGBA(Core.r, Core.g, Core.b, B0), ColorRGBA(Mid.r, Mid.g, Mid.b, 0.5f * B0), ColorRGBA(Core.r, Core.g, Core.b, B1), ColorRGBA(Mid.r, Mid.g, Mid.b, 0.5f * B1));
-				const IGraphics::CFreeformItem Ring(P2(A0, Radius * 1.0f), P2(A0, Radius * 1.16f), P2(A1, Radius * 1.0f), P2(A1, Radius * 1.16f));
-				Graphics()->QuadsDrawFreeform(&Ring, 1);
+				const float A0 = pi + pi * s / ARC, A1 = pi + pi * (s + 1) / ARC;
+				const float E0 = std::pow(std::sin(pi * s / ARC), 0.6f) * 0.55f + 0.35f * std::pow(std::abs(std::cos(pi * s / ARC)), 3.0f);
+				const float E1 = std::pow(std::sin(pi * (s + 1) / ARC), 0.6f) * 0.55f + 0.35f * std::pow(std::abs(std::cos(pi * (s + 1) / ARC)), 3.0f);
+				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A), std::sin(A)) * R * Radius); };
+				Graphics()->SetColor4(WithAlpha(Mid, 0.8f * E0 * Fade), WithAlpha(Deep, 0.0f), WithAlpha(Mid, 0.8f * E1 * Fade), WithAlpha(Deep, 0.0f));
+				const IGraphics::CFreeformItem Item(P2(A0, 1.05f), P2(A0, 1.75f), P2(A1, 1.05f), P2(A1, 1.75f));
+				Graphics()->QuadsDrawFreeform(&Item, 1);
 			}
-			// the mirrored lensed ring under the disc: a flat lower arc
-			for(int Seg = 0; Seg < 32; Seg++)
+			// the faint lower arc beneath the disc
+			for(int s = 0; s < 32; s++)
 			{
-				const float A0 = pi * Seg / 32.0f, A1 = pi * (Seg + 1) / 32.0f;
-				const float E0 = std::sin(A0) * 0.9f + 0.1f, E1 = std::sin(A1) * 0.9f + 0.1f;
-				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A) * Radius * 1.05f * R, Radius * 0.95f + std::sin(A) * Radius * 0.75f * R)); };
-				Graphics()->SetColor4(ColorRGBA(Mid.r, Mid.g, Mid.b, 0.55f * E0 * Fade), ColorRGBA(Deep.r, Deep.g, Deep.b, 0.0f), ColorRGBA(Mid.r, Mid.g, Mid.b, 0.55f * E1 * Fade), ColorRGBA(Deep.r, Deep.g, Deep.b, 0.0f));
-				const IGraphics::CFreeformItem Low(P2(A0, 1.0f), P2(A0, 1.18f), P2(A1, 1.0f), P2(A1, 1.18f));
-				Graphics()->QuadsDrawFreeform(&Low, 1);
+				const float A0 = pi * s / 32.0f, A1 = pi * (s + 1) / 32.0f;
+				const float E0 = std::sin(A0) * 0.8f + 0.2f, E1 = std::sin(A1) * 0.8f + 0.2f;
+				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A) * 1.02f * R, std::sin(A) * 0.78f * R) * Radius); };
+				Graphics()->SetColor4(WithAlpha(Mid, 0.45f * E0 * Fade), WithAlpha(Deep, 0.0f), WithAlpha(Mid, 0.45f * E1 * Fade), WithAlpha(Deep, 0.0f));
+				const IGraphics::CFreeformItem Item(P2(A0, 1.04f), P2(A0, 1.3f), P2(A1, 1.04f), P2(A1, 1.3f));
+				Graphics()->QuadsDrawFreeform(&Item, 1);
 			}
 			Graphics()->QuadsEnd();
 
-			// a few stars around, like on the photo
-			for(int Star = 0; Star < 10; Star++)
-			{
-				const float Angle = Star * 2.4f + Hole.m_Hue * 10.0f;
-				const float Dist = Radius * (2.6f + 0.35f * Star);
-				const float Twinkle = 0.5f + 0.5f * std::sin(Age * 5.0f + Star * 1.9f);
-				DrawSprite(m_StarTexture, Hole.m_Pos + vec2(std::cos(Angle), std::sin(Angle) * 0.7f) * Dist, 6.0f, 6.0f, Angle, false, ColorRGBA(1.0f, 0.9f, 0.7f, 0.6f * Twinkle * Fade));
-			}
+			// the black core covers the middle of all this light
 			Graphics()->BlendNormal();
-
-			// the black core is drawn over the ring and the back of the disc
-			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
 			Graphics()->SetColor(0.0f, 0.0f, 0.0f, Fade);
-			Graphics()->DrawCircle(Hole.m_Pos.x, Hole.m_Pos.y, Radius * 0.99f, 40);
+			Graphics()->DrawCircle(Hole.m_Pos.x, Hole.m_Pos.y, Radius, 48);
 			Graphics()->QuadsEnd();
-			// the front of the disc crosses the lower part of the core
+
 			Graphics()->BlendAdditive();
-			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 0.9f, Radius * 0.22f)), Radius * 8.5f, Radius * 0.55f, Tilt, false, ColorRGBA(Mid.r, Mid.g, Mid.b, 0.95f * Fade));
-			DrawSprite(m_GlowTexture, Rot(vec2(Radius * 0.7f, Radius * 0.22f)), Radius * 6.0f, Radius * 0.26f, Tilt, false, ColorRGBA(Core.r, Core.g, Core.b, Fade));
+			Graphics()->QuadsBegin();
+			// thin bright photon ring right at the edge of the core
+			constexpr int RING = 64;
+			for(int s = 0; s < RING; s++)
+			{
+				const float A0 = 2.0f * pi * s / RING, A1 = 2.0f * pi * (s + 1) / RING;
+				const float B0 = 0.7f + 0.3f * std::sin(A0 - pi * 0.5f - 0.4f), B1 = 0.7f + 0.3f * std::sin(A1 - pi * 0.5f - 0.4f);
+				const auto P2 = [&](float A, float R) { return Rot(vec2(std::cos(A), std::sin(A)) * R * Radius); };
+				Graphics()->SetColor4(WithAlpha(Mid, 0.0f), WithAlpha(Core, B0 * Fade), WithAlpha(Mid, 0.0f), WithAlpha(Core, B1 * Fade));
+				const IGraphics::CFreeformItem Inner(P2(A0, 0.98f), P2(A0, 1.04f), P2(A1, 0.98f), P2(A1, 1.04f));
+				Graphics()->QuadsDrawFreeform(&Inner, 1);
+				Graphics()->SetColor4(WithAlpha(Core, B0 * Fade), WithAlpha(Mid, 0.0f), WithAlpha(Core, B1 * Fade), WithAlpha(Mid, 0.0f));
+				const IGraphics::CFreeformItem Outer(P2(A0, 1.04f), P2(A0, 1.2f), P2(A1, 1.04f), P2(A1, 1.2f));
+				Graphics()->QuadsDrawFreeform(&Outer, 1);
+			}
+			// the flat disc: a long thin lens with a white hot center line, drawn over the core
+			constexpr int STRIPS = 56;
+			const float Len = Radius * 5.5f;
+			for(int s = 0; s < STRIPS; s++)
+			{
+				const float X0 = (s / (float)STRIPS * 2.0f - 1.0f), X1 = ((s + 1) / (float)STRIPS * 2.0f - 1.0f);
+				const auto Env = [&](float X) { return std::pow(std::max(0.0f, 1.0f - std::abs(X)), 0.75f) * (X > 0.0f ? 1.0f : 0.78f); };
+				const auto Half = [&](float X) { return Radius * (0.035f + 0.12f * std::pow(std::max(0.0f, 1.0f - std::abs(X)), 1.4f)); };
+				const float E0 = Env(X0), E1 = Env(X1);
+				const float H0 = Half(X0), H1 = Half(X1);
+				const float Y = Radius * 0.2f; // the disc crosses slightly below the middle of the core
+				const auto Pt = [&](float X, float Dy) { return Rot(vec2(X * Len, Y + Dy)); };
+				const ColorRGBA C0 = Mix(Mid, Core, std::pow(E0, 1.5f)), C1 = Mix(Mid, Core, std::pow(E1, 1.5f));
+				// upper and lower halves fade from the white center line to nothing
+				Graphics()->SetColor4(WithAlpha(Deep, 0.0f), WithAlpha(C0, E0 * Fade), WithAlpha(Deep, 0.0f), WithAlpha(C1, E1 * Fade));
+				const IGraphics::CFreeformItem Up(Pt(X0, -H0 * 2.4f), Pt(X0, 0.0f), Pt(X1, -H1 * 2.4f), Pt(X1, 0.0f));
+				Graphics()->QuadsDrawFreeform(&Up, 1);
+				Graphics()->SetColor4(WithAlpha(C0, E0 * Fade), WithAlpha(Deep, 0.0f), WithAlpha(C1, E1 * Fade), WithAlpha(Deep, 0.0f));
+				const IGraphics::CFreeformItem Down(Pt(X0, 0.0f), Pt(X0, H0 * 2.4f), Pt(X1, 0.0f), Pt(X1, H1 * 2.4f));
+				Graphics()->QuadsDrawFreeform(&Down, 1);
+			}
+			Graphics()->QuadsEnd();
+
+			// a few tiny stars
+			for(int Star = 0; Star < 8; Star++)
+			{
+				const float Angle = Star * 2.4f + Hole.m_Hue * 10.0f;
+				const float Dist = Radius * (2.8f + 0.4f * Star);
+				const float Twinkle = 0.5f + 0.5f * std::sin(Age * 5.0f + Star * 1.9f);
+				DrawSprite(m_StarTexture, Hole.m_Pos + vec2(std::cos(Angle), std::sin(Angle) * 0.7f) * Dist, 5.0f, 5.0f, Angle, false, ColorRGBA(1.0f, 0.92f, 0.75f, 0.55f * Twinkle * Fade));
+			}
 			Graphics()->BlendNormal();
 		}
 		else if(P >= EXPLODE)
@@ -1813,114 +1276,6 @@ void CVisuals::OnRender()
 		StepGlows(m_vGlows, DeltaTime);
 		Graphics()->BlendNormal();
 	}
-
-	// blue meteors: they appear above the screen, glide down smoothly and simply fall out of sight
-	{
-		const vec2 ViewSize = View.Size();
-		if(g_Config.m_ClVisualsMeteors)
-		{
-			m_MeteorTimer -= DeltaTime;
-			if(m_MeteorTimer <= 0.0f && m_vMeteors.size() < MAX_METEORS)
-			{
-				m_MeteorTimer = random_float(1.2f, 3.2f);
-				const float Side = random_float() < 0.5f ? -1.0f : 1.0f;
-				CMeteor Meteor;
-				Meteor.m_Length = random_float(260.0f, 380.0f) * FieldScale;
-				Meteor.m_Size = random_float(5.0f, 7.5f) * FieldScale;
-				// start fully outside of the screen so nothing pops into existence
-				Meteor.m_Pos = View.m_TopLeft + vec2(random_float(0.0f, 1.2f) * ViewSize.x - (Side > 0.0f ? 0.1f : 0.0f) * ViewSize.x, -Meteor.m_Length * 0.8f - Meteor.m_Size * 8.0f);
-				Meteor.m_Vel = normalize(vec2(Side * random_float(0.3f, 0.6f), 1.0f)) * random_float(330.0f, 460.0f) * FieldScale;
-				Meteor.m_MaxLife = 1.0f;
-				Meteor.m_Life = 1.0f;
-				Meteor.m_EmberTimer = 0.0f;
-				m_vMeteors.push_back(Meteor);
-			}
-		}
-		if(!m_vMeteors.empty())
-		{
-			Graphics()->BlendAdditive();
-			Graphics()->TextureClear();
-			Graphics()->QuadsBegin();
-			constexpr int TAIL_SEGMENTS = 14;
-			const float Margin = 120.0f * FieldScale;
-			for(size_t i = 0; i < m_vMeteors.size();)
-			{
-				CMeteor &Meteor = m_vMeteors[i];
-				Meteor.m_Pos += Meteor.m_Vel * DeltaTime;
-				const vec2 Dir = normalize(Meteor.m_Vel);
-				const vec2 Perp(-Dir.y, Dir.x);
-				const vec2 Tail = Meteor.m_Pos - Dir * Meteor.m_Length;
-				const bool Gone = Tail.y > View.m_BottomRight.y + Margin || (Meteor.m_Pos.x < View.m_TopLeft.x - Meteor.m_Length - Margin) || (Meteor.m_Pos.x > View.m_BottomRight.x + Meteor.m_Length + Margin);
-				if(Gone)
-				{
-					Meteor = m_vMeteors.back();
-					m_vMeteors.pop_back();
-					continue;
-				}
-
-				// glowing dust drifts off the tail
-				Meteor.m_EmberTimer -= DeltaTime;
-				while(Meteor.m_EmberTimer <= 0.0f)
-				{
-					Meteor.m_EmberTimer += 0.025f;
-					SpawnGlow(Meteor.m_Pos - Dir * random_float(0.0f, Meteor.m_Length * 0.6f) + Perp * random_float(-1.0f, 1.0f) * Meteor.m_Size,
-						Perp * random_float(-20.0f, 20.0f), random_float(0.5f, 1.0f), Meteor.m_Size * random_float(1.6f, 3.0f), -0.8f, 0.8f,
-						ColorRGBA(0.4f, 0.65f + random_float(0.0f, 0.3f), 1.0f, 1.0f));
-				}
-
-				for(int Segment = 0; Segment < TAIL_SEGMENTS; Segment++)
-				{
-					const float T0 = (float)Segment / TAIL_SEGMENTS;
-					const float T1 = (float)(Segment + 1) / TAIL_SEGMENTS;
-					const vec2 A = Meteor.m_Pos - Dir * Meteor.m_Length * T0;
-					const vec2 B = Meteor.m_Pos - Dir * Meteor.m_Length * T1;
-					const float WidthA = Meteor.m_Size * 1.1f * (1.0f - T0 * 0.9f);
-					const float WidthB = Meteor.m_Size * 1.1f * (1.0f - T1 * 0.9f);
-					const ColorRGBA ColorA(0.8f - 0.6f * T0, 0.92f - 0.5f * T0, 1.0f, std::pow(1.0f - T0, 1.4f));
-					const ColorRGBA ColorB(0.8f - 0.6f * T1, 0.92f - 0.5f * T1, 1.0f, std::pow(1.0f - T1, 1.4f));
-					Graphics()->SetColor4(ColorA, ColorA, ColorB, ColorB);
-					const IGraphics::CFreeformItem Item(A - Perp * WidthA, A + Perp * WidthA, B - Perp * WidthB, B + Perp * WidthB);
-					Graphics()->QuadsDrawFreeform(&Item, 1);
-				}
-				i++;
-			}
-			Graphics()->QuadsEnd();
-			for(const CMeteor &Meteor : m_vMeteors)
-			{
-				DrawSprite(m_GlowTexture, Meteor.m_Pos, Meteor.m_Size * 14.0f, Meteor.m_Size * 14.0f, 0.0f, false, ColorRGBA(0.25f, 0.5f, 1.0f, 0.9f));
-				DrawSprite(m_GlowTexture, Meteor.m_Pos, Meteor.m_Size * 6.0f, Meteor.m_Size * 6.0f, 0.0f, false, ColorRGBA(0.8f, 0.95f, 1.0f, 1.0f));
-				DrawSprite(m_StarTexture, Meteor.m_Pos, Meteor.m_Size * 8.0f, Meteor.m_Size * 8.0f, (float)Time * 3.0f, false, ColorRGBA(0.85f, 0.95f, 1.0f, 1.0f));
-			}
-			Graphics()->BlendNormal();
-			Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-		}
-	}
-
-	// cosmic stars that twinkle in the world
-	if(Starfield)
-	{
-		static const ColorRGBA s_aStarColors[4] = {ColorRGBA(0.8f, 0.9f, 1.0f, 1.0f), ColorRGBA(0.75f, 0.6f, 1.0f, 1.0f), ColorRGBA(1.0f, 0.7f, 0.9f, 1.0f), ColorRGBA(0.5f, 1.0f, 1.0f, 1.0f)};
-		Graphics()->BlendAdditive();
-		Graphics()->TextureSet(m_StarTexture);
-		Graphics()->QuadsBegin();
-		for(const CStar &Star : m_aStars)
-		{
-			const float Twinkle = 0.5f + 0.5f * std::sin((float)std::fmod(Time * Star.m_TwinkleFreq, 2.0 * pi) + Star.m_TwinklePhase);
-			const ColorRGBA Color = s_aStarColors[Star.m_Type];
-			Graphics()->SetColor(Color.r, Color.g, Color.b, 0.25f + 0.7f * Twinkle);
-			Graphics()->QuadsSetRotation((float)std::fmod(Time * Star.m_Spin, 2.0 * pi));
-			const float Size = Star.m_Size * FieldScale * (0.7f + 0.3f * Twinkle);
-			ForEachTile(Star.m_Base.x, Star.m_Base.y, STAR_TILE_WIDTH, STAR_TILE_HEIGHT, Size, [&](vec2 Center) {
-				IGraphics::CQuadItem Item(Center.x, Center.y, Size, Size);
-				Graphics()->QuadsDraw(&Item, 1);
-			});
-		}
-		Graphics()->QuadsSetRotation(0.0f);
-		Graphics()->QuadsEnd();
-		Graphics()->BlendNormal();
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-	}
-
 
 	// fireflies
 	if(Fireflies)
@@ -1962,7 +1317,6 @@ void CVisuals::OnRender()
 	if(Predict)
 		RenderGunPredict(View);
 
-	RenderPortals(DeltaTime);
 	RenderSpeedAndCursor(View, DeltaTime, Time);
 }
 
@@ -2306,152 +1660,7 @@ void CVisuals::OnKill(int Killer, int Victim)
 	}
 }
 
-// ---------------------------------------------------------------- teleport, speed lines, cursor trail
-
-void CVisuals::CheckTeleport(vec2 Position, float Time)
-{
-	const bool Fx = g_Config.m_ClVisualsTeleFx && Collision();
-	if(Fx && m_HavePrevTee && distance(Position, m_PrevTeePos) > 110.0f)
-	{
-		// a jump: look for a teleporter next to the place where the tee was a moment ago
-		float Best = 3.0f * 32.0f;
-		bool Found = false;
-		vec2 Tile(0.0f, 0.0f);
-		const int BaseX = (int)(m_PrevTeePos.x / 32.0f);
-		const int BaseY = (int)(m_PrevTeePos.y / 32.0f);
-		for(int Y = BaseY - 2; Y <= BaseY + 2; Y++)
-		{
-			for(int X = BaseX - 2; X <= BaseX + 2; X++)
-			{
-				const vec2 Center(X * 32.0f + 16.0f, Y * 32.0f + 16.0f);
-				const int Index = Collision()->GetPureMapIndex(Center);
-				if(Index < 0 || (!Collision()->IsTeleport(Index) && !Collision()->IsEvilTeleport(Index)))
-					continue;
-				const float Dist = distance(Center, m_PrevTeePos);
-				if(Dist < Best)
-				{
-					Best = Dist;
-					Tile = Center;
-					Found = true;
-				}
-			}
-		}
-		if(Found)
-			TeleportEffect(Tile, Position);
-	}
-	m_PrevTeePos = Position;
-	m_HavePrevTee = true;
-}
-
-void CVisuals::TeleportEffect(vec2 From, vec2 To)
-{
-	// like in Portal 2: an orange portal opens where you went in, a blue one where you come out
-	if(m_vPortals.size() >= 6)
-		return;
-	const ColorRGBA Orange(1.0f, 0.5f, 0.08f, 1.0f);
-	const ColorRGBA Blue(0.1f, 0.55f, 1.0f, 1.0f);
-	CPortal A;
-	A.m_Pos = From;
-	A.m_Age = 0.0f;
-	A.m_Life = 1.5f;
-	A.m_Color = Orange;
-	A.m_Seed = random_float(0.0f, 6.0f);
-	m_vPortals.push_back(A);
-	CPortal B = A;
-	B.m_Pos = To;
-	B.m_Color = Blue;
-	B.m_Seed = random_float(0.0f, 6.0f);
-	m_vPortals.push_back(B);
-	SpawnFlash(From, 60.0f, 0.25f);
-	SpawnFlash(To, 60.0f, 0.25f);
-}
-
-void CVisuals::RenderPortals(float DeltaTime)
-{
-	for(size_t i = 0; i < m_vPortals.size();)
-	{
-		CPortal &Portal = m_vPortals[i];
-		Portal.m_Age += DeltaTime;
-		if(Portal.m_Age >= Portal.m_Life)
-		{
-			Portal = m_vPortals.back();
-			m_vPortals.pop_back();
-			continue;
-		}
-		const float Age = Portal.m_Age;
-		// opens quickly with a little overshoot, stays, then closes
-		float Open;
-		if(Age < 0.22f)
-		{
-			const float G = Age / 0.22f;
-			Open = 1.12f * std::sin(G * pi * 0.5f);
-			if(G > 0.7f)
-				Open = 1.0f + 0.12f * std::sin((G - 0.7f) / 0.3f * pi);
-			Open = std::min(Open, 1.12f);
-		}
-		else if(Age > Portal.m_Life - 0.4f)
-		{
-			const float G = (Portal.m_Life - Age) / 0.4f;
-			Open = G * G;
-		}
-		else
-			Open = 1.0f;
-		const float Rx = 17.0f * Open;
-		const float Ry = 38.0f * Open;
-		const ColorRGBA C = Portal.m_Color;
-		const ColorRGBA Light = ColorRGBA(std::min(1.0f, C.r + 0.45f), std::min(1.0f, C.g + 0.45f), std::min(1.0f, C.b + 0.45f), 1.0f);
-		constexpr int SEG = 40;
-		const auto Pt = [&](float Angle, float Scale) {
-			return Portal.m_Pos + vec2(std::cos(Angle) * Rx * Scale, std::sin(Angle) * Ry * Scale);
-		};
-
-		// dark inside with a tint
-		Graphics()->BlendNormal();
-		Graphics()->TextureClear();
-		Graphics()->QuadsBegin();
-		for(int s = 0; s < SEG; s++)
-		{
-			const float A0 = 2.0f * pi * s / SEG, A1 = 2.0f * pi * (s + 1) / SEG;
-			const ColorRGBA Centre(C.r * 0.15f, C.g * 0.15f, C.b * 0.2f, 0.8f);
-			const ColorRGBA Edge(C.r * 0.35f, C.g * 0.35f, C.b * 0.45f, 0.8f);
-			Graphics()->SetColor4(Centre, Edge, Centre, Edge);
-			const IGraphics::CFreeformItem Wedge(Portal.m_Pos, Pt(A0, 1.0f), Portal.m_Pos, Pt(A1, 1.0f));
-			Graphics()->QuadsDrawFreeform(&Wedge, 1);
-		}
-		Graphics()->QuadsEnd();
-
-		// glowing rim with a bright spot that runs around it
-		Graphics()->BlendAdditive();
-		Graphics()->QuadsBegin();
-		const float Spin = Age * 7.0f + Portal.m_Seed;
-		for(int s = 0; s < SEG; s++)
-		{
-			const float A0 = 2.0f * pi * s / SEG, A1 = 2.0f * pi * (s + 1) / SEG;
-			const float B0 = 0.55f + 0.45f * std::pow(0.5f + 0.5f * std::cos(A0 - Spin), 3.0f);
-			const float B1 = 0.55f + 0.45f * std::pow(0.5f + 0.5f * std::cos(A1 - Spin), 3.0f);
-			// soft outer glow
-			Graphics()->SetColor4(ColorRGBA(C.r, C.g, C.b, 0.55f * B0), ColorRGBA(C.r, C.g, C.b, 0.0f), ColorRGBA(C.r, C.g, C.b, 0.55f * B1), ColorRGBA(C.r, C.g, C.b, 0.0f));
-			const IGraphics::CFreeformItem Glow(Pt(A0, 0.98f), Pt(A0, 1.75f), Pt(A1, 0.98f), Pt(A1, 1.75f));
-			Graphics()->QuadsDrawFreeform(&Glow, 1);
-			// the bright ring itself
-			Graphics()->SetColor4(ColorRGBA(Light.r, Light.g, Light.b, B0), ColorRGBA(C.r, C.g, C.b, 0.9f * B0), ColorRGBA(Light.r, Light.g, Light.b, B1), ColorRGBA(C.r, C.g, C.b, 0.9f * B1));
-			const IGraphics::CFreeformItem Rim(Pt(A0, 0.84f), Pt(A0, 1.08f), Pt(A1, 0.84f), Pt(A1, 1.08f));
-			Graphics()->QuadsDrawFreeform(&Rim, 1);
-		}
-		Graphics()->QuadsEnd();
-		Graphics()->BlendNormal();
-
-		// motes that drift out of the portal
-		if(Open > 0.5f && random_float() < DeltaTime * 22.0f)
-		{
-			const float Angle = random_float(0.0f, 2.0f * pi);
-			const vec2 Dir(std::cos(Angle), std::sin(Angle));
-			SpawnGlow(Portal.m_Pos + vec2(Dir.x * Rx, Dir.y * Ry), Dir * random_float(10.0f, 40.0f) + vec2(0.0f, -15.0f), random_float(0.4f, 0.8f), random_float(3.0f, 6.0f), -0.6f, 0.9f, random_float() < 0.5f ? C : Light);
-		}
-		i++;
-	}
-	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-}
+// ---------------------------------------------------------------- cursor trail
 
 void CVisuals::RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, double Time)
 {

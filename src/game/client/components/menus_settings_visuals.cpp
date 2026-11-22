@@ -76,16 +76,14 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClVisualsSnow, "Падающий снег");
 	DoToggle(Card, g_Config.m_ClVisualsSnowLanding, "Снег при приземлении", true);
 
-	Card = BeginCard(Left, "Мир", 5);
+	Card = BeginCard(Left, "Мир", 3);
 	DoToggle(Card, g_Config.m_ClVisualsFireflies, "Светлячки");
 	DoToggle(Card, g_Config.m_ClVisualsPetals, "Лепестки сакуры");
-	DoToggle(Card, g_Config.m_ClVisualsBubbles, "Мыльные пузыри");
-	DoToggle(Card, g_Config.m_ClVisualsStarfield, "Звёздное небо");
-	DoToggle(Card, g_Config.m_ClVisualsMeteors, "Синие метеоры", true);
+	DoToggle(Card, g_Config.m_ClVisualsBubbles, "Мыльные пузыри", true);
 
-	Card = BeginCard(Left, "Курсор и телепорт", 2);
-	DoToggle(Card, g_Config.m_ClVisualsCursorTrail, "Белый след курсора");
-	DoToggle(Card, g_Config.m_ClVisualsTeleFx, "Телепорт как в Portal 2", true);
+
+	Card = BeginCard(Left, "Курсор", 1);
+	DoToggle(Card, g_Config.m_ClVisualsCursorTrail, "Белый след курсора", true);
 
 	// средняя колонка
 	Card = BeginCard(Middle, "Эффекты тишки", 5);
@@ -104,14 +102,6 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 		CUIRect Button = NextRow(Card, true);
 		if(DoButton_Menu(&s_CapeButton, aText, 0, &Button))
 			g_Config.m_ClVisualsCape = (g_Config.m_ClVisualsCape + 1) % 4;
-	}
-
-	Card = BeginCard(Middle, "Питомец", 1);
-	{
-		static CButtonContainer s_PetButton;
-		CUIRect Button = NextRow(Card, true);
-		if(DoButton_CheckBox(&s_PetButton, "Панда-питомец (спит при AFK, празднует финиш)", g_Config.m_ClVisualsPet != 0, &Button))
-			g_Config.m_ClVisualsPet = g_Config.m_ClVisualsPet != 0 ? 0 : 1;
 	}
 
 	Card = BeginCard(Middle, "Автосмена скина", 2);

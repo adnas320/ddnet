@@ -260,9 +260,6 @@ class CVisuals : public CComponent
 		ColorRGBA m_Color;
 	};
 	std::vector<CPortal> m_vPortals;
-	void RenderPortals(float DeltaTime);
-	void CheckTeleport(vec2 Position, float Time);
-	void TeleportEffect(vec2 From, vec2 To);
 	void RenderSpeedAndCursor(const CScreenRect &View, float DeltaTime, double Time);
 
 	// state of the pet that follows the own tee
@@ -307,10 +304,8 @@ class CVisuals : public CComponent
 	void StepGlows(std::vector<CSparkle> &vGlows, float DeltaTime);
 	void DrawSprite(IGraphics::CTextureHandle Texture, vec2 Center, float Width, float Height, float Rotation, bool Flip, ColorRGBA Color) const;
 	void DrawFlake(vec2 Center, float Size, float Angle, int Type) const;
-	void DrawPanda(vec2 Feet, float Size, float Alpha, vec2 Vel) const;
 	void RenderGunPredict(const CScreenRect &View) const;
 	void UpdateHat(vec2 LookDir, vec2 Vel, float DeltaTime);
-	void UpdatePet(vec2 Position, float TeeSize, vec2 LookDir, vec2 Vel, int Jumped, float DeltaTime);
 	ColorRGBA Rainbow(float Offset) const;
 
 public:
@@ -341,8 +336,6 @@ public:
 	// hooks of other components
 	// called when a kill message arrives
 	void OnKill(int Killer, int Victim);
-	// called when the own tee finishes the map: the panda celebrates
-	void OnFinish();
 	// puts back the skin and colors you had before the automatic changes
 	void RestoreSkin();
 	// remembers the current skin and colors as your own

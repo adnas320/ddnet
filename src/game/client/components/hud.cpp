@@ -452,7 +452,10 @@ void CHud::RenderScoreHud()
 					{
 						const char *pName = GameClient()->m_aClients[Id].m_aName;
 						const bool OwnShimmer = GameClient()->m_Visuals.ShouldShimmer(Id);
-						if(RecreateRect || OwnShimmer)
+						static bool s_aWasShimmer[2] = {false, false};
+						const bool ShimmerSwitched = s_aWasShimmer[t] != OwnShimmer;
+						s_aWasShimmer[t] = OwnShimmer;
+						if(RecreateRect || OwnShimmer || ShimmerSwitched)
 						{
 							str_copy(m_aScoreInfo[t].m_aPlayerNameText, pName);
 

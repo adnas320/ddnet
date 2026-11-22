@@ -326,8 +326,6 @@ void CInfoMessages::OnRaceFinishMessage(const CNetMsg_Sv_RaceFinish *pMsg)
 	}
 	str_time_float(pMsg->m_Time / 1000.0f, ETimeFormat::HOURS_CENTISECS, Finish.m_aTimeText, sizeof(Finish.m_aTimeText));
 
-	if(pMsg->m_ClientId == GameClient()->m_Snap.m_LocalClientId)
-		GameClient()->m_Visuals.OnFinish();
 	AddInfoMsg(Finish);
 }
 
