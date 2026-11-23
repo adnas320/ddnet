@@ -119,8 +119,8 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 	int B = BaseB; // thickness of blocks and walls
 	// the halls use the whole height of the zone: tall zones get tall halls
 	const int Avail0 = std::max(10, H - 6);
-	const int aHMin[3] = {std::max(12, Avail0 * 40 / 100), std::max(8, Avail0 * 30 / 100), std::max(6, Avail0 * 22 / 100)};
-	const int aHMax[3] = {std::max(20, Avail0 * 90 / 100), std::max(14, Avail0 * 70 / 100), std::max(11, Avail0 * 55 / 100)};
+	const int aHMin[3] = {std::max(12, Avail0 * 40 / 100), std::max(8, Avail0 * 30 / 100), 6};
+	const int aHMax[3] = {std::max(20, Avail0 * 90 / 100), std::max(14, Avail0 * 70 / 100), std::min(12, std::max(8, Avail0 * 40 / 100))};
 
 	// teleporters are only possible when the tele layer (if there is one) covers the zone
 	std::shared_ptr<CLayerTele> pTeleLayer = Map()->m_pTeleLayer;
@@ -280,13 +280,15 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 		S_PSEUDOV,
 		S_STICKS,
 		S_EDGE,
+		S_ALED,
+		S_FLYRUN,
 		NUM_SECTIONS,
 	};
 	// minimum height of the chamber a section needs
-	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10, 14, 10, 12, 17, 10, 10};
-	static const int s_aNovice[] = {S_EDGE, S_STICKS, S_HALL, S_HALL, S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
-	static const int s_aModerate[] = {S_STICKS, S_EDGE, S_TELELINE, S_HALL, S_TELELINE, S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
-	static const int s_aBrutal[] = {S_EDGE, S_STICKS, S_TELELINE, S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
+	const int aNeedHeight[NUM_SECTIONS] = {5, 9, 7, 8, 6, 6, 5, 9, 9, 5, 7, 6, 10, 10, 12, 13, 10, 10, 14, 10, 12, 17, 10, 10, 10, 9};
+	static const int s_aNovice[] = {S_ALED, S_EDGE, S_STICKS, S_HALL, S_HALL, S_CAVE, S_CAVE, S_CAVE, S_FREEZEROOM, S_PLATFORMS, S_STAIRS, S_NOHOOK, S_ZIGZAG, S_SHAFT, S_BLOCKS};
+	static const int s_aModerate[] = {S_ALED, S_FLYRUN, S_STICKS, S_EDGE, S_TELELINE, S_HALL, S_TELELINE, S_FRLINES, S_FREEZEROOM, S_FRLINES, S_CAVE, S_PLATFORMS, S_BLOCKS, S_ZIGZAG, S_FREEZEFLOOR, S_PIT, S_SHAFT, S_HOOK, S_STAIRS, S_NOHOOK, S_FREEZELINED, S_SQUEEZE, S_BLOCKS};
+	static const int s_aBrutal[] = {S_ALED, S_FLYRUN, S_ALED, S_FLYRUN, S_EDGE, S_STICKS, S_TELELINE, S_LADDER, S_LADDER, S_LADDER, S_FRLINES, S_BLOCKS, S_ZIGZAG, S_PIT, S_SHAFT, S_HOOK, S_SQUEEZE, S_FREEZELINED, S_SQUEEZE, S_PIT, S_PLATFORMS, S_BLOCKS};
 	const int *pPool = Diff == 0 ? s_aNovice : (Diff == 1 ? s_aModerate : s_aBrutal);
 	const int PoolSize = Diff == 0 ? (int)std::size(s_aNovice) : (Diff == 1 ? (int)std::size(s_aModerate) : (int)std::size(s_aBrutal));
 
@@ -622,6 +624,65 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 			}
 			break;
 		}
+		case S_ALED:
+		{
+			// aled: a river of freeze that is too wide to jump and has an unhookable ceiling. The tee stands on the bank and has to
+			// hit (hammer) through the freeze to get the unfreeze that waits on the other side, then crosses it together with the partner.
+			DummyParts++;
+			const int Bank = 6;
+			const int Gap = Diff == 2 ? 4 : 5;
+			const int Mid = (x0 + x1) / 2;
+			const int Gx0 = Mid - Gap / 2, Gx1 = Gx0 + Gap;
+			Fill(x0 + 1, c, x1 - x0 - 2, 2, T_NOHOOK);
+			for(int xx = x0 + 2; xx < x1 - 2; xx++)
+				Put(xx, f + 1, T_SOLID);
+			// the freeze fills the gap from the floor up to just under the ceiling, so that nothing can pass over it
+			for(int xx = Gx0; xx < Gx1; xx++)
+				for(int yy = c + 2; yy <= f; yy++)
+					Put(xx, yy, T_FREEZE);
+			// small pillars on the banks: freeze on the side that faces the river, unfreeze pads on the far bank
+			for(int yy = f - 2; yy <= f; yy++)
+			{
+				Put(Gx0 - 1, yy, T_FREEZE);
+				Put(Gx1, yy, T_FREEZE);
+			}
+			Put(Gx1 + 1, f, T_UNFREEZE);
+			Put(Gx1 + 2, f, T_UNFREEZE);
+			Put(Gx0 - 2, f, T_UNFREEZE);
+			// a hookable stick over each bank to hang on
+			if(Height >= 10)
+			{
+				Fill(Gx0 - Bank, f - 5, 4, 1, T_STICK);
+				Fill(Gx1 + 2, f - 5, 4, 1, T_STICK);
+			}
+			UsedFreeze = true;
+			break;
+		}
+		case S_FLYRUN:
+		{
+			// a fly slalom: 3 tiles of free air between freeze blocks that come from the ceiling and from the floor in turn.
+			// The tee has to fly through it with speed; a pad of unfreeze waits at both ends.
+			DummyParts++;
+			Fill(x0 + 1, c, x1 - x0 - 2, 2, T_NOHOOK);
+			for(int xx = x0 + 2; xx < x1 - 2; xx++)
+			{
+				FreezeAir(xx, c + 2);
+				FreezeAir(xx, f);
+			}
+			bool FromTop = Rand(0, 1) == 1;
+			for(int px = x0 + 9; px + 6 < x1 - 3; px += Rand(7, 9))
+			{
+				const int Len = std::max(2, Height - 6);
+				for(int dx = 0; dx < 2; dx++)
+					for(int dy = 0; dy < Len; dy++)
+						FreezeAir(px + dx, FromTop ? c + 2 + dy : f - dy);
+				FromTop = !FromTop;
+			}
+			Put(x0 + 2, f - 1, T_UNFREEZE);
+			Put(x1 - 3, f - 1, T_UNFREEZE);
+			UsedFreeze = true;
+			break;
+		}
 		case S_HALL:
 		{
 			// long freeze bars across the hall, like the crosses of the studied maps
@@ -811,7 +872,7 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 	};
 	const auto Decorate = [&](int Id, int x0, int x1, int c, int f) {
 		const int Height = f - c + 1;
-		if(Height < 14 || Id == S_PSEUDO || Id == S_DUMMYGAP || Id == S_PSEUDOV || Id == S_FLY || Id == S_SQUEEZE || Id == S_TELELINE)
+		if(Height < 14 || Id == S_PSEUDO || Id == S_DUMMYGAP || Id == S_PSEUDOV || Id == S_FLY || Id == S_ALED || Id == S_FLYRUN || Id == S_SQUEEZE || Id == S_TELELINE)
 			return;
 		const int Wd = x1 - x0;
 		// floating bars on several levels
@@ -910,8 +971,10 @@ void CEditor::GenerateGameplay(int X0, int Y0, int X1, int Y1, int Stage)
 		UsedMask |= 1u << Id;
 		LastId = Id;
 		int Len = Rand(Diff == 0 ? 18 : 16, Diff == 0 ? 28 : 26) + (B == 3 ? 4 : 0);
-		if(Id == S_PSEUDO || Id == S_DUMMYGAP || Id == S_FLY)
+		if(Id == S_PSEUDO || Id == S_DUMMYGAP || Id == S_FLY || Id == S_FLYRUN)
 			Len = Rand(30, 44);
+		else if(Id == S_ALED)
+			Len = Rand(26, 34);
 		else if(Id == S_PSEUDOV)
 			Len = Rand(26, 36);
 		int End = std::min(x + Len, FinishStart);
