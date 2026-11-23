@@ -215,7 +215,7 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 			CTextCursor Cursor;
 			Cursor.m_FontSize = FontSize;
 			Cursor.SetPosition(vec2(Label.x + (Label.w - Width) * 0.5f, Label.y + (Label.h - FontSize) * 0.5f - FontSize * 0.08f));
-			const double Now = time_get_nanoseconds().count() / 1e9;
+			const double Now = (double)time_get() / (double)time_freq();
 			int Index = 0;
 			for(int Byte = 0; pText[Byte] != '\0';)
 			{

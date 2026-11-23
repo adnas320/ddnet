@@ -2,6 +2,8 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include "menus_start.h"
 
+#include <base/time.h>
+
 #include <engine/client/updater.h>
 #include <engine/font_icons.h>
 #include <engine/graphics.h>
@@ -46,12 +48,12 @@ void CMenusStart::RenderStartMenu(CUIRect MainView)
 	// ---- daily streak flame (bottom left)
 	{
 		const auto LocalDay = [&]() -> long long {
-			const time_t Now = time(nullptr);
-			tm Local = *localtime(&Now);
-			tm Utc = *gmtime(&Now);
+			const time_t Now = ::time(nullptr);
+			tm Local = *::localtime(&Now);
+			tm Utc = *::gmtime(&Now);
 			Local.tm_isdst = 0;
 			Utc.tm_isdst = 0;
-			const long long Offset = (long long)difftime(mktime(&Local), mktime(&Utc));
+			const long long Offset = (long long)::difftime(::mktime(&Local), ::mktime(&Utc));
 			return ((long long)Now + Offset) / 86400 + g_Config.m_ClStreakDayOffset;
 		};
 		const long long Today = LocalDay();
@@ -63,7 +65,7 @@ void CMenusStart::RenderStartMenu(CUIRect MainView)
 
 		static double s_AnimStart = -100.0;
 		static int s_AnimTier = 0;
-		const double Now = time_get_nanoseconds().count() / 1e9;
+		const double Now = (double)time_get() / (double)time_freq();
 
 		const float SquareSize = 54.0f;
 		CUIRect Square;
