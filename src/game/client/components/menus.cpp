@@ -210,7 +210,7 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 		}
 		else
 		{
-			// the text is a mint to white gradient that flows through the letters
+			// the text is a yellow to white gradient that flows through the letters
 			const float Width = TextRender()->TextWidth(FontSize, pText, -1, -1.0f);
 			CTextCursor Cursor;
 			Cursor.m_FontSize = FontSize;
@@ -224,7 +224,7 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 					break;
 				const float Wave = 0.5f + 0.5f * std::sin((float)(Index * 0.55 - Now * 2.6));
 				const float Smooth = Wave * Wave * (3.0f - 2.0f * Wave);
-				TextRender()->TextColor(0.45f + 0.55f * Smooth, 1.0f, 0.78f + 0.22f * Smooth, 1.0f);
+				TextRender()->TextColor(1.0f, 0.85f + 0.15f * Smooth, 0.35f + 0.65f * Smooth, 1.0f);
 				TextRender()->TextEx(&Cursor, pText + Byte, Next - Byte);
 				Byte = Next;
 				Index++;
@@ -1187,6 +1187,10 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
 			pButtonText = Localize("Abort");
 		}
 	}
+	else if(m_Popup == POPUP_CUT_DEMO)
+	{
+		pTitle = "Обрезать демо";
+	}
 	else if(m_Popup == POPUP_RENAME_DEMO)
 	{
 		dbg_assert(m_DemolistSelectedIndex >= 0, "m_DemolistSelectedIndex invalid for POPUP_RENAME_DEMO");
@@ -1471,6 +1475,52 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
 		static CButtonContainer s_Button;
 		if(DoButton_Menu(&s_Button, Localize("Ok"), 0, &Button) || Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE) || Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER) || Activated)
 			m_Popup = POPUP_FIRST_LAUNCH;
+	}
+	else if(m_Popup == POPUP_CUT_DEMO)
+	{
+		if(m_DemolistSelectedIndex < 0)
+		{
+			m_Popup = POPUP_NONE;
+			return;
+		}
+		CUIRect Row, Label, Edit, Replace, Separate, Abort;
+		Box.VMargin(40.0f, &Box);
+		Box.HSplitBottom(20.0f, &Box, nullptr);
+		Box.HSplitBottom(28.0f, &Box, &Row);
+		Row.VSplitLeft(Row.w / 3.0f, &Replace, &Row);
+		Row.VSplitMid(&Separate, &Abort);
+		Replace.VMargin(4.0f, &Replace);
+		Separate.VMargin(4.0f, &Separate);
+		Abort.VMargin(4.0f, &Abort);
+
+		static CButtonContainer s_ButtonReplace, s_ButtonSeparate, s_ButtonAbort;
+		if(DoButton_Menu(&s_ButtonReplace, "Сохранить здесь", 0, &Replace))
+			DemoCutApply(true);
+		Ui()->DoToolTip(&s_ButtonReplace, &Replace, "Обрезанная запись заменит оригинал");
+		if(m_Popup == POPUP_CUT_DEMO && DoButton_Menu(&s_ButtonSeparate, "Сохранить отдельно", 0, &Separate))
+			DemoCutApply(false);
+		Ui()->DoToolTip(&s_ButtonSeparate, &Separate, "Оригинал останется, рядом появится файл «имя_cut»");
+		if(DoButton_Menu(&s_ButtonAbort, Localize("Abort"), 0, &Abort) || Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE))
+			m_Popup = POPUP_NONE;
+
+		Box.HSplitBottom(16.0f, &Box, nullptr);
+		Box.HSplitBottom(24.0f, &Box, &Row);
+		Row.VSplitLeft(110.0f, &Label, &Edit);
+		Ui()->DoLabel(&Label, "Конец (сек):", 18.0f, TEXTALIGN_ML);
+		Edit.VSplitLeft(140.0f, &Edit, &Label);
+		Ui()->DoEditBox(&m_DemoCutEndInput, &Edit, 14.0f);
+		Ui()->DoLabel(&Label, "  пусто = до конца", 14.0f, TEXTALIGN_ML);
+
+		Box.HSplitBottom(10.0f, &Box, nullptr);
+		Box.HSplitBottom(24.0f, &Box, &Row);
+		Row.VSplitLeft(110.0f, &Label, &Edit);
+		Ui()->DoLabel(&Label, "Начало (сек):", 18.0f, TEXTALIGN_ML);
+		Edit.VSplitLeft(140.0f, &Edit, &Label);
+		Ui()->DoEditBox(&m_DemoCutStartInput, &Edit, 14.0f);
+		char aInfo[64];
+		const int Length = m_vpFilteredDemos[m_DemolistSelectedIndex]->Length();
+		str_format(aInfo, sizeof(aInfo), "  длина демо: %d:%02d", Length / 60, Length % 60);
+		Ui()->DoLabel(&Label, aInfo, 14.0f, TEXTALIGN_ML);
 	}
 	else if(m_Popup == POPUP_RENAME_DEMO)
 	{
@@ -2647,4 +2697,71 @@ void CMenus::JoinTutorial()
 	m_JoinTutorial.m_TriedRefresh = false;
 	m_JoinTutorial.m_LocalServerState = CJoinTutorial::ELocalServerState::NOT_TRIED;
 	m_JoinTutorial.m_StateChange = time_get_nanoseconds();
+}
+
+// Cuts the selected demo by the times from the cut popup. Replace: the cut demo takes the place of the original.
+void CMenus::DemoCutApply(bool Replace)
+{
+	const auto ParseTime = [](const char *pText, float &Out) {
+		// plain seconds ("12.5") or minutes and seconds ("1:12")
+		if(pText[0] == '\0')
+			return false;
+		const char *pColon = str_find(pText, ":");
+		if(pColon)
+		{
+			const int Minutes = str_toint(pText);
+			Out = Minutes * 60.0f + (float)atof(pColon + 1);
+		}
+		else
+			Out = (float)atof(pText);
+		return true;
+	};
+	float Start = 0.0f, End = -1.0f;
+	if(m_DemoCutStartInput.GetString()[0] != '\0')
+		ParseTime(m_DemoCutStartInput.GetString(), Start);
+	const bool HasEnd = ParseTime(m_DemoCutEndInput.GetString(), End);
+	if(Start < 0.0f || (HasEnd && End <= Start))
+	{
+		PopupMessage("Ошибка", "Конец должен быть позже начала", Localize("Ok"), POPUP_CUT_DEMO);
+		return;
+	}
+	if(!HasEnd)
+		End = -1.0f;
+
+	const CDemoItem *pItem = m_vpFilteredDemos[m_DemolistSelectedIndex];
+	char aBase[IO_MAX_PATH_LENGTH];
+	fs_split_file_extension(pItem->m_aFilename, aBase, sizeof(aBase));
+	char aSource[IO_MAX_PATH_LENGTH];
+	str_format(aSource, sizeof(aSource), "%s/%s", m_aCurrentDemoFolder, pItem->m_aFilename);
+
+	char aTarget[IO_MAX_PATH_LENGTH];
+	if(Replace)
+		str_format(aTarget, sizeof(aTarget), "%s/%s.cut_tmp.demo", m_aCurrentDemoFolder, aBase);
+	else
+	{
+		str_format(aTarget, sizeof(aTarget), "%s/%s_cut.demo", m_aCurrentDemoFolder, aBase);
+		for(int Number = 2; Storage()->FileExists(aTarget, IStorage::TYPE_SAVE) && Number < 1000; Number++)
+			str_format(aTarget, sizeof(aTarget), "%s/%s_cut%d.demo", m_aCurrentDemoFolder, aBase, Number);
+	}
+
+	if(!Client()->DemoSliceFile(aSource, aTarget, Start, End))
+	{
+		Storage()->RemoveFile(aTarget, IStorage::TYPE_SAVE);
+		PopupMessage("Ошибка", "Не удалось обрезать демо", Localize("Ok"), POPUP_CUT_DEMO);
+		return;
+	}
+	if(Replace)
+	{
+		Storage()->RemoveFile(aSource, IStorage::TYPE_SAVE);
+		if(!Storage()->RenameFile(aTarget, aSource, IStorage::TYPE_SAVE))
+		{
+			PopupMessage("Ошибка", "Демо обрезано, но не удалось заменить оригинал", Localize("Ok"), POPUP_NONE);
+			DemolistPopulate();
+			DemolistOnUpdate(false);
+			return;
+		}
+	}
+	m_Popup = POPUP_NONE;
+	DemolistPopulate();
+	DemolistOnUpdate(false);
 }

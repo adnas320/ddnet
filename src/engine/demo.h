@@ -125,6 +125,8 @@ class IDemoEditor : public IInterface
 	MACRO_INTERFACE("demoeditor")
 public:
 	virtual bool Slice(const char *pDemo, const char *pDst, int StartTick, int EndTick, DEMOFUNC_FILTER pfnFilter, void *pUser) = 0;
+	// Cuts a demo by time in seconds from its start (EndSeconds < 0: until the end).
+	virtual bool SliceSeconds(const char *pDemo, const char *pDst, float StartSeconds, float EndSeconds) = 0;
 };
 
 #endif

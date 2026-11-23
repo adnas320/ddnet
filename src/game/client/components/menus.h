@@ -339,6 +339,9 @@ protected:
 	char m_aCurrentDemoFolder[IO_MAX_PATH_LENGTH];
 	char m_aCurrentDemoSelectionName[IO_MAX_PATH_LENGTH];
 	CLineInputBuffered<IO_MAX_PATH_LENGTH> m_DemoRenameInput;
+	CLineInputBuffered<16> m_DemoCutStartInput;
+	CLineInputBuffered<16> m_DemoCutEndInput;
+	void DemoCutApply(bool Replace);
 	CLineInputBuffered<IO_MAX_PATH_LENGTH> m_DemoSliceInput;
 	CLineInputBuffered<IO_MAX_PATH_LENGTH> m_DemoSearchInput;
 #if defined(CONF_VIDEORECORDER)
@@ -841,6 +844,7 @@ public:
 		POPUP_DISCONNECTED,
 		POPUP_LANGUAGE,
 		POPUP_RENAME_DEMO,
+		POPUP_CUT_DEMO,
 		POPUP_RENDER_DEMO,
 		POPUP_RENDER_DONE,
 		POPUP_PASSWORD,

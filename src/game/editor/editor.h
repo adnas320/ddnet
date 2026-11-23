@@ -247,6 +247,7 @@ public:
 		m_PreventUnusedTilesWasWarned = false;
 		m_AllowPlaceUnusedTiles = EUnusedEntities::NOT_ALLOWED;
 		m_BrushDrawDestructive = true;
+		m_FillMode = false;
 	}
 
 	void Init() override;
@@ -367,6 +368,9 @@ public:
 	bool IsAllowPlaceUnusedTiles() const;
 
 	bool m_BrushDrawDestructive;
+public:
+	bool m_FillMode; // bucket fill: a click fills the whole closed area with the brush
+private:
 
 	int m_Mentions = 0;
 	bool m_IngameMoved = false;

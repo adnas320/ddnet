@@ -1366,6 +1366,21 @@ public:
 	}
 };
 
+bool CDemoEditor::SliceSeconds(const char *pDemo, const char *pDst, float StartSeconds, float EndSeconds)
+{
+	int FirstTick = 0;
+	{
+		CDemoPlayer DemoPlayer(m_pSnapshotDelta, m_pSnapshotDeltaSixup, false);
+		if(DemoPlayer.Load(m_pStorage, pDemo, IStorage::TYPE_ALL_OR_ABSOLUTE) == -1)
+			return false;
+		FirstTick = DemoPlayer.Info()->m_Info.m_FirstTick;
+		DemoPlayer.Stop();
+	}
+	const int StartTick = FirstTick + (int)(std::max(StartSeconds, 0.0f) * SERVER_TICK_SPEED);
+	const int EndTick = EndSeconds < 0.0f ? -1 : FirstTick + (int)(EndSeconds * SERVER_TICK_SPEED);
+	return Slice(pDemo, pDst, StartTick, EndTick, nullptr, nullptr);
+}
+
 void CDemoEditor::Init(CSnapshotDelta *pSnapshotDelta, CSnapshotDelta *pSnapshotDeltaSixup, IStorage *pStorage)
 {
 	m_pSnapshotDelta = pSnapshotDelta;

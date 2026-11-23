@@ -1676,6 +1676,27 @@ void CMenus::RenderDemoBrowserButtons(CUIRect ButtonsView, bool WasListboxItemAc
 				SetIconMode(false);
 			}
 
+			// cut demo button
+			if(!m_vpFilteredDemos[m_DemolistSelectedIndex]->m_IsDir && m_vpFilteredDemos[m_DemolistSelectedIndex]->m_StorageType == IStorage::TYPE_SAVE)
+			{
+				CUIRect CutButton;
+				ButtonBarTop.VSplitRight(ButtonBarBottom.h * 3.0f, &ButtonBarTop, &CutButton);
+				ButtonBarTop.VSplitRight(ButtonBarBottom.h / 2.0f, &ButtonBarTop, nullptr);
+				SetIconMode(true);
+				static CButtonContainer s_CutButton;
+				if(DoButton_Menu(&s_CutButton, FontIcon::SCISSORS, 0, &CutButton))
+				{
+					SetIconMode(false);
+					m_Popup = POPUP_CUT_DEMO;
+					m_DemoCutStartInput.Set("0");
+					m_DemoCutEndInput.Clear();
+					Ui()->SetActiveItem(&m_DemoCutEndInput);
+					return;
+				}
+				SetIconMode(false);
+				Ui()->DoToolTip(&s_CutButton, &CutButton, "Обрезать демо");
+			}
+
 #if defined(CONF_VIDEORECORDER)
 			// render demo button
 			if(!m_vpFilteredDemos[m_DemolistSelectedIndex]->m_IsDir)

@@ -588,6 +588,49 @@ void CLayerTiles::BrushDraw(CLayer *pBrush, vec2 WorldPos)
 
 	bool Destructive = Editor()->m_BrushDrawDestructive || pTileLayer->IsEmpty();
 
+	if(Editor()->m_FillMode && !pTileLayer->IsEmpty() && sx >= 0 && sx < m_Width && sy >= 0 && sy < m_Height)
+	{
+		// bucket fill: replace the connected area of tiles of the same kind, the brush repeats as a pattern
+		const int Target = GetTile(sx, sy).m_Index;
+		const CTile Probe = pTileLayer->CLayerTiles::GetTile(0, 0);
+		if(Target == Probe.m_Index && pTileLayer->m_Width == 1 && pTileLayer->m_Height == 1)
+			return;
+		std::vector<char> vVisited((size_t)m_Width * m_Height, 0);
+		std::vector<int> vStack;
+		vStack.push_back(sy * m_Width + sx);
+		vVisited[sy * m_Width + sx] = 1;
+		int MinX = sx, MaxX = sx, MinY = sy, MaxY = sy;
+		while(!vStack.empty())
+		{
+			const int Cell = vStack.back();
+			vStack.pop_back();
+			const int cx = Cell % m_Width, cy = Cell / m_Width;
+			const int px = ((cx - sx) % pTileLayer->m_Width + pTileLayer->m_Width) % pTileLayer->m_Width;
+			const int py = ((cy - sy) % pTileLayer->m_Height + pTileLayer->m_Height) % pTileLayer->m_Height;
+			const CTile Brush = pTileLayer->CLayerTiles::GetTile(px, py);
+			SetTile(cx, cy, Brush);
+			MinX = std::min(MinX, cx);
+			MaxX = std::max(MaxX, cx);
+			MinY = std::min(MinY, cy);
+			MaxY = std::max(MaxY, cy);
+			const int aDx[4] = {1, -1, 0, 0};
+			const int aDy[4] = {0, 0, 1, -1};
+			for(int d = 0; d < 4; d++)
+			{
+				const int nx = cx + aDx[d], ny = cy + aDy[d];
+				if(nx < 0 || nx >= m_Width || ny < 0 || ny >= m_Height)
+					continue;
+				const int NIndex = ny * m_Width + nx;
+				if(vVisited[NIndex] || GetTile(nx, ny).m_Index != Target)
+					continue;
+				vVisited[NIndex] = 1;
+				vStack.push_back(NIndex);
+			}
+		}
+		FlagModified(MinX, MinY, MaxX - MinX + 1, MaxY - MinY + 1);
+		return;
+	}
+
 	for(int y = 0; y < pTileLayer->m_Height; y++)
 		for(int x = 0; x < pTileLayer->m_Width; x++)
 		{

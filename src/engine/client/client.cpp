@@ -4076,6 +4076,11 @@ void CClient::DemoSlice(const char *pDstPath, CLIENTFUNC_FILTER pfnFilter, void 
 	}
 }
 
+bool CClient::DemoSliceFile(const char *pSrcPath, const char *pDstPath, float StartSeconds, float EndSeconds)
+{
+	return m_DemoEditor.SliceSeconds(pSrcPath, pDstPath, StartSeconds, EndSeconds);
+}
+
 const char *CClient::DemoPlayer_Play(const char *pFilename, int StorageType)
 {
 	// Don't disconnect unless the file exists (only for play command)

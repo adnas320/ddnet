@@ -527,6 +527,7 @@ public:
 	void DemoSliceBegin() override;
 	void DemoSliceEnd() override;
 	void DemoSlice(const char *pDstPath, CLIENTFUNC_FILTER pfnFilter, void *pUser) override;
+	bool DemoSliceFile(const char *pSrcPath, const char *pDstPath, float StartSeconds, float EndSeconds) override;
 	virtual void SaveReplay(int Length, const char *pFilename = "");
 
 	bool EditorHasUnsavedData() const override { return m_pEditor->HasUnsavedData(); }

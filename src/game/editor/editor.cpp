@@ -819,6 +819,14 @@ void CEditor::DoToolbarLayers(CUIRect ToolBar)
 				(m_Dialog == DIALOG_NONE && CLineInput::GetActiveInput() == nullptr && Input()->KeyPress(KEY_D) && ModPressed && !ShiftPressed))
 				m_BrushDrawDestructive = !m_BrushDrawDestructive;
 			ToolbarBottom.VSplitLeft(5.0f, &Button, &ToolbarBottom);
+
+			// bucket fill
+			ToolbarBottom.VSplitLeft(25.0f, &Button, &ToolbarBottom);
+			static int s_FillModeButton = 0;
+			if(DoButton_FontIcon(&s_FillModeButton, FontIcon::FILL_DRIP, m_FillMode, &Button, BUTTONFLAG_LEFT, "[Ctrl+F] Fill: click inside an area to fill it with the brush up to the borders.", IGraphics::CORNER_ALL, 12.0f) ||
+				(m_Dialog == DIALOG_NONE && CLineInput::GetActiveInput() == nullptr && Input()->KeyPress(KEY_F) && ModPressed && !ShiftPressed))
+				m_FillMode = !m_FillMode;
+			ToolbarBottom.VSplitLeft(5.0f, &Button, &ToolbarBottom);
 		}
 	}
 }
