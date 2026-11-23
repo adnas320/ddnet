@@ -328,6 +328,7 @@ private:
 	FT_Face m_DefaultFace = nullptr;
 	FT_Face m_IconFace = nullptr;
 	FT_Face m_VariantFace = nullptr;
+	FT_Face m_CustomFace = nullptr;
 	FT_Face m_SelectedFace = nullptr;
 	std::vector<FT_Face> m_vFallbackFaces;
 	std::vector<FT_Face> m_vFtFaces;
@@ -405,7 +406,7 @@ private:
 
 	FT_UInt GetCharGlyph(int Chr, FT_Face *pFace, bool AllowReplacementCharacter)
 	{
-		for(FT_Face Face : {m_SelectedFace, m_DefaultFace, m_VariantFace})
+		for(FT_Face Face : {m_SelectedFace, m_CustomFace, m_DefaultFace, m_VariantFace})
 		{
 			if(Face && Face->charmap)
 			{
@@ -615,6 +616,25 @@ public:
 	FT_Face IconFace() const
 	{
 		return m_IconFace;
+	}
+
+	size_t NumFaces() const
+	{
+		return m_vFtFaces.size();
+	}
+
+	FT_Face FaceAt(size_t Index) const
+	{
+		return m_vFtFaces[Index];
+	}
+
+	void SetCustomFace(FT_Face Face)
+	{
+		if(m_CustomFace != Face)
+		{
+			m_CustomFace = Face;
+			Clear(); // rebuild atlas after changing the font
+		}
 	}
 
 	void AddFace(FT_Face Face)
@@ -961,6 +981,7 @@ class CTextRender : public IEngineTextRender
 
 	CGlyphMap *m_pGlyphMap;
 	std::vector<void *> m_vpFontData;
+	std::map<std::string, FT_Face> m_CustomFaces;
 
 	std::vector<SFontLanguageVariant> m_vVariants;
 
@@ -1334,6 +1355,39 @@ public:
 	void SetFontPreset(EFontPreset FontPreset) override
 	{
 		m_pGlyphMap->SetFontPreset(FontPreset);
+	}
+
+	bool SetCustomFont(const char *pPath) override
+	{
+		if(pPath == nullptr || pPath[0] == '\0')
+		{
+			m_pGlyphMap->SetCustomFace(nullptr);
+			return true;
+		}
+		const auto Cached = m_CustomFaces.find(pPath);
+		if(Cached != m_CustomFaces.end())
+		{
+			m_pGlyphMap->SetCustomFace(Cached->second);
+			return true;
+		}
+		void *pFontData;
+		unsigned FontDataSize;
+		if(!Storage()->ReadFile(pPath, IStorage::TYPE_ALL, &pFontData, &FontDataSize))
+		{
+			log_error("textrender", "Failed to read custom font '%s'", pPath);
+			return false;
+		}
+		const size_t FacesBefore = m_pGlyphMap->NumFaces();
+		if(!LoadFontCollection(pPath, static_cast<FT_Byte *>(pFontData), (FT_Long)FontDataSize))
+		{
+			free(pFontData);
+			return false;
+		}
+		m_vpFontData.push_back(pFontData);
+		FT_Face Face = m_pGlyphMap->FaceAt(FacesBefore);
+		m_CustomFaces[pPath] = Face;
+		m_pGlyphMap->SetCustomFace(Face);
+		return true;
 	}
 
 	void SetFontLanguageVariant(const char *pLanguageFile) override

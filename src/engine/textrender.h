@@ -197,6 +197,8 @@ public:
 	virtual bool LoadFonts() = 0;
 	virtual void SetFontPreset(EFontPreset FontPreset) = 0;
 	virtual void SetFontLanguageVariant(const char *pLanguageFile) = 0;
+	// Path relative to the data/save dirs, empty string restores the default font
+	virtual bool SetCustomFont(const char *pPath) = 0;
 
 	virtual void SetRenderFlags(unsigned Flags) = 0;
 	virtual unsigned GetRenderFlags() const = 0;

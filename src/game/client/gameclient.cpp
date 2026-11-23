@@ -374,6 +374,7 @@ void CGameClient::OnInit()
 		Client()->AddWarning(SWarning(Localize("Some fonts could not be loaded. Check the local console for details.")));
 	}
 	TextRender()->SetFontLanguageVariant(g_Config.m_ClLanguagefile);
+	TextRender()->SetCustomFont(g_Config.m_ClCustomFont);
 
 	// update and swap after font loading, they are quite huge
 	Client()->UpdateAndSwap();

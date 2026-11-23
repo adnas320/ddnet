@@ -6,7 +6,9 @@
 #include <base/color.h>
 #include <base/str.h>
 
+#include <engine/client.h>
 #include <engine/graphics.h>
+#include <engine/http.h>
 #include <engine/shared/config.h>
 #include <engine/storage.h>
 #include <engine/textrender.h>
@@ -16,6 +18,7 @@
 #include <game/client/ui_listbox.h>
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -503,4 +506,165 @@ void CMenus::RenderSettingsTranslate(CUIRect MainView)
 	DoLanguages(Card, 1, g_Config.m_ClTranslateLang, sizeof(g_Config.m_ClTranslateLang));
 	DoToggle(Card, g_Config.m_ClTranslateOwn, "Переводить и мои сообщения");
 	DoText(Card, "Перевод идёт строкой [Перевод] под сообщением.", true);
+}
+
+
+// ---------------------------------------------------------------- Шрифт
+
+namespace {
+
+int FontScan(const char *pName, int IsDir, int StorageType, void *pUser)
+{
+	if(IsDir || pName[0] == '.')
+		return 0;
+	if(!str_endswith_nocase(pName, ".ttf") && !str_endswith_nocase(pName, ".otf") && !str_endswith_nocase(pName, ".ttc"))
+		return 0;
+	((std::vector<std::string> *)pUser)->emplace_back(pName);
+	return 0;
+}
+
+} // namespace
+
+void CMenus::RenderSettingsFonts(CUIRect MainView)
+{
+	CARD_HELPERS
+	static std::vector<std::string> s_vUserFonts;
+	static bool s_Loaded = false;
+	static std::shared_ptr<IHttpRequest> s_pDownload;
+	static char s_aDownloadName[128] = "";
+	static char s_aStatus[160] = "";
+	static CLineInputBuffered<256> s_UrlInput;
+
+	const auto Refresh = [&]() {
+		s_vUserFonts.clear();
+		Storage()->ListDirectory(IStorage::TYPE_SAVE, "fonts", FontScan, &s_vUserFonts);
+		std::sort(s_vUserFonts.begin(), s_vUserFonts.end());
+	};
+	if(!s_Loaded)
+	{
+		s_Loaded = true;
+		Storage()->CreateFolder("fonts", IStorage::TYPE_SAVE);
+		Refresh();
+	}
+
+	// finished download
+	if(s_pDownload && s_pDownload->State() != EHttpState::RUNNING && s_pDownload->State() != EHttpState::QUEUED)
+	{
+		if(s_pDownload->State() == EHttpState::DONE)
+		{
+			str_format(s_aStatus, sizeof(s_aStatus), "Готово: %s", s_aDownloadName);
+			Refresh();
+		}
+		else
+			str_copy(s_aStatus, "Не удалось скачать шрифт (проверьте ссылку).");
+		s_pDownload = nullptr;
+	}
+
+	const auto Select = [&](const char *pPath) {
+		str_copy(g_Config.m_ClCustomFont, pPath, sizeof(g_Config.m_ClCustomFont));
+		if(!TextRender()->SetCustomFont(pPath))
+		{
+			g_Config.m_ClCustomFont[0] = '\0';
+			TextRender()->SetCustomFont("");
+			str_copy(s_aStatus, "Этот файл не удалось открыть как шрифт.");
+		}
+	};
+
+	CUIRect Left, Right;
+	MainView.VSplitMid(&Left, &Right, 10.0f);
+
+	// bundled fonts
+	static const char *s_apBundledNames[4] = {"Стандартный (DejaVu)", "Russo One — спортивный", "Press Start 2P — пиксельный", "Pacifico — рукописный"};
+	static const char *s_apBundledPaths[4] = {"", "fonts/RussoOne-Regular.ttf", "fonts/PressStart2P-Regular.ttf", "fonts/Pacifico-Regular.ttf"};
+	static CButtonContainer s_aBundled[4];
+	CUIRect Card = BeginCard(Left, "Шрифты клиента", 6);
+	for(int i = 0; i < 4; i++)
+	{
+		CUIRect Row = NextRow(Card);
+		if(DoButton_Menu(&s_aBundled[i], s_apBundledNames[i], str_comp(g_Config.m_ClCustomFont, s_apBundledPaths[i]) == 0, &Row))
+			Select(s_apBundledPaths[i]);
+	}
+	DoText(Card, "Меняет шрифт во всём интерфейсе и чате.");
+	DoText(Card, "Русский текст есть у всех, кроме Press Start 2P.", true);
+
+	// create own font
+	Card = BeginCard(Left, "Сделать свой шрифт", 5);
+	DoText(Card, "Из вашего почерка: распечатайте шаблон на");
+	DoText(Card, "сайте, напишите буквы, загрузите фото, и получите");
+	DoText(Card, "файл .ttf. Положите его в папку шрифтов ниже.");
+	static CButtonContainer s_MakerButton;
+	CUIRect Row = NextRow(Card);
+	if(DoButton_Menu(&s_MakerButton, "Открыть редактор шрифтов (Calligraphr)", 0, &Row))
+		Client()->ViewLink("https://www.calligraphr.com/");
+	DoText(Card, "Встроенного редактора глифов в клиенте нет.", true);
+
+	// user fonts
+	const int NumShown = std::min<int>((int)s_vUserFonts.size(), 5);
+	Card = BeginCard(Right, "Мои шрифты", 6);
+	static CButtonContainer s_aUser[5];
+	if(s_vUserFonts.empty())
+		DoText(Card, "Пока пусто. Скачайте шрифт ниже или");
+	if(s_vUserFonts.empty())
+		DoText(Card, "положите .ttf / .otf в папку шрифтов.");
+	for(int i = 0; i < NumShown; i++)
+	{
+		char aPath[160];
+		str_format(aPath, sizeof(aPath), "fonts/%s", s_vUserFonts[i].c_str());
+		CUIRect UserRow = NextRow(Card);
+		if(DoButton_Menu(&s_aUser[i], s_vUserFonts[i].c_str(), str_comp(g_Config.m_ClCustomFont, aPath) == 0, &UserRow))
+			Select(aPath);
+	}
+	static CButtonContainer s_FolderButton, s_RefreshButton;
+	CUIRect Buttons = NextRow(Card);
+	CUIRect FolderRect, RefreshRect;
+	Buttons.VSplitMid(&FolderRect, &RefreshRect, 6.0f);
+	if(DoButton_Menu(&s_FolderButton, "Открыть папку", 0, &FolderRect))
+	{
+		char aFull[IO_MAX_PATH_LENGTH];
+		Storage()->GetCompletePath(IStorage::TYPE_SAVE, "fonts", aFull, sizeof(aFull));
+		Client()->ViewFile(aFull);
+	}
+	if(DoButton_Menu(&s_RefreshButton, "Обновить список", 0, &RefreshRect))
+		Refresh();
+
+	// download
+	Card = BeginCard(Right, "Загрузить шрифт из интернета", 5);
+	DoText(Card, "Ссылка на файл .ttf или .otf (например, с GitHub):");
+	CUIRect Edit = NextRow(Card);
+	Ui()->DoEditBox(&s_UrlInput, &Edit, 13.0f);
+	static CButtonContainer s_DownloadButton;
+	CUIRect DownRow = NextRow(Card);
+	if(DoButton_Menu(&s_DownloadButton, s_pDownload ? "Скачивается..." : "Скачать", 0, &DownRow) && !s_pDownload)
+	{
+		const char *pUrl = s_UrlInput.GetString();
+		char aName[128];
+		const char *pSlash = str_rchr(pUrl, '/');
+		str_copy(aName, pSlash ? pSlash + 1 : pUrl, sizeof(aName));
+		for(char *pQ = aName; *pQ; pQ++)
+			if(*pQ == '?' || *pQ == '#')
+			{
+				*pQ = '\0';
+				break;
+			}
+		for(char *pC = aName; *pC; pC++)
+			if(*pC == '/' || *pC == '\\' || *pC == ':' || *pC == '%')
+				*pC = '_';
+		if(!str_startswith(pUrl, "https://") && !str_startswith(pUrl, "http://"))
+			str_copy(s_aStatus, "Ссылка должна начинаться с https://");
+		else if(!str_endswith_nocase(aName, ".ttf") && !str_endswith_nocase(aName, ".otf"))
+			str_copy(s_aStatus, "Ссылка должна вести прямо на файл .ttf или .otf");
+		else
+		{
+			str_copy(s_aDownloadName, aName, sizeof(s_aDownloadName));
+			char aDest[160];
+			str_format(aDest, sizeof(aDest), "fonts/%s", aName);
+			s_pDownload = HttpGetFile(pUrl, Storage(), aDest, IStorage::TYPE_SAVE);
+			s_pDownload->MaxResponseSize(20 * 1024 * 1024);
+			s_pDownload->LogProgress(HTTPLOG::NONE);
+			Http()->Run(s_pDownload);
+			str_copy(s_aStatus, "Скачиваю...");
+		}
+	}
+	DoText(Card, s_aStatus[0] ? s_aStatus : "После загрузки шрифт появится в списке выше.", true);
+	DoText(Card, "Шрифты лежат у вас в папке fonts.", true);
 }
