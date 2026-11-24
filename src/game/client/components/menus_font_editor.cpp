@@ -2,6 +2,7 @@
 #include "menus.h"
 
 #include <base/color.h>
+#include <base/io.h>
 #include <base/str.h>
 
 #include <engine/client.h>
