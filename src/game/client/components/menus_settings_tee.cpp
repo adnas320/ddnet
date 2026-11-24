@@ -45,6 +45,19 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		m_SkinListScrollToSelected = true;
 	}
 
+	{
+		CUIRect BrowserButton;
+		ChangeInfo.VSplitRight(180.0f, &ChangeInfo, &BrowserButton);
+		static CButtonContainer s_BrowserButton;
+		if(DoButton_Menu(&s_BrowserButton, m_ShowSkinBrowser ? "Назад к скинам" : "Скачать скины...", m_ShowSkinBrowser, &BrowserButton))
+			m_ShowSkinBrowser = !m_ShowSkinBrowser;
+	}
+	if(m_ShowSkinBrowser)
+	{
+		RenderSkinBrowser(MainView);
+		return;
+	}
+
 	if(Client()->State() == IClient::STATE_ONLINE &&
 		GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
 	{

@@ -713,3 +713,212 @@ void CMenus::RenderSettingsFx(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClFxHookRgb, "RGB-хук (радужная спираль)");
 	DoToggle(Card, g_Config.m_ClFxHookPulse, "Импульсы и вспышка захвата", true);
 }
+
+
+// ---------------------------------------------------------------- Скачивание скинов
+
+void CMenus::RenderSkinBrowser(CUIRect MainView)
+{
+	struct CSource
+	{
+		const char *m_pName;
+		const char *m_pBase;
+	};
+	static const CSource s_aSources[3] = {
+		{"DDNet: сообщество", "https://skins.ddnet.org/skin/community/"},
+		{"DDNet: основные", "https://skins.ddnet.org/skin/"},
+		{"DDstats", "https://skins.ddstats.tw/"}};
+	static std::vector<std::string> s_vNames;
+	static std::vector<char> s_vHave;
+	static std::vector<CButtonContainer> s_vButtons;
+	static std::vector<int> s_vShown;
+	static std::string s_LastFilter = "\x01";
+	static int s_Source = 0;
+	static CLineInputBuffered<32> s_Filter;
+	static std::vector<std::shared_ptr<IHttpRequest>> s_vActive;
+	static std::vector<int> s_vActiveIndex;
+	static std::vector<int> s_vQueue;
+	static size_t s_QueuePos = 0;
+	static int s_Done = 0, s_Failed = 0;
+	static bool s_Loaded = false;
+
+	const auto SkinPath = [&](int Index, char *pBuf, size_t Size) { str_format(pBuf, Size, "skins/%s.png", s_vNames[Index].c_str()); };
+	if(!s_Loaded)
+	{
+		s_Loaded = true;
+		void *pData;
+		unsigned Size;
+		if(Storage()->ReadFile("skin_names.txt", IStorage::TYPE_ALL, &pData, &Size))
+		{
+			const std::string All((const char *)pData, Size);
+			free(pData);
+			size_t Pos = 0;
+			while(Pos < All.size())
+			{
+				size_t End = All.find('\n', Pos);
+				if(End == std::string::npos)
+					End = All.size();
+				std::string Line = All.substr(Pos, End - Pos);
+				while(!Line.empty() && (Line.back() == '\r' || Line.back() == ' '))
+					Line.pop_back();
+				if(!Line.empty())
+					s_vNames.push_back(Line);
+				Pos = End + 1;
+			}
+		}
+		s_vHave.assign(s_vNames.size(), 0);
+		s_vButtons = std::vector<CButtonContainer>(s_vNames.size());
+		Storage()->CreateFolder("skins", IStorage::TYPE_SAVE);
+		for(size_t i = 0; i < s_vNames.size(); i++)
+		{
+			char aPath[128];
+			SkinPath((int)i, aPath, sizeof(aPath));
+			s_vHave[i] = Storage()->FileExists(aPath, IStorage::TYPE_ALL);
+		}
+	}
+
+	// progress of the running downloads
+	bool AnyFinished = false;
+	for(size_t i = 0; i < s_vActive.size();)
+	{
+		const EHttpState State = s_vActive[i]->State();
+		if(State == EHttpState::RUNNING || State == EHttpState::QUEUED)
+		{
+			i++;
+			continue;
+		}
+		const int Index = s_vActiveIndex[i];
+		if(State == EHttpState::DONE)
+		{
+			s_Done++;
+			s_vHave[Index] = 1;
+		}
+		else
+		{
+			s_Failed++;
+			char aPath[128];
+			SkinPath(Index, aPath, sizeof(aPath));
+			Storage()->RemoveFile(aPath, IStorage::TYPE_SAVE);
+		}
+		AnyFinished = true;
+		s_vActive.erase(s_vActive.begin() + i);
+		s_vActiveIndex.erase(s_vActiveIndex.begin() + i);
+	}
+	while(s_vActive.size() < 6 && s_QueuePos < s_vQueue.size())
+	{
+		const int Index = s_vQueue[s_QueuePos++];
+		char aPath[128], aEscaped[128], aUrl[256];
+		SkinPath(Index, aPath, sizeof(aPath));
+		EscapeUrl(aEscaped, s_vNames[Index].c_str());
+		str_format(aUrl, sizeof(aUrl), "%s%s.png", s_aSources[s_Source].m_pBase, aEscaped);
+		std::shared_ptr<IHttpRequest> pRequest = HttpGetFile(aUrl, Storage(), aPath, IStorage::TYPE_SAVE);
+		pRequest->MaxResponseSize(2 * 1024 * 1024);
+		pRequest->LogProgress(HTTPLOG::NONE);
+		Http()->Run(pRequest);
+		s_vActive.push_back(pRequest);
+		s_vActiveIndex.push_back(Index);
+	}
+	if(AnyFinished && s_vActive.empty() && s_QueuePos >= s_vQueue.size())
+		GameClient()->m_Skins.SkinList().ForceRefresh();
+
+	// source buttons
+	CUIRect Row, Button;
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	static CButtonContainer s_aSourceButtons[3];
+	const float ButtonWidth = (Row.w - 12.0f) / 3.0f;
+	for(int i = 0; i < 3; i++)
+	{
+		Row.VSplitLeft(ButtonWidth, &Button, &Row);
+		Row.VSplitLeft(6.0f, nullptr, &Row);
+		if(DoButton_Menu(&s_aSourceButtons[i], s_aSources[i].m_pName, s_Source == i, &Button))
+			s_Source = i;
+	}
+	MainView.HSplitTop(6.0f, nullptr, &MainView);
+
+	// search and status
+	CUIRect Search, Edit, Status;
+	MainView.HSplitTop(22.0f, &Search, &MainView);
+	Search.VSplitLeft(260.0f, &Edit, &Status);
+	Ui()->DoEditBox(&s_Filter, &Edit, 13.0f);
+	char aStatus[160];
+	str_format(aStatus, sizeof(aStatus), "  Всего %d, скачано %d, ошибок %d, в очереди %d", (int)s_vNames.size(), s_Done, s_Failed, (int)(s_vQueue.size() - s_QueuePos + s_vActive.size()));
+	Ui()->DoLabel(&Status, aStatus, 12.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(6.0f, nullptr, &MainView);
+
+	if(s_LastFilter != s_Filter.GetString())
+	{
+		s_LastFilter = s_Filter.GetString();
+		s_vShown.clear();
+		for(size_t i = 0; i < s_vNames.size(); i++)
+		{
+			if(s_LastFilter.empty() || str_find_nocase(s_vNames[i].c_str(), s_LastFilter.c_str()))
+				s_vShown.push_back((int)i);
+		}
+	}
+
+	// bottom: buttons and the hint for ddstats
+	CUIRect Bottom;
+	MainView.HSplitBottom(92.0f, &MainView, &Bottom);
+	CUIRect ActionRow;
+	Bottom.HSplitTop(22.0f, &ActionRow, &Bottom);
+	CUIRect AllButton, StopButton, ApplyButton;
+	ActionRow.VSplitLeft(250.0f, &AllButton, &ActionRow);
+	ActionRow.VSplitLeft(6.0f, nullptr, &ActionRow);
+	ActionRow.VSplitLeft(130.0f, &StopButton, &ActionRow);
+	ActionRow.VSplitLeft(6.0f, nullptr, &ApplyButton);
+	char aAll[96];
+	str_format(aAll, sizeof(aAll), "Скачать все показанные (%d)", (int)s_vShown.size());
+	static CButtonContainer s_AllButton, s_StopButton, s_ApplyButton;
+	if(DoButton_Menu(&s_AllButton, aAll, 0, &AllButton) && s_QueuePos >= s_vQueue.size())
+	{
+		s_vQueue.clear();
+		s_QueuePos = 0;
+		s_Done = s_Failed = 0;
+		for(const int Index : s_vShown)
+			if(!s_vHave[Index])
+				s_vQueue.push_back(Index);
+	}
+	if(DoButton_Menu(&s_StopButton, "Остановить", 0, &StopButton))
+		s_QueuePos = s_vQueue.size();
+	if(DoButton_Menu(&s_ApplyButton, "Включить скины сообщества в игре", g_Config.m_ClDownloadCommunitySkins, &ApplyButton))
+	{
+		g_Config.m_ClDownloadCommunitySkins = 1;
+		str_copy(g_Config.m_ClSkinCommunityDownloadUrl, s_aSources[s_Source].m_pBase, sizeof(g_Config.m_ClSkinCommunityDownloadUrl));
+	}
+	Bottom.HSplitTop(4.0f, nullptr, &Bottom);
+	CUIRect Hint;
+	Bottom.HSplitTop(14.0f, &Hint, &Bottom);
+	Ui()->DoLabel(&Hint, "Чтобы в игре показывались скины из ddstats, напишите в консоли (F1):", 11.0f, TEXTALIGN_ML);
+	Bottom.HSplitTop(14.0f, &Hint, &Bottom);
+	Ui()->DoLabel(&Hint, "cl_download_community_skins 1; cl_skin_community_download_url \"https://skins.ddstats.tw/\"", 11.0f, TEXTALIGN_ML);
+	Bottom.HSplitTop(14.0f, &Hint, &Bottom);
+	Ui()->DoLabel(&Hint, "Скачанные скины сразу попадают в папку со скинами. Имена, которых нет на выбранном сервере, дадут ошибку.", 10.0f, TEXTALIGN_ML);
+
+	// list
+	static CListBox s_ListBox;
+	s_ListBox.DoStart(26.0f, (int)s_vShown.size(), 1, 3, -1, &MainView);
+	for(size_t i = 0; i < s_vShown.size(); i++)
+	{
+		const int Index = s_vShown[i];
+		const CListboxItem Item = s_ListBox.DoNextItem(&s_vNames[Index], false);
+		if(!Item.m_Visible)
+			continue;
+		CUIRect Label, DownButton;
+		Item.m_Rect.VSplitRight(120.0f, &Label, &DownButton);
+		DownButton.Margin(2.0f, &DownButton);
+		Label.VSplitLeft(8.0f, nullptr, &Label);
+		Ui()->DoLabel(&Label, s_vNames[Index].c_str(), 12.0f, TEXTALIGN_ML);
+		if(s_vHave[Index])
+			Ui()->DoLabel(&DownButton, "уже есть", 11.0f, TEXTALIGN_MC);
+		else if(DoButton_Menu(&s_vButtons[Index], "Скачать", 0, &DownButton))
+		{
+			if(s_QueuePos >= s_vQueue.size())
+			{
+				s_vQueue.clear();
+				s_QueuePos = 0;
+			}
+			s_vQueue.push_back(Index);
+		}
+	}
+	s_ListBox.DoEnd();
+}

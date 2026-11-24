@@ -140,6 +140,7 @@ void CGameClient::OnConsoleInit()
 					      &m_Particles.m_RenderTrail,
 					      &m_Particles.m_RenderTrailExtra,
 					      &m_Items,
+					      &m_Fx, // effects are drawn behind the tees
 					      &m_Ghost,
 					      &m_Players,
 					      &m_MapLayersForeground,
@@ -151,7 +152,6 @@ void CGameClient::OnConsoleInit()
 					      &m_DamageInd,
 					      &m_Paint,
 					      &m_Visuals, // falling snow and weapon snow bursts, drawn below the hud
-					      &m_Fx,
 					      &m_Hud,
 					      &m_Spectator,
 					      &m_Emoticon,

@@ -1654,6 +1654,10 @@ set(EXPECTED_DATA
   fonts/GlowSansJ-Compressed-Book.otf
   fonts/SourceHanSans.ttc
   fonts/index.json
+  fonts/OFL-fonts.txt
+  fonts/Pacifico-Regular.ttf
+  fonts/PressStart2P-Regular.ttf
+  fonts/RussoOne-Regular.ttf
   game.png
   gui_buttons.png
   gui_cursor.png
@@ -1820,6 +1824,7 @@ set(EXPECTED_DATA
   shader/vulkan/tile.vert
   shader/vulkan/tile_border.frag
   shader/vulkan/tile_border.vert
+  skin_names.txt
   skins/PaladiN.png
   skins/antiantey.png
   skins/beast.png

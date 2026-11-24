@@ -143,6 +143,27 @@ void CFx::OnRender()
 				vec2 Hit;
 				if(Collision()->IntersectLine(P, End, &Hit, nullptr))
 					End = Hit;
+				// the shot stops at the first player it hits
+				for(int i = 0; i < MAX_CLIENTS; i++)
+				{
+					if(i == Snap.m_LocalClientId || !Snap.m_aCharacters[i].m_Active)
+						continue;
+					const vec2 Other = GameClient()->m_aClients[i].m_RenderPos;
+					const vec2 Seg = End - P;
+					const float SegLen = length(Seg);
+					if(SegLen < 1.0f)
+						break;
+					const vec2 SegDir = Seg / SegLen;
+					const float Along = dot(Other - P, SegDir);
+					if(Along < 0.0f || Along > SegLen + 28.0f)
+						continue;
+					const float Off = length(P + SegDir * Along - Other);
+					if(Off > 28.0f)
+						continue;
+					const float Enter = std::max(0.0f, Along - std::sqrt(28.0f * 28.0f - Off * Off));
+					if(Enter < SegLen)
+						End = P + SegDir * Enter;
+				}
 				if(g_Config.m_ClFxShotFlash)
 					Spawn(K_FLASH, Muzzle, Dir, End, 0.14f, WCol);
 				if(g_Config.m_ClFxShotRing)

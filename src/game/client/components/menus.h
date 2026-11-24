@@ -580,6 +580,8 @@ protected:
 	void RenderSettingsTranslate(CUIRect MainView);
 	void RenderSettingsFonts(CUIRect MainView);
 	void RenderSettingsFx(CUIRect MainView);
+	void RenderSkinBrowser(CUIRect MainView);
+	bool m_ShowSkinBrowser = false;
 
 	// found in menus_settings_appearance.cpp
 	void RenderSettingsAppearance(CUIRect MainView);
