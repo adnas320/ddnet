@@ -581,6 +581,8 @@ protected:
 	void RenderSettingsFonts(CUIRect MainView);
 	void RenderSettingsFx(CUIRect MainView);
 	void RenderSkinBrowser(CUIRect MainView);
+	void RenderFontEditor(CUIRect MainView);
+	bool m_ShowFontEditor = false;
 	bool m_ShowSkinBrowser = false;
 
 	// found in menus_settings_appearance.cpp

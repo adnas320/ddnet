@@ -527,6 +527,11 @@ int FontScan(const char *pName, int IsDir, int StorageType, void *pUser)
 
 void CMenus::RenderSettingsFonts(CUIRect MainView)
 {
+	if(m_ShowFontEditor)
+	{
+		RenderFontEditor(MainView);
+		return;
+	}
 	CARD_HELPERS
 	static std::vector<std::string> s_vUserFonts;
 	static bool s_Loaded = false;
@@ -589,14 +594,14 @@ void CMenus::RenderSettingsFonts(CUIRect MainView)
 
 	// create own font
 	Card = BeginCard(Left, "Сделать свой шрифт", 5);
-	DoText(Card, "Из вашего почерка: распечатайте шаблон на");
-	DoText(Card, "сайте, напишите буквы, загрузите фото, и получите");
-	DoText(Card, "файл .ttf. Положите его в папку шрифтов ниже.");
+	DoText(Card, "Рисуйте буквы мышкой (А Б В, а б в, A B C,");
+	DoText(Card, "цифры, знаки, китайские иероглифы), нажмите");
+	DoText(Card, "«Готово» и получите настоящий файл шрифта.");
 	static CButtonContainer s_MakerButton;
 	CUIRect Row = NextRow(Card);
-	if(DoButton_Menu(&s_MakerButton, "Открыть редактор шрифтов (Calligraphr)", 0, &Row))
-		Client()->ViewLink("https://www.calligraphr.com/");
-	DoText(Card, "Встроенного редактора глифов в клиенте нет.", true);
+	if(DoButton_Menu(&s_MakerButton, "Открыть редактор шрифта", 0, &Row))
+		m_ShowFontEditor = true;
+	DoText(Card, "Неготовые буквы берутся из обычного шрифта.", true);
 
 	// user fonts
 	const int NumShown = std::min<int>((int)s_vUserFonts.size(), 5);

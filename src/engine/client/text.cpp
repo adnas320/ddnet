@@ -1359,13 +1359,15 @@ public:
 		m_pGlyphMap->SetFontPreset(FontPreset);
 	}
 
-	bool SetCustomFont(const char *pPath) override
+	bool SetCustomFont(const char *pPath, bool Reload) override
 	{
 		if(pPath == nullptr || pPath[0] == '\0')
 		{
 			m_pGlyphMap->SetCustomFace(nullptr);
 			return true;
 		}
+		if(Reload)
+			m_CustomFaces.erase(pPath);
 		const auto Cached = m_CustomFaces.find(pPath);
 		if(Cached != m_CustomFaces.end())
 		{
