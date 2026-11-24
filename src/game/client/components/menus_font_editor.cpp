@@ -409,7 +409,9 @@ struct CFontEditorState
 	std::map<int, CStrokes> m_Glyphs;
 	std::vector<int> m_vCustom;
 	int m_Selected = 0x410;
-	int m_Group = 0;
+	int m_Lang = 0; // 0 Russian, 1 English, 2 Chinese
+	int m_Sub = 0;
+	bool m_Preview = false;
 	int m_Thick = 80;
 	bool m_Drawing = false;
 	char m_aStatus[160] = "";
@@ -418,40 +420,79 @@ struct CFontEditorState
 	bool m_Init = false;
 };
 
-std::vector<int> GroupChars(const CFontEditorState &S, int Group)
+const char *LangName(int Lang)
+{
+	static const char *s_apNames[3] = {"Русский", "English", "中文"};
+	return s_apNames[Lang];
+}
+
+const char *SubName(int Lang, int Sub)
+{
+	static const char *s_aapNames[3][5] = {
+		{"А–Я", "а–я", "0–9", "Знаки", "Свои"},
+		{"A–Z", "a–z", "0–9", "Знаки", "Свои"},
+		{"常用 1", "常用 2", "0–9", "标点", "Свои"}};
+	return s_aapNames[Lang][Sub];
+}
+
+std::vector<int> DecodeAll(const char *pText)
 {
 	std::vector<int> v;
-	switch(Group)
+	while(*pText)
+		v.push_back(str_utf8_decode(&pText));
+	return v;
+}
+
+std::vector<int> GroupChars(const CFontEditorState &S, int Lang, int Sub)
+{
+	std::vector<int> v;
+	if(Sub == 4)
+		return S.m_vCustom;
+	if(Sub == 2)
 	{
-	case 0:
-		v.push_back(0x401);
-		for(int c = 0x410; c <= 0x42F; c++)
-			v.push_back(c);
-		break;
-	case 1:
-		v.push_back(0x451);
-		for(int c = 0x430; c <= 0x44F; c++)
-			v.push_back(c);
-		break;
-	case 2:
-		for(int c = 'A'; c <= 'Z'; c++)
-			v.push_back(c);
-		break;
-	case 3:
-		for(int c = 'a'; c <= 'z'; c++)
-			v.push_back(c);
-		break;
-	case 4:
 		for(int c = '0'; c <= '9'; c++)
 			v.push_back(c);
-		break;
-	case 5:
-		for(const char *p = ".,!?-:;()+=/'\"@#%&*_"; *p; p++)
-			v.push_back(*p);
-		break;
-	default:
-		v = S.m_vCustom;
-		break;
+		return v;
+	}
+	if(Lang == 0)
+	{
+		if(Sub == 0)
+		{
+			v.push_back(0x401);
+			for(int c = 0x410; c <= 0x42F; c++)
+				v.push_back(c);
+		}
+		else if(Sub == 1)
+		{
+			v.push_back(0x451);
+			for(int c = 0x430; c <= 0x44F; c++)
+				v.push_back(c);
+		}
+		else
+			return DecodeAll(".,!?-:;()+=/'\"@#%&*_");
+	}
+	else if(Lang == 1)
+	{
+		if(Sub == 0)
+			for(int c = 'A'; c <= 'Z'; c++)
+				v.push_back(c);
+		else if(Sub == 1)
+			for(int c = 'a'; c <= 'z'; c++)
+				v.push_back(c);
+		else
+			return DecodeAll(".,!?-:;()+=/'\"@#%&*_");
+	}
+	else
+	{
+		// the most common simplified characters, in two pages
+		static const char *s_pCommon = "的一是不了人我在有他这为之大来以个中上们到说国和地也子时道出而要于就下得可你年生自会那后能对着事其里所去行过家十用发天如然作方成者多日都三小军二无同么经法当起与好看学进种将还分此心前面又定见只主没公从";
+		static const char *s_pPunct = "，。！？：；、（）“”《》—…·";
+		if(Sub == 3)
+			return DecodeAll(s_pPunct);
+		const std::vector<int> All = DecodeAll(s_pCommon);
+		const size_t From = Sub == 0 ? 0 : 48, To = std::min(All.size(), From + 48);
+		for(size_t i = From; i < To; i++)
+			v.push_back(All[i]);
 	}
 	return v;
 }
@@ -554,25 +595,143 @@ void CMenus::RenderFontEditor(CUIRect MainView)
 		str_copy(S.m_aStatus, "Черновик загружен.");
 	};
 
-	// group buttons
+	// language and group buttons
 	CUIRect Row, Button;
-	MainView.HSplitTop(20.0f, &Row, &MainView);
-	static const char *s_apGroups[7] = {"А–Я", "а–я", "A–Z", "a–z", "0–9", "Знаки", "Свои"};
-	static CButtonContainer s_aGroupButtons[7];
-	const float GroupWidth = (Row.w - 6.0f * 3.0f) / 7.0f;
-	for(int i = 0; i < 7; i++)
+	MainView.HSplitTop(18.0f, &Row, &MainView);
+	static CButtonContainer s_aLangButtons[3];
+	const float LangWidth = (Row.w - 2.0f * 3.0f) / 3.0f;
+	for(int i = 0; i < 3; i++)
 	{
-		Row.VSplitLeft(GroupWidth, &Button, &Row);
+		Row.VSplitLeft(LangWidth, &Button, &Row);
 		Row.VSplitLeft(3.0f, nullptr, &Row);
-		if(DoButton_Menu(&s_aGroupButtons[i], s_apGroups[i], S.m_Group == i, &Button))
+		if(DoButton_Menu(&s_aLangButtons[i], LangName(i), S.m_Lang == i, &Button))
 		{
-			S.m_Group = i;
-			const std::vector<int> vChars = GroupChars(S, i);
+			S.m_Lang = i;
+			S.m_Sub = 0;
+			const std::vector<int> vChars = GroupChars(S, S.m_Lang, S.m_Sub);
 			if(!vChars.empty())
 				S.m_Selected = vChars[0];
 		}
 	}
-	MainView.HSplitTop(5.0f, nullptr, &MainView);
+	MainView.HSplitTop(3.0f, nullptr, &MainView);
+	MainView.HSplitTop(18.0f, &Row, &MainView);
+	static CButtonContainer s_aGroupButtons[5];
+	const float GroupWidth = (Row.w - 4.0f * 3.0f) / 5.0f;
+	for(int i = 0; i < 5; i++)
+	{
+		Row.VSplitLeft(GroupWidth, &Button, &Row);
+		Row.VSplitLeft(3.0f, nullptr, &Row);
+		if(DoButton_Menu(&s_aGroupButtons[i], SubName(S.m_Lang, i), S.m_Sub == i, &Button))
+		{
+			S.m_Sub = i;
+			const std::vector<int> vChars = GroupChars(S, S.m_Lang, S.m_Sub);
+			if(!vChars.empty())
+				S.m_Selected = vChars[0];
+		}
+	}
+	MainView.HSplitTop(4.0f, nullptr, &MainView);
+
+	if(S.m_Preview)
+	{
+		// preview: the same text with the normal font and with the letters that were drawn
+		CUIRect Back;
+		MainView.HSplitBottom(22.0f, &MainView, &Back);
+		static CButtonContainer s_PreviewBack;
+		if(DoButton_Menu(&s_PreviewBack, "Назад к рисованию", 0, &Back))
+			S.m_Preview = false;
+		static const char *s_apSamples[3] = {"Привет, мир! 0123", "Hello World 0123", "你好，世界 0123"};
+		CUIRect Half, Mine;
+		MainView.VSplitMid(&Half, &Mine, 6.0f);
+		Half.Draw(ColorRGBA(0.08f, 0.08f, 0.1f, 0.9f), IGraphics::CORNER_ALL, 5.0f);
+		Mine.Draw(ColorRGBA(0.08f, 0.08f, 0.1f, 0.9f), IGraphics::CORNER_ALL, 5.0f);
+		CUIRect Title1, Title2;
+		Half.HSplitTop(16.0f, &Title1, &Half);
+		Mine.HSplitTop(16.0f, &Title2, &Mine);
+		Ui()->DoLabel(&Title1, "Как сейчас в клиенте", 10.0f, TEXTALIGN_MC);
+		Ui()->DoLabel(&Title2, "Ваш шрифт (то, что нарисовано)", 10.0f, TEXTALIGN_MC);
+		// big current letter
+		CUIRect Big1 = Half, Big2 = Mine;
+		Big1.h = Big2.h = std::min(Half.h * 0.55f, 120.0f);
+		const std::string Cur = Utf8Of(S.m_Selected);
+		Ui()->DoLabel(&Big1, Cur.c_str(), Big1.h * 0.8f, TEXTALIGN_MC);
+		const auto DrawGlyphAt = [&](int Cp, CUIRect Box, float Size, bool *pDrawn) {
+			// Box is one character cell: height Size, width computed from the strokes
+			const auto It = S.m_Glyphs.find(Cp);
+			*pDrawn = It != S.m_Glyphs.end() && !It->second.empty();
+			if(!*pDrawn)
+				return 0.0f;
+			float XMin = 1.0f, XMax = 0.0f;
+			for(const auto &Stroke : It->second)
+				for(const vec2 &P : Stroke)
+				{
+					XMin = std::min(XMin, P.x);
+					XMax = std::max(XMax, P.x);
+				}
+			const float Scale = Size; // canvas height 1.0 -> Size
+			const float PixelWidth = S.m_Thick / 1000.0f * Scale;
+			const vec2 Origin(Box.x + 0.06f * Size - XMin * 0.8f * Scale, Box.y);
+			Graphics()->TextureClear();
+			Graphics()->QuadsBegin();
+			Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.95f);
+			for(const auto &Stroke : It->second)
+				for(size_t i = 0; i < Stroke.size(); i++)
+				{
+					const vec2 A(Origin.x + Stroke[i].x * 0.8f * Scale, Origin.y + Stroke[i].y * Scale);
+					Graphics()->DrawCircle(A.x, A.y, PixelWidth * 0.5f, 8);
+					if(i + 1 < Stroke.size())
+					{
+						const vec2 B(Origin.x + Stroke[i + 1].x * 0.8f * Scale, Origin.y + Stroke[i + 1].y * Scale);
+						const vec2 D = B - A;
+						const float Len = length(D);
+						if(Len > 0.01f)
+						{
+							const vec2 N = vec2(-D.y, D.x) / Len * PixelWidth * 0.5f;
+							const IGraphics::CFreeformItem Item(A.x - N.x, A.y - N.y, A.x + N.x, A.y + N.y, B.x - N.x, B.y - N.y, B.x + N.x, B.y + N.y);
+							Graphics()->QuadsDrawFreeform(&Item, 1);
+						}
+					}
+				}
+			Graphics()->QuadsEnd();
+			return (XMax - XMin) * 0.8f * Scale + 0.2f * Size;
+		};
+		bool Drawn;
+		DrawGlyphAt(S.m_Selected, Big2, Big2.h, &Drawn);
+		if(!Drawn)
+			Ui()->DoLabel(&Big2, "не нарисована", 10.0f, TEXTALIGN_MC);
+		// sample line
+		const std::vector<int> vSample = DecodeAll(s_apSamples[S.m_Lang]);
+		CUIRect Line1 = Half, Line2 = Mine;
+		Line1.y += Big1.h + 6.0f;
+		Line2.y += Big1.h + 6.0f;
+		Line1.h = Line2.h = 40.0f;
+		const std::string Sample = s_apSamples[S.m_Lang];
+		Ui()->DoLabel(&Line1, Sample.c_str(), 24.0f, TEXTALIGN_ML);
+		float X = Line2.x + 4.0f;
+		const float Size = 30.0f;
+		for(const int Cp : vSample)
+		{
+			CUIRect Cell = Line2;
+			Cell.x = X;
+			Cell.y = Line2.y;
+			float Advance = DrawGlyphAt(Cp, Cell, Size, &Drawn);
+			if(!Drawn)
+			{
+				// not drawn yet: the normal font is used, like in the finished font
+				const std::string One = Utf8Of(Cp);
+				CUIRect Fallback = Cell;
+				Fallback.w = 18.0f;
+				Fallback.h = Size;
+				TextRender()->TextColor(1.0f, 1.0f, 1.0f, 0.4f);
+				Ui()->DoLabel(&Fallback, One.c_str(), 22.0f, TEXTALIGN_ML);
+				TextRender()->TextColor(TextRender()->DefaultTextColor());
+				Advance = Cp == ' ' ? 10.0f : 17.0f;
+			}
+			X += Advance + 2.0f;
+			if(X > Line2.x + Line2.w - 10.0f)
+				break;
+		}
+		return;
+	}
 
 	CUIRect Left, Middle, Right;
 	MainView.VSplitLeft(MainView.w * 0.31f, &Left, &MainView);
@@ -584,7 +743,7 @@ void CMenus::RenderFontEditor(CUIRect MainView)
 
 	// the grid with the letters
 	{
-		const std::vector<int> vChars = GroupChars(S, S.m_Group);
+		const std::vector<int> vChars = GroupChars(S, S.m_Lang, S.m_Sub);
 		const float Cell = 25.0f;
 		const int Columns = std::max(1, (int)(Left.w / (Cell + 2.0f)));
 		static std::vector<CButtonContainer> s_vCharButtons(128);
@@ -601,7 +760,7 @@ void CMenus::RenderFontEditor(CUIRect MainView)
 			if(DoButton_Menu(&s_vCharButtons[i], Shown.c_str(), S.m_Selected == vChars[i], &Cell0))
 				S.m_Selected = vChars[i];
 		}
-		if(S.m_Group == 6 && vChars.empty())
+		if(S.m_Sub == 4 && vChars.empty())
 			Ui()->DoLabel(&Left, "Впишите символы справа и нажмите «Добавить». Подойдут китайские иероглифы и любые другие.", 10.0f, TEXTALIGN_TL);
 	}
 
@@ -618,6 +777,17 @@ void CMenus::RenderFontEditor(CUIRect MainView)
 		GuideLine(0.45f, ColorRGBA(1.0f, 1.0f, 1.0f, 0.15f)); // x height
 		GuideLine(0.8f, ColorRGBA(0.4f, 0.6f, 1.0f, 0.6f)); // baseline
 		CStrokes &Strokes = S.m_Glyphs[S.m_Selected];
+
+		// the letter in the normal font, faint, to trace over
+		{
+			const std::string Ref = Utf8Of(S.m_Selected);
+			CUIRect RefBox = Middle;
+			RefBox.y = Middle.y + Middle.h * 0.2f;
+			RefBox.h = Middle.h * 0.6f;
+			TextRender()->TextColor(1.0f, 1.0f, 1.0f, 0.13f);
+			Ui()->DoLabel(&RefBox, Ref.c_str(), Middle.h * 0.55f, TEXTALIGN_MC);
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
+		}
 
 		// pointer input
 		const bool Inside = Ui()->MouseInside(&Middle);
@@ -730,7 +900,7 @@ void CMenus::RenderFontEditor(CUIRect MainView)
 					S.m_Selected = Cp;
 			}
 			S.m_CustomInput.Clear();
-			S.m_Group = 6;
+			S.m_Sub = 4;
 		}
 
 		Row = NextRow(26.0f);
@@ -772,7 +942,11 @@ void CMenus::RenderFontEditor(CUIRect MainView)
 		Ui()->DoLabel(&Row, S.m_aStatus[0] ? S.m_aStatus : "Нарисуйте буквы, потом нажмите «Готово». Без рисунка символ берётся из обычного шрифта.", 9.0f, TEXTALIGN_TL);
 
 		Row = NextRow(20.0f);
-		if(DoButton_Menu(&s_Back, "Назад к шрифтам", 0, &Row))
+		Row.VSplitMid(&Button, &Half, 4.0f);
+		static CButtonContainer s_PreviewButton;
+		if(DoButton_Menu(&s_PreviewButton, "Сравнить", 0, &Button))
+			S.m_Preview = true;
+		if(DoButton_Menu(&s_Back, "Назад", 0, &Half))
 			m_ShowFontEditor = false;
 	}
 }

@@ -16,6 +16,7 @@
 #include <game/client/gameclient.h>
 #include <game/client/ui.h>
 #include <game/client/ui_listbox.h>
+#include <game/client/ui_scrollregion.h>
 
 #include <algorithm>
 #include <memory>
@@ -746,6 +747,7 @@ void CMenus::RenderSkinBrowser(CUIRect MainView)
 	static size_t s_QueuePos = 0;
 	static int s_Done = 0, s_Failed = 0;
 	static bool s_Loaded = false;
+	static std::string s_HoveredName;
 
 	const auto SkinPath = [&](int Index, char *pBuf, size_t Size) { str_format(pBuf, Size, "skins/%s.png", s_vNames[Index].c_str()); };
 	if(!s_Loaded)
@@ -766,7 +768,7 @@ void CMenus::RenderSkinBrowser(CUIRect MainView)
 				std::string Line = All.substr(Pos, End - Pos);
 				while(!Line.empty() && (Line.back() == '\r' || Line.back() == ' '))
 					Line.pop_back();
-				if(!Line.empty())
+				if(!Line.empty() && CSkin::IsValidName(Line.c_str()))
 					s_vNames.push_back(Line);
 				Pos = End + 1;
 			}
@@ -836,7 +838,17 @@ void CMenus::RenderSkinBrowser(CUIRect MainView)
 		Row.VSplitLeft(ButtonWidth, &Button, &Row);
 		Row.VSplitLeft(6.0f, nullptr, &Row);
 		if(DoButton_Menu(&s_aSourceButtons[i], s_aSources[i].m_pName, s_Source == i, &Button))
+		{
 			s_Source = i;
+			// previews use the same download settings as the game, so they follow the chosen source
+			g_Config.m_ClDownloadSkins = 1;
+			if(i != 1)
+			{
+				g_Config.m_ClDownloadCommunitySkins = 1;
+				str_copy(g_Config.m_ClSkinCommunityDownloadUrl, s_aSources[i].m_pBase, sizeof(g_Config.m_ClSkinCommunityDownloadUrl));
+			}
+			GameClient()->m_Skins.SkinList().ForceRefresh();
+		}
 	}
 	MainView.HSplitTop(6.0f, nullptr, &MainView);
 
@@ -846,7 +858,7 @@ void CMenus::RenderSkinBrowser(CUIRect MainView)
 	Search.VSplitLeft(260.0f, &Edit, &Status);
 	Ui()->DoEditBox(&s_Filter, &Edit, 13.0f);
 	char aStatus[160];
-	str_format(aStatus, sizeof(aStatus), "  Всего %d, скачано %d, ошибок %d, в очереди %d", (int)s_vNames.size(), s_Done, s_Failed, (int)(s_vQueue.size() - s_QueuePos + s_vActive.size()));
+	str_format(aStatus, sizeof(aStatus), "  Всего %d, скачано %d, ошибок %d, в очереди %d   %s", (int)s_vNames.size(), s_Done, s_Failed, (int)(s_vQueue.size() - s_QueuePos + s_vActive.size()), s_HoveredName.c_str());
 	Ui()->DoLabel(&Status, aStatus, 12.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(6.0f, nullptr, &MainView);
 
@@ -899,31 +911,71 @@ void CMenus::RenderSkinBrowser(CUIRect MainView)
 	Bottom.HSplitTop(14.0f, &Hint, &Bottom);
 	Ui()->DoLabel(&Hint, "Скачанные скины сразу попадают в папку со скинами. Имена, которых нет на выбранном сервере, дадут ошибку.", 10.0f, TEXTALIGN_ML);
 
-	// list
-	static CListBox s_ListBox;
-	s_ListBox.DoStart(26.0f, (int)s_vShown.size(), 1, 3, -1, &MainView);
-	for(size_t i = 0; i < s_vShown.size(); i++)
+	// grid of tees: the skin is shown as it looks in the game, the name only appears while hovering
+	static CScrollRegion s_Scroll;
+	static std::vector<char> s_vQueued;
+	if(s_vQueued.size() != s_vNames.size())
+		s_vQueued.assign(s_vNames.size(), 0);
+	for(size_t i = 0; i < s_vActiveIndex.size(); i++)
+		s_vQueued[s_vActiveIndex[i]] = 1;
+	CScrollRegionParams ScrollParams;
+	ScrollParams.m_ScrollUnit = 60.0f;
+	CUIRect Content = MainView;
+	s_Scroll.Begin(&Content, &ScrollParams);
+	const float Cell = 50.0f, Gap = 4.0f;
+	const int Columns = std::max(1, (int)((Content.w - 10.0f) / (Cell + Gap)));
+	int RowIndex = 0;
+	const void *pHovered = nullptr;
+	int HoveredIndex = -1;
+	for(size_t Start = 0; Start < s_vShown.size(); Start += Columns, RowIndex++)
 	{
-		const int Index = s_vShown[i];
-		const CListboxItem Item = s_ListBox.DoNextItem(&s_vNames[Index], false);
-		if(!Item.m_Visible)
+		CUIRect RowRect;
+		Content.HSplitTop(Cell + Gap, &RowRect, &Content);
+		if(!s_Scroll.AddRect(RowRect))
 			continue;
-		CUIRect Label, DownButton;
-		Item.m_Rect.VSplitRight(120.0f, &Label, &DownButton);
-		DownButton.Margin(2.0f, &DownButton);
-		Label.VSplitLeft(8.0f, nullptr, &Label);
-		Ui()->DoLabel(&Label, s_vNames[Index].c_str(), 12.0f, TEXTALIGN_ML);
-		if(s_vHave[Index])
-			Ui()->DoLabel(&DownButton, "уже есть", 11.0f, TEXTALIGN_MC);
-		else if(DoButton_Menu(&s_vButtons[Index], "Скачать", 0, &DownButton))
+		for(int c = 0; c < Columns && Start + c < s_vShown.size(); c++)
 		{
-			if(s_QueuePos >= s_vQueue.size())
+			const int Index = s_vShown[Start + c];
+			CUIRect CellRect = {RowRect.x + c * (Cell + Gap), RowRect.y, Cell, Cell};
+			const void *pId = &s_vNames[Index];
+			const int Clicked = Ui()->DoButtonLogic(pId, 0, &CellRect, BUTTONFLAG_LEFT);
+			const bool Hot = Ui()->HotItem() == pId;
+			if(Hot)
 			{
-				s_vQueue.clear();
-				s_QueuePos = 0;
+				pHovered = pId;
+				HoveredIndex = Index;
 			}
-			s_vQueue.push_back(Index);
+			ColorRGBA Back(0.0f, 0.0f, 0.0f, 0.3f);
+			if(s_vHave[Index])
+				Back = ColorRGBA(0.2f, 0.7f, 0.3f, 0.45f);
+			else if(s_vQueued[Index])
+				Back = ColorRGBA(0.9f, 0.7f, 0.2f, 0.45f);
+			if(Hot)
+				Back.a += 0.25f;
+			CellRect.Draw(Back, IGraphics::CORNER_ALL, 6.0f);
+			const CSkin *pSkin = GameClient()->m_Skins.FindOrNullptr(s_vNames[Index].c_str());
+			if(pSkin != nullptr)
+			{
+				CTeeRenderInfo Info;
+				Info.Apply(pSkin);
+				Info.m_Size = 38.0f;
+				RenderTools()->RenderIdleTeeAtCenter(&Info, vec2(CellRect.x + CellRect.w / 2.0f, CellRect.y + CellRect.h / 2.0f));
+			}
+			else
+				Ui()->DoLabel(&CellRect, "...", 12.0f, TEXTALIGN_MC);
+			if(Clicked && !s_vHave[Index] && !s_vQueued[Index])
+			{
+				if(s_QueuePos >= s_vQueue.size())
+				{
+					s_vQueue.clear();
+					s_QueuePos = 0;
+				}
+				s_vQueue.push_back(Index);
+				s_vQueued[Index] = 1;
+			}
 		}
 	}
-	s_ListBox.DoEnd();
+	s_Scroll.End();
+	(void)pHovered;
+	s_HoveredName = HoveredIndex >= 0 ? s_vNames[HoveredIndex] : std::string();
 }

@@ -51,7 +51,8 @@ class CFx : public CComponent
 public:
 	int Sizeof() const override { return sizeof(*this); }
 	void OnReset() override;
-	void OnRender() override;
+	// called by the players component: after the hooks were drawn and before the tees, so the effects cover the hook but not the tee
+	void RenderEffects();
 
 	// explosion of a grenade and the hit of a hammer, called when the events arrive
 	void OnBoom(vec2 Pos);

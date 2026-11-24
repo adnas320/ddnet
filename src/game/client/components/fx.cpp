@@ -83,7 +83,7 @@ void CFx::OnHammerHit(vec2 Pos)
 		Spawn(K_HAMWAVE, Pos, vec2(1.0f, 0.0f), Pos, 0.45f, ColorRGBA(1.0f, 0.75f, 0.35f, 1.0f));
 }
 
-void CFx::OnRender()
+void CFx::RenderEffects()
 {
 	const int State = Client()->State();
 	if(State != IClient::STATE_ONLINE && State != IClient::STATE_DEMOPLAYBACK)

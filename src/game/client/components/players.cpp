@@ -1063,6 +1063,9 @@ void CPlayers::OnRender()
 		RenderHook(ScreenRect, &pLocalClientData->m_RenderPrev, &pLocalClientData->m_RenderCur, &aRenderInfo[LocalClientId], LocalClientId);
 	}
 
+	// weapon and hook effects: over the hooks, under the tees
+	GameClient()->m_Fx.RenderEffects();
+
 	// render spectating players
 	for(const auto &Client : GameClient()->m_aClients)
 	{
