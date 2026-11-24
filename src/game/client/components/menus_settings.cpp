@@ -60,7 +60,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 		"Рисование",
 		"Музыка",
 		"Перевод",
-		"Шрифт"};
+		"Шрифт",
+		"Эффекты"};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
 	// two groups: "Sparki" (everything added by this client) and "DDNet" (the original pages)
@@ -211,6 +212,11 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
 		RenderSettingsFonts(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_FX)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
+		RenderSettingsFx(MainView);
 	}
 	else
 	{

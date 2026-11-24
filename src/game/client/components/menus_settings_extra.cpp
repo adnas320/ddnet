@@ -668,3 +668,42 @@ void CMenus::RenderSettingsFonts(CUIRect MainView)
 	DoText(Card, s_aStatus[0] ? s_aStatus : "После загрузки шрифт появится в списке выше.", true);
 	DoText(Card, "Шрифты лежат у вас в папке fonts.", true);
 }
+
+
+// ---------------------------------------------------------------- Эффекты
+
+void CMenus::RenderSettingsFx(CUIRect MainView)
+{
+	CARD_HELPERS
+	CUIRect Left, Middle, Right, Rest;
+	MainView.VSplitLeft((MainView.w - 20.0f) / 3.0f, &Left, &Rest);
+	Rest.VSplitLeft(10.0f, nullptr, &Rest);
+	Rest.VSplitLeft((MainView.w - 20.0f) / 3.0f, &Middle, &Right);
+	Right.VSplitLeft(10.0f, nullptr, &Right);
+
+	CUIRect Card = BeginCard(Left, "Вокруг тишки", 10);
+	DoToggle(Card, g_Config.m_ClFxSatellites, "Спутники-шарики");
+	DoToggle(Card, g_Config.m_ClFxHalo, "Нимб");
+	DoToggle(Card, g_Config.m_ClFxArcs, "Электрические дуги");
+	DoToggle(Card, g_Config.m_ClFxJets, "Огненные струи из-под ног");
+	DoToggle(Card, g_Config.m_ClFxHearts, "Сердечки");
+	DoToggle(Card, g_Config.m_ClFxNotes, "Ноты");
+	DoToggle(Card, g_Config.m_ClFxButterflies, "Бабочки");
+	DoToggle(Card, g_Config.m_ClFxConfetti, "Конфетти при прыжке");
+	DoToggle(Card, g_Config.m_ClFxSonar, "Зелёный сонар");
+	DoToggle(Card, g_Config.m_ClFxShield, "Энергощит", true);
+
+	Card = BeginCard(Middle, "Погода и атмосфера", 6);
+	DoToggle(Card, g_Config.m_ClFxRain, "Дождь");
+	DoToggle(Card, g_Config.m_ClFxFog, "Туман");
+	DoToggle(Card, g_Config.m_ClFxEmbers, "Угольки снизу");
+	DoToggle(Card, g_Config.m_ClFxMatrix, "Матрица (зелёный код)");
+	DoToggle(Card, g_Config.m_ClFxLightning, "Гроза со вспышками");
+	DoToggle(Card, g_Config.m_ClFxRays, "Лучи света", true);
+
+	Card = BeginCard(Right, "Экран", 4);
+	DoToggle(Card, g_Config.m_ClFxVignette, "Виньетка по краям");
+	DoToggle(Card, g_Config.m_ClFxBorder, "Радужная рамка");
+	DoToggle(Card, g_Config.m_ClFxCrosshair, "Вращающееся кольцо прицела");
+	DoToggle(Card, g_Config.m_ClFxScan, "Ретро-сканлайны", true);
+}

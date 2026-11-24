@@ -579,6 +579,7 @@ protected:
 	void RenderSettingsMusic(CUIRect MainView);
 	void RenderSettingsTranslate(CUIRect MainView);
 	void RenderSettingsFonts(CUIRect MainView);
+	void RenderSettingsFx(CUIRect MainView);
 
 	// found in menus_settings_appearance.cpp
 	void RenderSettingsAppearance(CUIRect MainView);
@@ -739,6 +740,7 @@ public:
 		SETTINGS_MUSIC,
 		SETTINGS_TRANSLATE,
 		SETTINGS_FONT,
+		SETTINGS_FX,
 
 		SETTINGS_LENGTH,
 	};

@@ -151,6 +151,7 @@ void CGameClient::OnConsoleInit()
 					      &m_DamageInd,
 					      &m_Paint,
 					      &m_Visuals, // falling snow and weapon snow bursts, drawn below the hud
+					      &m_Fx,
 					      &m_Hud,
 					      &m_Spectator,
 					      &m_Emoticon,

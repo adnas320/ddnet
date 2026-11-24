@@ -71,6 +71,7 @@
 #include "components/musicplayer.h"
 #include "components/translator.h"
 #include "components/paint.h"
+#include "components/fx.h"
 #include "components/visuals.h"
 #include "components/voting.h"
 
@@ -181,6 +182,7 @@ public:
 	CEmoticon m_Emoticon;
 	CDamageInd m_DamageInd;
 	CVisuals m_Visuals;
+	CFx m_Fx;
 	CBindWheel m_BindWheel;
 	CMusicPlayer m_MusicPlayer;
 	CTranslator m_Translator;

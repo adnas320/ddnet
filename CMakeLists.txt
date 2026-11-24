@@ -2767,6 +2767,8 @@ if(CLIENT)
     components/touch_controls.h
     components/translator.cpp
     components/translator.h
+    components/fx.cpp
+    components/fx.h
     components/visuals.cpp
     components/visuals.h
     components/voting.cpp
