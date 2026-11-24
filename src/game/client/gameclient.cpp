@@ -1487,6 +1487,7 @@ void CGameClient::ProcessEvents()
 			if(!m_PredictedWorld.CheckPredictedEventHandled(CGameWorld::CPredictedEvent(Item.m_Type, ExplosionPos, -1, Client()->GameTick(g_Config.m_ClDummy))))
 			{
 				m_Effects.Explosion(ExplosionPos, Alpha);
+				m_Fx.OnBoom(ExplosionPos);
 			}
 		}
 		else if(Item.m_Type == NETEVENTTYPE_HAMMERHIT)
@@ -1497,6 +1498,7 @@ void CGameClient::ProcessEvents()
 			if(!m_PredictedWorld.CheckPredictedEventHandled(CGameWorld::CPredictedEvent(Item.m_Type, HammerHitPos, -1, Client()->GameTick(g_Config.m_ClDummy))))
 			{
 				m_Effects.HammerHit(HammerHitPos, Alpha, Volume);
+				m_Fx.OnHammerHit(HammerHitPos);
 			}
 		}
 		else if(Item.m_Type == NETEVENTTYPE_BIRTHDAY)
@@ -3891,10 +3893,12 @@ void CGameClient::HandlePredictedEvents(const int Tick)
 			else if(EventsIterator->m_EventId == NETEVENTTYPE_EXPLOSION)
 			{
 				m_Effects.Explosion(EventsIterator->m_Pos, Alpha);
+				m_Fx.OnBoom(EventsIterator->m_Pos);
 			}
 			else if(EventsIterator->m_EventId == NETEVENTTYPE_HAMMERHIT)
 			{
 				m_Effects.HammerHit(EventsIterator->m_Pos, Alpha, Volume);
+				m_Fx.OnHammerHit(EventsIterator->m_Pos);
 			}
 			else if(EventsIterator->m_EventId == NETEVENTTYPE_DAMAGEIND)
 			{

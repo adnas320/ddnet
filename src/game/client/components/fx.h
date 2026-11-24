@@ -8,27 +8,54 @@
 
 #include <vector>
 
-// 20 additional cosmetic effects: around the own tee, in the world and on the whole screen.
-// Almost everything is a function of the time, so there is little state to keep.
+// Weapon, crosshair and hook effects (tab "Effects") and three atmosphere effects (embers, hearts, storm).
+// Most things are a function of time; shots and explosions are short lived events.
 class CFx : public CComponent
 {
-	struct CConfetti
+	enum
 	{
+		K_HAMARC,
+		K_HAMWAVE,
+		K_HAMSPARKS,
+		K_HAMFIRE,
+		K_FLASH,
+		K_RING,
+		K_SHELL,
+		K_SMOKE,
+		K_BOOMFIRE,
+		K_BOOMSHARDS,
+		K_PELLETS,
+		K_CONE,
+		K_LASERFLASH,
+		K_LASERBOLT,
+	};
+	struct CEvent
+	{
+		int m_Kind;
 		vec2 m_Pos;
-		vec2 m_Vel;
+		vec2 m_Dir;
+		vec2 m_End;
+		float m_Age;
 		float m_Life;
-		float m_Angle;
-		float m_Spin;
+		int m_Seed;
 		ColorRGBA m_Color;
 	};
-	std::vector<CConfetti> m_vConfetti;
-	int m_LastJumped = 0;
-	bool m_JumpedInitialized = false;
+	std::vector<CEvent> m_vEvents;
+	int m_LastAttackTick = -1;
+	bool m_AttackInitialized = false;
+	float m_LastShotTime = -100.0f;
+	int m_NextSeed = 1;
+
+	void Spawn(int Kind, vec2 Pos, vec2 Dir, vec2 End, float Life, ColorRGBA Color);
 
 public:
 	int Sizeof() const override { return sizeof(*this); }
 	void OnReset() override;
 	void OnRender() override;
+
+	// explosion of a grenade and the hit of a hammer, called when the events arrive
+	void OnBoom(vec2 Pos);
+	void OnHammerHit(vec2 Pos);
 };
 
 #endif

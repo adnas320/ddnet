@@ -681,29 +681,35 @@ void CMenus::RenderSettingsFx(CUIRect MainView)
 	Rest.VSplitLeft((MainView.w - 20.0f) / 3.0f, &Middle, &Right);
 	Right.VSplitLeft(10.0f, nullptr, &Right);
 
-	CUIRect Card = BeginCard(Left, "Вокруг тишки", 10);
-	DoToggle(Card, g_Config.m_ClFxSatellites, "Спутники-шарики");
-	DoToggle(Card, g_Config.m_ClFxHalo, "Нимб");
-	DoToggle(Card, g_Config.m_ClFxArcs, "Электрические дуги");
-	DoToggle(Card, g_Config.m_ClFxJets, "Огненные струи из-под ног");
-	DoToggle(Card, g_Config.m_ClFxHearts, "Сердечки");
-	DoToggle(Card, g_Config.m_ClFxNotes, "Ноты");
-	DoToggle(Card, g_Config.m_ClFxButterflies, "Бабочки");
-	DoToggle(Card, g_Config.m_ClFxConfetti, "Конфетти при прыжке");
-	DoToggle(Card, g_Config.m_ClFxSonar, "Зелёный сонар");
-	DoToggle(Card, g_Config.m_ClFxShield, "Энергощит", true);
+	CUIRect Card = BeginCard(Left, "Хаммер", 4);
+	DoToggle(Card, g_Config.m_ClFxHamArc, "Дуга взмаха");
+	DoToggle(Card, g_Config.m_ClFxHamWave, "Ударная волна при попадании");
+	DoToggle(Card, g_Config.m_ClFxHamSparks, "Искры от взмаха");
+	DoToggle(Card, g_Config.m_ClFxHamFire, "Огненный взмах", true);
 
-	Card = BeginCard(Middle, "Погода и атмосфера", 6);
-	DoToggle(Card, g_Config.m_ClFxRain, "Дождь");
-	DoToggle(Card, g_Config.m_ClFxFog, "Туман");
-	DoToggle(Card, g_Config.m_ClFxEmbers, "Угольки снизу");
-	DoToggle(Card, g_Config.m_ClFxMatrix, "Матрица (зелёный код)");
-	DoToggle(Card, g_Config.m_ClFxLightning, "Гроза со вспышками");
-	DoToggle(Card, g_Config.m_ClFxRays, "Лучи света", true);
+	Card = BeginCard(Left, "Прицел", 4);
+	DoToggle(Card, g_Config.m_ClFxAimSpread, "Прицел расходится при выстреле");
+	DoToggle(Card, g_Config.m_ClFxAimAmmo, "Кольцо патронов");
+	DoToggle(Card, g_Config.m_ClFxAimLine, "Пунктир до прицела");
+	DoToggle(Card, g_Config.m_ClFxAimPulse, "Пульсирующий прицел", true);
 
-	Card = BeginCard(Right, "Экран", 4);
-	DoToggle(Card, g_Config.m_ClFxVignette, "Виньетка по краям");
-	DoToggle(Card, g_Config.m_ClFxBorder, "Радужная рамка");
-	DoToggle(Card, g_Config.m_ClFxCrosshair, "Вращающееся кольцо прицела");
-	DoToggle(Card, g_Config.m_ClFxScan, "Ретро-сканлайны", true);
+	Card = BeginCard(Middle, "Выстрелы", 4);
+	DoToggle(Card, g_Config.m_ClFxShotFlash, "Дульная вспышка");
+	DoToggle(Card, g_Config.m_ClFxShotRing, "Кольцо отдачи");
+	DoToggle(Card, g_Config.m_ClFxShotShell, "Вылетающие гильзы");
+	DoToggle(Card, g_Config.m_ClFxShotSmoke, "Дымок из дула", true);
+
+	Card = BeginCard(Middle, "Граната и шотган", 4);
+	DoToggle(Card, g_Config.m_ClFxBoomFire, "Огненный шар взрыва");
+	DoToggle(Card, g_Config.m_ClFxBoomShards, "Волна и осколки взрыва");
+	DoToggle(Card, g_Config.m_ClFxPelletFan, "Веер дроби шотгана");
+	DoToggle(Card, g_Config.m_ClFxShotCone, "Конус выстрела шотгана", true);
+
+	Card = BeginCard(Right, "Лазер", 2);
+	DoToggle(Card, g_Config.m_ClFxLaserFlash, "Вспышка попадания");
+	DoToggle(Card, g_Config.m_ClFxLaserBolt, "Электрический разряд по лучу", true);
+
+	Card = BeginCard(Right, "Хук", 2);
+	DoToggle(Card, g_Config.m_ClFxHookRgb, "RGB-хук (радужная спираль)");
+	DoToggle(Card, g_Config.m_ClFxHookPulse, "Импульсы и вспышка захвата", true);
 }

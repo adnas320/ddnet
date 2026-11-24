@@ -82,6 +82,11 @@ void CMenus::RenderSettingsVisuals(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClVisualsBubbles, "Мыльные пузыри", true);
 
 
+	Card = BeginCard(Left, "Атмосфера", 3);
+	DoToggle(Card, g_Config.m_ClFxEmbers, "Угольки снизу");
+	DoToggle(Card, g_Config.m_ClFxHearts, "Сердечки");
+	DoToggle(Card, g_Config.m_ClFxLightning, "Гроза со вспышками", true);
+
 	Card = BeginCard(Left, "Курсор", 1);
 	DoToggle(Card, g_Config.m_ClVisualsCursorTrail, "Белый след курсора", true);
 
