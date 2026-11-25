@@ -635,7 +635,7 @@ void CEditorMulti::ApplyTiles(const uint8_t *pData, size_t Size, int FromId)
 		Tile.m_Index = R.U8();
 		Tile.m_Flags = R.U8();
 		Tile.m_Skip = R.U8();
-		Tile.m_Reserved = R.U8();
+		Tile.m_MustBe0 = R.U8();
 		if(!R.m_Ok)
 			break;
 		if(Idx >= (uint32_t)W * H)
@@ -728,7 +728,7 @@ void CEditorMulti::ScanLocalChanges(CEditor *pEditor)
 					Msg.U8(Tile.m_Index);
 					Msg.U8(Tile.m_Flags);
 					Msg.U8(Tile.m_Skip);
-					Msg.U8(Tile.m_Reserved);
+					Msg.U8(Tile.m_MustBe0);
 				}
 				SendUp(Msg.Finish());
 				m_TilesSent += (int)(End - Start);
