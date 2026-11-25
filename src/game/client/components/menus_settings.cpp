@@ -27,7 +27,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 	// render background
 	CUIRect Button, TabBar, RestartBar;
 	MainView.VSplitRight(120.0f, &MainView, &TabBar);
-	MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
+	// прозрачный плавный градиент: фиолетовый сверху -> чёрный снизу
+	MainView.Draw4(ColorRGBA(0.42f, 0.16f, 0.78f, 0.26f), ColorRGBA(0.42f, 0.16f, 0.78f, 0.26f), ColorRGBA(0.0f, 0.0f, 0.0f, 0.26f), ColorRGBA(0.0f, 0.0f, 0.0f, 0.26f), IGraphics::CORNER_B, 10.0f);
 	MainView.Margin(20.0f, &MainView);
 
 	const bool NeedRestart = m_NeedRestartGraphics || m_NeedRestartSound || m_NeedRestartUpdate;

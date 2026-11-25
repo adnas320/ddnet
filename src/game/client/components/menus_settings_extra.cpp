@@ -703,12 +703,23 @@ void CMenus::RenderSettingsFx(CUIRect MainView)
 	DoToggle(Card, g_Config.m_ClFxHookPulse, "Импульсы и вспышка захвата", true);
 
 	// one card for the hammer combo and one for the laser, both look the same: switch, power, color, style, preview
-	const auto DoEffectCard = [&](CUIRect &Column, const char *pTitle, int &Enabled, int &Power, unsigned int &Color, int &Style, const char *const *apStyles, bool IsLaser) {
+	const auto DoEffectCard = [&](CUIRect &Column, const char *pTitle, int &Enabled, int &Power, unsigned int &Color, unsigned int DefaultColor, int &Style, const char *const *apStyles, bool IsLaser) {
 		Card = BeginCard(Column, pTitle, 10);
 		DoToggle(Card, Enabled, "Включить");
 		CUIRect Row = NextRow(Card);
 		Ui()->DoScrollbarOption(&Power, &Power, &Row, "Мощность", 30, 200, &CUi::ms_LinearScrollbarScale, 0u, "%");
-		DoColor(Card, Color, "Цвет");
+		{
+			// цвет + кнопка сброса к стандартному
+			CUIRect ColorRow = NextRow(Card), ColorLabel, ColorRest, ResetButton, ColorButton;
+			ColorRow.VSplitRight(60.0f, &ColorRest, &ColorButton);
+			ColorRest.VSplitRight(70.0f, &ColorLabel, &ResetButton);
+			ResetButton.VSplitRight(66.0f, nullptr, &ResetButton);
+			Ui()->DoLabel(&ColorLabel, "Цвет", 13.0f, TEXTALIGN_ML);
+			static CButtonContainer s_aColorReset[2];
+			if(DoButton_Menu(&s_aColorReset[IsLaser ? 1 : 0], "Сброс", 0, &ResetButton))
+				Color = DefaultColor;
+			DoButton_ColorPicker(&ColorButton, &Color, false);
+		}
 		for(int Line = 0; Line < 2; Line++)
 		{
 			CUIRect StyleRow = NextRow(Card), A, B;
@@ -759,8 +770,8 @@ void CMenus::RenderSettingsFx(CUIRect MainView)
 	};
 	static const char *s_apComboStyles[4] = {"Цифры", "Рамка", "Искры", "Неон"};
 	static const char *s_apLaserStyles[4] = {"Молния", "Пульс", "Плазма", "Кристалл"};
-	DoEffectCard(Middle, "Комбо хаммера", g_Config.m_ClFxHammer, g_Config.m_ClFxHammerPower, g_Config.m_ClFxHammerColor, g_Config.m_ClFxHammerStyle, s_apComboStyles, false);
-	DoEffectCard(Right, "Эффект лазера", g_Config.m_ClFxLaser, g_Config.m_ClFxLaserPower, g_Config.m_ClFxLaserColor, g_Config.m_ClFxLaserStyle, s_apLaserStyles, true);
+	DoEffectCard(Middle, "Комбо хаммера", g_Config.m_ClFxHammer, g_Config.m_ClFxHammerPower, g_Config.m_ClFxHammerColor, 1769369u, g_Config.m_ClFxHammerStyle, s_apComboStyles, false);
+	DoEffectCard(Right, "Эффект лазера", g_Config.m_ClFxLaser, g_Config.m_ClFxLaserPower, g_Config.m_ClFxLaserColor, 9240486u, g_Config.m_ClFxLaserStyle, s_apLaserStyles, true);
 	Card = BeginCard(Left, "Как работает комбо", 4);
 	DoText(Card, "Бейте игрока хаммером: под ним");
 	DoText(Card, "появляется x1, x2, x3...");

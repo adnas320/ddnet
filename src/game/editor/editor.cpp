@@ -3506,8 +3506,15 @@ void CEditor::RenderModebar(CUIRect View)
 	CUIRect Mentions, IngameMoved, ModeButtons, ModeButton;
 	View.HSplitTop(12.0f, &Mentions, &View);
 	View.HSplitTop(12.0f, &IngameMoved, &View);
-	View.HSplitBottom(22.0f, nullptr, &ModeButtons);
+	CUIRect MultiArea;
+	View.HSplitBottom(22.0f, &MultiArea, &ModeButtons);
 	const float Width = m_ToolBoxWidth - 5.0f;
+	{
+		CUIRect MultiButton;
+		MultiArea.HMargin(3.0f, &MultiButton);
+		MultiButton.VSplitLeft(Width, &MultiButton, nullptr);
+		m_Multi.DoButton(this, MultiButton);
+	}
 	ModeButtons.VSplitLeft(Width, &ModeButtons, nullptr);
 	const float ButtonWidth = Width / 3;
 
@@ -3755,6 +3762,9 @@ void CEditor::Exit()
 
 void CEditor::Render()
 {
+	// multimapping network pump (before anything touches the map)
+	m_Multi.Update(this);
+
 	// basic start
 	Graphics()->Clear(0.0f, 0.0f, 0.0f);
 	CUIRect View = *Ui()->Screen();

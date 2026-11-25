@@ -36,6 +36,7 @@
 #include <game/editor/mapitems/layer_tiles.h>
 #include <game/editor/mapitems/layer_tune.h>
 #include <game/editor/mapitems/map.h>
+#include <game/editor/multimap.h>
 #include <game/editor/prompt.h>
 #include <game/editor/quick_action.h>
 #include <game/mapitems.h>
@@ -106,6 +107,7 @@ enum
 
 class CEditor : public IEditor
 {
+	friend class CEditorMulti;
 	class IInput *m_pInput = nullptr;
 	class IClient *m_pClient = nullptr;
 	class IConfigManager *m_pConfigManager = nullptr;
@@ -329,6 +331,7 @@ public:
 	int m_Dialog;
 	bool m_CloseMapAfterSave = false;
 	char m_aTooltip[256] = "";
+	CEditorMulti m_Multi;
 
 	bool m_BrushColorEnabled;
 

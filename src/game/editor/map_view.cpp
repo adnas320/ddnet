@@ -116,6 +116,8 @@ void CMapView::RenderEditorMap()
 		Map()->SelectedGroup()->MapScreen();
 		pSelectedTilesLayer->ShowInfo();
 	}
+
+	Editor()->m_Multi.RenderWorld(Editor());
 }
 
 void CMapView::Render(CUIRect View)

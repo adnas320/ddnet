@@ -2904,6 +2904,8 @@ if(CLIENT)
     mapitems/map_io.cpp
     mapitems/sound.cpp
     mapitems/sound.h
+    multimap.cpp
+    multimap.h
     popups.cpp
     prompt.cpp
     prompt.h
