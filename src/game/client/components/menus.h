@@ -582,6 +582,8 @@ protected:
 	void RenderSettingsFx(CUIRect MainView);
 	void RenderSkinBrowser(CUIRect MainView);
 	void RenderFontEditor(CUIRect MainView);
+	void RenderGunpackMixer(CUIRect MainView);
+	bool m_ShowGunpackMixer = false;
 	bool m_ShowFontEditor = false;
 	bool m_ShowSkinBrowser = false;
 

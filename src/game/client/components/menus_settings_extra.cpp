@@ -170,6 +170,11 @@ void CMenus::RenderSettingsSkin(CUIRect MainView)
 
 void CMenus::RenderSettingsGunpack(CUIRect MainView)
 {
+	if(m_ShowGunpackMixer)
+	{
+		RenderGunpackMixer(MainView);
+		return;
+	}
 	CARD_HELPERS
 	if(!gs_GunpacksLoaded)
 	{
@@ -316,7 +321,11 @@ void CMenus::RenderSettingsGunpack(CUIRect MainView)
 	CUIRect Hint, ButtonA, ButtonB;
 	Bottom.VSplitRight(180.0f, &Hint, &ButtonB);
 	Hint.VSplitRight(180.0f, &Hint, &ButtonA);
-	static CButtonContainer s_ResetButton, s_RefreshButton;
+	CUIRect ButtonMixer;
+	Hint.VSplitRight(180.0f, &Hint, &ButtonMixer);
+	static CButtonContainer s_ResetButton, s_RefreshButton, s_MixerButton;
+	if(DoButton_Menu(&s_MixerButton, "Миксер (перетаскивание)", 0, &ButtonMixer))
+		m_ShowGunpackMixer = true;
 	if(DoButton_Menu(&s_ResetButton, "Всё из ганпака 1", 0, &ButtonA))
 	{
 		g_Config.m_ClGunpackMask = 0;
