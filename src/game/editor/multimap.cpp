@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <thread>
 
 namespace {
@@ -128,6 +129,59 @@ struct CReader
 	size_t Left() const { return m_pEnd - m_pData; }
 };
 
+// ---- ключ сессии: ip4 + порт + контрольный байт -> 12 символов "XXXX-XXXX-XXXX" ----
+const char *const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+bool EncodeKey(const char *pIp, int Port, char *pOut, int OutSize)
+{
+	unsigned a, b, c, d;
+	char aTail[2];
+	if(sscanf(pIp, "%u.%u.%u.%u%1s", &a, &b, &c, &d, aTail) != 4 || a > 255 || b > 255 || c > 255 || d > 255)
+		return false;
+	uint8_t aBytes[7] = {(uint8_t)a, (uint8_t)b, (uint8_t)c, (uint8_t)d, (uint8_t)(Port >> 8), (uint8_t)(Port & 0xff), 0};
+	aBytes[6] = (uint8_t)(aBytes[0] ^ aBytes[1] ^ aBytes[2] ^ aBytes[3] ^ aBytes[4] ^ aBytes[5] ^ 0xA5);
+	uint64_t Bits = 0;
+	for(int i = 0; i < 7; i++)
+		Bits = (Bits << 8) | aBytes[i];
+	Bits <<= 4; // 56 -> 60 бит
+	char aChars[13];
+	for(int i = 0; i < 12; i++)
+		aChars[i] = ALPHABET[(Bits >> (55 - i * 5)) & 31];
+	aChars[12] = '\0';
+	str_format(pOut, OutSize, "%.4s-%.4s-%.4s", aChars, aChars + 4, aChars + 8);
+	return true;
+}
+
+bool DecodeKey(const char *pKey, char *pIpOut, int IpSize, int *pPort)
+{
+	uint64_t Bits = 0;
+	int Count = 0;
+	for(const char *p = pKey; *p; p++)
+	{
+		if(*p == '-' || *p == ' ')
+			continue;
+		char Ch = *p;
+		if(Ch >= 'a' && Ch <= 'z')
+			Ch = (char)(Ch - 'a' + 'A');
+		const char *pPos = Ch ? strchr(ALPHABET, Ch) : nullptr;
+		if(!pPos || Count >= 12)
+			return false;
+		Bits = (Bits << 5) | (uint64_t)(pPos - ALPHABET);
+		Count++;
+	}
+	if(Count != 12)
+		return false;
+	Bits >>= 4;
+	uint8_t aBytes[7];
+	for(int i = 0; i < 7; i++)
+		aBytes[i] = (uint8_t)((Bits >> (48 - i * 8)) & 0xff);
+	if(aBytes[6] != (uint8_t)(aBytes[0] ^ aBytes[1] ^ aBytes[2] ^ aBytes[3] ^ aBytes[4] ^ aBytes[5] ^ 0xA5))
+		return false;
+	str_format(pIpOut, IpSize, "%d.%d.%d.%d", aBytes[0], aBytes[1], aBytes[2], aBytes[3]);
+	*pPort = (aBytes[4] << 8) | aBytes[5];
+	return *pPort > 0;
+}
+
 int64_t Now()
 {
 	return time_get();
@@ -197,6 +251,8 @@ void CEditorMulti::Stop(const char *pReason)
 		m_pConnect.reset();
 	}
 	m_Mode = MODE_OFF;
+	m_pIpLookup.reset();
+	m_aKey[0] = '\0';
 	m_pSyncMap = nullptr;
 	m_Shadows.clear();
 	m_Remotes.clear();
@@ -210,9 +266,13 @@ void CEditorMulti::Stop(const char *pReason)
 		SetStatus("%s", pReason);
 }
 
-void CEditorMulti::StartHost(int Port)
+void CEditorMulti::StartHost(int Port, const char *pName, const char *pPassword)
 {
 	Stop(nullptr);
+	m_HostPort = Port;
+	str_copy(m_aHostPassword, pPassword);
+	str_copy(m_aSessionName, pName[0] ? pName : "Сессия");
+	m_aKey[0] = '\0';
 	NETADDR Bind = NETADDR_ZEROED;
 	Bind.type = NETTYPE_ALL;
 	Bind.port = Port;
@@ -230,36 +290,83 @@ void CEditorMulti::StartHost(int Port)
 	m_pSyncMap = m_pEditor->Map();
 	m_MyId = 0;
 	m_Shadows.clear();
-	SetStatus("Сессия открыта, порт %d. Ждём игроков.", Port);
+	SetStatus("Сессия «%s» открыта. Определяю ваш внешний адрес для ключа...", m_aSessionName);
+
+	// внешний ip узнаём простым http-запросом в отдельном потоке
+	m_pIpLookup = std::make_shared<SIpLookup>();
+	std::shared_ptr<SIpLookup> pLookup = m_pIpLookup;
+	std::thread([pLookup]() {
+		int Ok = -1;
+		NETADDR Addr = NETADDR_ZEROED;
+		if(net_host_lookup("api.ipify.org", &Addr, NETTYPE_IPV4) == 0)
+		{
+			Addr.port = 80;
+			NETADDR Bind = NETADDR_ZEROED;
+			Bind.type = NETTYPE_IPV4;
+			NETSOCKET Sock = net_tcp_create(Bind);
+			if(Sock)
+			{
+				if(net_tcp_connect(Sock, &Addr) == 0)
+				{
+					const char *pReq = "GET / HTTP/1.0\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n";
+					net_tcp_send(Sock, pReq, str_length(pReq));
+					char aBuf[1024];
+					int Len = 0;
+					int Got;
+					while(Len < (int)sizeof(aBuf) - 1 && (Got = net_tcp_recv(Sock, aBuf + Len, (int)sizeof(aBuf) - 1 - Len)) > 0)
+						Len += Got;
+					aBuf[Len] = '\0';
+					const char *pBody = strstr(aBuf, "\r\n\r\n");
+					if(pBody)
+					{
+						pBody += 4;
+						str_copy(pLookup->m_aIp, pBody, sizeof(pLookup->m_aIp));
+						for(char *p = pLookup->m_aIp; *p; p++)
+							if(*p == '\r' || *p == '\n' || *p == ' ')
+							{
+								*p = '\0';
+								break;
+							}
+						Ok = pLookup->m_aIp[0] ? 1 : -1;
+					}
+				}
+				net_tcp_close(Sock);
+			}
+		}
+		pLookup->m_Result = Ok;
+	}).detach();
 }
 
-void CEditorMulti::StartJoin(const char *pAddress, int Port)
+void CEditorMulti::StartJoin(const char *pKeyOrAddress, const char *pPassword)
 {
 	Stop(nullptr);
-	char aHost[96];
-	str_copy(aHost, pAddress);
+	str_copy(m_aJoinPassword, pPassword);
 	NETADDR Addr = NETADDR_ZEROED;
-	int PortFromText = 0;
-	if(net_addr_from_str(&Addr, aHost) != 0)
+	char aIp[48];
+	int KeyPort = 0;
+	if(DecodeKey(pKeyOrAddress, aIp, sizeof(aIp), &KeyPort))
 	{
-		// возможно имя вместо ip
-		char aName[96];
-		str_copy(aName, aHost);
-		char *pColon = (char *)str_rchr(aName, ':');
-		if(pColon && pColon != aName)
+		if(net_addr_from_str(&Addr, aIp) != 0)
 		{
-			*pColon = '\0';
-			PortFromText = str_toint(pColon + 1);
-		}
-		if(net_host_lookup(aName, &Addr, NETTYPE_ALL) != 0)
-		{
-			SetStatus("Адрес не распознан: %s", pAddress);
+			SetStatus("Ключ повреждён");
 			return;
 		}
-		Addr.port = PortFromText;
+		Addr.port = KeyPort;
 	}
-	if(Addr.port == 0)
-		Addr.port = Port;
+	else if(str_find(pKeyOrAddress, ".") || str_find(pKeyOrAddress, ":"))
+	{
+		// запасной вариант: обычный ip:порт
+		if(net_addr_from_str(&Addr, pKeyOrAddress) != 0 || Addr.port == 0)
+		{
+			SetStatus("Ключ не распознан. Проверьте, что он скопирован целиком.");
+			return;
+		}
+	}
+	else
+	{
+		SetStatus("Неверный ключ. Он выглядит так: ABCD-EFGH-JKLM");
+		return;
+	}
 
 	NETADDR Bind = NETADDR_ZEROED;
 	Bind.type = Addr.type;
@@ -448,7 +555,8 @@ void CEditorMulti::DropPeer(size_t Index)
 		W.U8(Id);
 		Broadcast(W.Finish(), nullptr, false);
 	}
-	SetStatus("Участник вышел. Участников: %d", (int)m_vpPeers.size() + 1);
+	if(HadHello)
+		SetStatus("Участник вышел. Участников: %d", (int)m_vpPeers.size() + 1);
 }
 
 void CEditorMulti::PumpPeer(SPeer &Peer, bool IsServerSide)
@@ -506,11 +614,24 @@ void CEditorMulti::HandleMessage(SPeer *pFrom, uint8_t Type, const uint8_t *pDat
 		if(pFrom) // хост: клиент представился
 		{
 			R.Str(pFrom->m_aName, sizeof(pFrom->m_aName));
+			char aPass[32];
+			R.Str(aPass, sizeof(aPass));
 			if(pFrom->m_aName[0] == '\0')
 				str_copy(pFrom->m_aName, "Игрок");
+			if(m_aHostPassword[0] != '\0' && str_comp(aPass, m_aHostPassword) != 0)
+			{
+				CWriter D(MSG_DENY);
+				SendToPeer(*pFrom, D.Finish());
+				FlushSend(*pFrom);
+				net_tcp_close(pFrom->m_Sock);
+				pFrom->m_Sock = nullptr;
+				SetStatus("Кто-то ввёл неверный пароль");
+				break;
+			}
 			pFrom->m_Hello = true;
 			CWriter W(MSG_HELLO);
 			W.U8(pFrom->m_Id);
+			W.Str(m_aSessionName, 30);
 			SendToPeer(*pFrom, W.Finish());
 			QueueMap(pFrom->m_Id);
 			SetStatus("Подключился %s", pFrom->m_aName);
@@ -518,7 +639,8 @@ void CEditorMulti::HandleMessage(SPeer *pFrom, uint8_t Type, const uint8_t *pDat
 		else // клиент: хост сказал наш id
 		{
 			m_MyId = R.U8();
-			SetStatus("Подключено. Жду карту от хоста...");
+			R.Str(m_aSessionName, sizeof(m_aSessionName));
+			SetStatus("Подключено к «%s». Жду карту от хоста...", m_aSessionName);
 		}
 		break;
 	case MSG_MAP:
@@ -585,6 +707,10 @@ void CEditorMulti::HandleMessage(SPeer *pFrom, uint8_t Type, const uint8_t *pDat
 		}
 		break;
 	}
+	case MSG_DENY:
+		if(!pFrom)
+			Stop("Неверный пароль — хост не пустил");
+		break;
 	case MSG_LEAVE:
 	{
 		const int Id = R.U8();
@@ -836,6 +962,7 @@ void CEditorMulti::PumpClient()
 			m_Mode = MODE_CLIENT;
 			CWriter W(MSG_HELLO);
 			W.Str(m_pEditor->Config()->m_PlayerName[0] ? m_pEditor->Config()->m_PlayerName : "Игрок", 20);
+			W.Str(m_aJoinPassword, 30);
 			SendToPeer(m_Server, W.Finish());
 			SetStatus("Соединился, жду ответ хоста...");
 		}
@@ -854,7 +981,7 @@ void CEditorMulti::PumpClient()
 
 	PumpPeer(m_Server, false);
 	FlushSend(m_Server);
-	if(!m_Server.m_Sock)
+	if(m_Mode != MODE_OFF && !m_Server.m_Sock)
 		Stop("Соединение с хостом потеряно");
 }
 
@@ -870,7 +997,17 @@ void CEditorMulti::Update(CEditor *pEditor)
 	}
 
 	if(m_Mode == MODE_HOST)
+	{
+		if(m_pIpLookup && m_pIpLookup->m_Result != 0)
+		{
+			if(m_pIpLookup->m_Result == 1 && EncodeKey(m_pIpLookup->m_aIp, m_HostPort, m_aKey, sizeof(m_aKey)))
+				SetStatus("Сессия «%s» открыта. Отправьте друзьям ключ.", m_aSessionName);
+			else
+				SetStatus("Не удалось узнать внешний адрес (нет интернета или IPv6). Друзья могут ввести ip:порт вручную.");
+			m_pIpLookup.reset();
+		}
 		PumpHost();
+	}
 	else
 		PumpClient();
 	if(m_Mode == MODE_OFF)
@@ -988,7 +1125,7 @@ void CEditorMulti::DoButton(CEditor *pEditor, const CUIRect &Rect)
 		str_format(aText, sizeof(aText), "Мультимаппинг: %d", (int)m_Remotes.size() + 1);
 	if(pEditor->DoButton_Editor(&s_ButtonId, aText, Active() ? 1 : 0, &Rect, BUTTONFLAG_LEFT, "Строить карту вместе с другими игроками: видны их курсоры и правки."))
 	{
-		pEditor->Ui()->DoPopupMenu(&m_PopupId, Rect.x, Rect.y + Rect.h, 300.0f, 268.0f, this, PopupFn);
+		pEditor->Ui()->DoPopupMenu(&m_PopupId, Rect.x, Rect.y + Rect.h, 340.0f, 372.0f, this, PopupFn);
 	}
 }
 
@@ -1005,56 +1142,87 @@ CUi::EPopupMenuFunctionResult CEditorMulti::RenderPopup(CUIRect View)
 	{
 		m_InputsInit = true;
 		m_PortInput.Set("8750");
+		m_NameInput.Set("Моя сессия");
+		m_JoinPassInput.SetHidden(true);
+		m_HostPassInput.SetHidden(true);
 	}
 
 	CUIRect Row;
-	const auto NextRow = [&](float H = 16.0f) {
+	const auto NextRow = [&](float H = 18.0f) {
 		View.HSplitTop(H, &Row, &View);
-		View.HSplitTop(3.0f, nullptr, &View);
+		View.HSplitTop(4.0f, nullptr, &View);
 	};
-
-	NextRow(14.0f);
-	pUi->DoLabel(&Row, "Мультимаппинг", 12.0f, TEXTALIGN_ML);
-
-	NextRow(26.0f);
-	pUi->DoLabel(&Row, m_aStatus, 9.0f, TEXTALIGN_TL);
-
-	const auto DoPortRow = [&]() {
-		NextRow();
+	const auto DoField = [&](const char *pLabel, CLineInput *pInput) {
+		NextRow(18.0f);
 		CUIRect Label, Edit;
-		Row.VSplitLeft(110.0f, &Label, &Edit);
-		pUi->DoLabel(&Label, "Порт (TCP)", 10.0f, TEXTALIGN_ML);
-		pEditor->DoEditBox(&m_PortInput, &Edit, 10.0f);
+		Row.VSplitLeft(84.0f, &Label, &Edit);
+		pUi->DoLabel(&Label, pLabel, 10.0f, TEXTALIGN_ML);
+		pEditor->DoEditBox(pInput, &Edit, 10.0f);
 	};
-	const int Port = std::clamp(str_toint(m_PortInput.GetString()), 1, 65535);
+
+	View.Margin(4.0f, &View);
+	NextRow(16.0f);
+	pUi->DoLabel(&Row, "Совместное строительство", 13.0f, TEXTALIGN_MC);
+
+	// окошко статуса
+	NextRow(42.0f);
+	Row.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.4f), IGraphics::CORNER_ALL, 4.0f);
+	Row.Margin(4.0f, &Row);
+	pUi->DoLabel(&Row, m_aStatus, 9.0f, TEXTALIGN_TL);
 
 	if(m_Mode == MODE_OFF)
 	{
-		DoPortRow();
-		NextRow(18.0f);
-		static char s_HostButton;
-		if(pEditor->DoButton_Editor(&s_HostButton, "Создать сессию (я хост)", 0, &Row, BUTTONFLAG_LEFT, "Открывает эту карту для совместной работы. Друзья подключаются к вашему IP и порту."))
-			StartHost(Port);
-
 		NextRow(14.0f);
-		pUi->DoLabel(&Row, "Или подключиться к хосту (ip или ip:порт):", 9.0f, TEXTALIGN_ML);
-		NextRow();
-		pEditor->DoEditBox(&m_AddressInput, &Row, 10.0f);
-		NextRow(18.0f);
+		pUi->DoLabel(&Row, "Подключиться к другу", 11.0f, TEXTALIGN_ML);
+		DoField("Ключ", &m_KeyInput);
+		DoField("Пароль", &m_JoinPassInput);
+		NextRow(20.0f);
 		static char s_JoinButton;
-		if(pEditor->DoButton_Editor(&s_JoinButton, "Подключиться", 0, &Row, BUTTONFLAG_LEFT, "Карта хоста откроется в новой вкладке редактора."))
+		if(pEditor->DoButton_Editor(&s_JoinButton, "Подключиться", 0, &Row, BUTTONFLAG_LEFT, "Карта хоста откроется у вас, правки будут общими."))
 		{
-			if(m_AddressInput.IsEmpty())
-				SetStatus("Введите адрес хоста");
+			if(m_KeyInput.IsEmpty())
+				SetStatus("Вставьте ключ, который дал друг (вида ABCD-EFGH-JKLM)");
 			else
-				StartJoin(m_AddressInput.GetString(), Port);
+				StartJoin(m_KeyInput.GetString(), m_JoinPassInput.GetString());
 		}
 
-		NextRow(52.0f);
-		pUi->DoLabel(&Row, "Если хост за роутером: откройте на нём TCP-порт или используйте общую виртуальную сеть (Radmin VPN, ZeroTier, playit.gg) и дайте друзьям тот адрес.", 8.5f, TEXTALIGN_TL);
+		NextRow(6.0f);
+		NextRow(14.0f);
+		pUi->DoLabel(&Row, "Создать свою сессию", 11.0f, TEXTALIGN_ML);
+		DoField("Название", &m_NameInput);
+		DoField("Порт", &m_PortInput);
+		DoField("Пароль", &m_HostPassInput);
+		NextRow(20.0f);
+		static char s_HostButton;
+		if(pEditor->DoButton_Editor(&s_HostButton, "Запустить сессию", 0, &Row, BUTTONFLAG_LEFT, "Откроет эту карту для друзей. Вы получите ключ, который надо им отправить."))
+		{
+			const int Port = std::clamp(str_toint(m_PortInput.GetString()), 1, 65535);
+			StartHost(Port, m_NameInput.GetString(), m_HostPassInput.GetString());
+		}
+		NextRow(38.0f);
+		pUi->DoLabel(&Row, "Пароль можно не ставить. Хосту нужен открытый TCP-порт (или Radmin VPN / ZeroTier: тогда друзья вводят ip:порт вместо ключа).", 8.0f, TEXTALIGN_TL);
 	}
 	else
 	{
+		if(m_Mode == MODE_HOST)
+		{
+			NextRow(14.0f);
+			pUi->DoLabel(&Row, "Ключ для друзей:", 10.0f, TEXTALIGN_ML);
+			NextRow(26.0f);
+			Row.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.45f), IGraphics::CORNER_ALL, 4.0f);
+			pUi->DoLabel(&Row, m_aKey[0] ? m_aKey : "…", 16.0f, TEXTALIGN_MC);
+			NextRow(18.0f);
+			static char s_CopyButton;
+			if(m_aKey[0] && pEditor->DoButton_Editor(&s_CopyButton, "Копировать ключ", 0, &Row, BUTTONFLAG_LEFT, "Скопирует ключ в буфер обмена."))
+			{
+				pEditor->Input()->SetClipboardText(m_aKey);
+				SetStatus("Ключ скопирован. Отправьте его другу%s.", m_aHostPassword[0] ? " вместе с паролем" : "");
+			}
+			NextRow(12.0f);
+			char aInfo[96];
+			str_format(aInfo, sizeof(aInfo), "Порт %d · пароль: %s", m_HostPort, m_aHostPassword[0] ? "есть" : "нет");
+			pUi->DoLabel(&Row, aInfo, 9.0f, TEXTALIGN_ML);
+		}
 		char aLine[96];
 		str_format(aLine, sizeof(aLine), "Вы: %s   (отправлено тайлов: %d, получено: %d)", pEditor->Config()->m_PlayerName, m_TilesSent, m_TilesReceived);
 		NextRow(14.0f);
@@ -1084,17 +1252,17 @@ CUi::EPopupMenuFunctionResult CEditorMulti::RenderPopup(CUIRect View)
 
 		// кнопки внизу
 		CUIRect Bottom;
-		View.HSplitBottom(18.0f, &View, &Bottom);
+		View.HSplitBottom(20.0f, &View, &Bottom);
 		static char s_StopButton;
-		if(pEditor->DoButton_Editor(&s_StopButton, "Отключиться", 0, &Bottom, BUTTONFLAG_LEFT, "Завершить мультимаппинг. Карта останется открытой."))
+		if(pEditor->DoButton_Editor(&s_StopButton, m_Mode == MODE_HOST ? "Закрыть сессию" : "Отключиться", 0, &Bottom, BUTTONFLAG_LEFT, "Завершить мультимаппинг. Карта останется открытой."))
 		{
 			Stop("Отключено");
 			return CUi::POPUP_CLOSE_CURRENT;
 		}
 		if(m_Mode == MODE_HOST)
 		{
-			View.HSplitBottom(3.0f, &View, nullptr);
-			View.HSplitBottom(18.0f, &View, &Bottom);
+			View.HSplitBottom(4.0f, &View, nullptr);
+			View.HSplitBottom(20.0f, &View, &Bottom);
 			static char s_ResendButton;
 			if(pEditor->DoButton_Editor(&s_ResendButton, "Отправить карту всем заново", 0, &Bottom, BUTTONFLAG_LEFT, "Нужно, если вы изменили структуру: добавили/удалили слой или группу, изменили размер слоя."))
 			{

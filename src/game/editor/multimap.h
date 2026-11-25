@@ -58,6 +58,7 @@ private:
 		MSG_CURSOR,
 		MSG_TILES,
 		MSG_LEAVE,
+		MSG_DENY,
 	};
 
 	struct SPeer
@@ -138,17 +139,33 @@ private:
 	int m_TilesSent = 0;
 	int m_TilesReceived = 0;
 
+	// определение внешнего адреса хоста (для ключа)
+	struct SIpLookup
+	{
+		std::atomic<int> m_Result{0}; // 0 идёт, 1 успех, -1 ошибка
+		char m_aIp[48] = "";
+	};
+	std::shared_ptr<SIpLookup> m_pIpLookup;
+	char m_aKey[32] = ""; // ключ сессии для друзей
+	int m_HostPort = 0;
+	char m_aHostPassword[32] = "";
+	char m_aJoinPassword[32] = "";
+	char m_aSessionName[32] = "";
+
 	// ввод в окне
-	CLineInputBuffered<64> m_AddressInput;
+	CLineInputBuffered<40> m_KeyInput;
+	CLineInputBuffered<30> m_JoinPassInput;
+	CLineInputBuffered<24> m_NameInput;
 	CLineInputBuffered<8> m_PortInput;
+	CLineInputBuffered<30> m_HostPassInput;
 	bool m_InputsInit = false;
 
 	static CUi::EPopupMenuFunctionResult PopupFn(void *pContext, CUIRect View, bool Active);
 	CUi::EPopupMenuFunctionResult RenderPopup(CUIRect View);
 
 	bool MapStillOpen() const;
-	void StartHost(int Port);
-	void StartJoin(const char *pAddress, int Port);
+	void StartHost(int Port, const char *pName, const char *pPassword);
+	void StartJoin(const char *pKeyOrAddress, const char *pPassword);
 	void SetStatus(const char *pFormat, ...);
 
 	void PumpHost();
