@@ -19,6 +19,7 @@
 #include <game/client/ui_scrollregion.h>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -686,40 +687,77 @@ void CMenus::RenderSettingsFx(CUIRect MainView)
 	Rest.VSplitLeft(10.0f, nullptr, &Rest);
 	Rest.VSplitLeft((MainView.w - 20.0f) / 3.0f, &Middle, &Right);
 	Right.VSplitLeft(10.0f, nullptr, &Right);
+	const float Now = (float)std::fmod(Client()->LocalTime(), 10000.0);
 
-	CUIRect Card = BeginCard(Left, "Хаммер", 4);
-	DoToggle(Card, g_Config.m_ClFxHamArc, "Дуга взмаха");
-	DoToggle(Card, g_Config.m_ClFxHamWave, "Ударная волна при попадании");
-	DoToggle(Card, g_Config.m_ClFxHamSparks, "Искры от взмаха");
-	DoToggle(Card, g_Config.m_ClFxHamFire, "Огненный взмах", true);
-
-	Card = BeginCard(Left, "Прицел", 4);
-	DoToggle(Card, g_Config.m_ClFxAimSpread, "Прицел расходится при выстреле");
-	DoToggle(Card, g_Config.m_ClFxAimAmmo, "Кольцо патронов");
-	DoToggle(Card, g_Config.m_ClFxAimLine, "Пунктир до прицела");
-	DoToggle(Card, g_Config.m_ClFxAimPulse, "Пульсирующий прицел", true);
-
-	Card = BeginCard(Middle, "Выстрелы", 4);
-	DoToggle(Card, g_Config.m_ClFxShotFlash, "Дульная вспышка");
-	DoToggle(Card, g_Config.m_ClFxShotRing, "Кольцо отдачи");
-	DoToggle(Card, g_Config.m_ClFxShotShell, "Вылетающие гильзы");
-	DoToggle(Card, g_Config.m_ClFxShotSmoke, "Дымок из дула", true);
-
-	Card = BeginCard(Middle, "Граната и шотган", 4);
-	DoToggle(Card, g_Config.m_ClFxBoomFire, "Огненный шар взрыва");
-	DoToggle(Card, g_Config.m_ClFxBoomShards, "Волна и осколки взрыва");
-	DoToggle(Card, g_Config.m_ClFxPelletFan, "Веер дроби шотгана");
-	DoToggle(Card, g_Config.m_ClFxShotCone, "Конус выстрела шотгана", true);
-
-	Card = BeginCard(Right, "Лазер", 2);
-	DoToggle(Card, g_Config.m_ClFxLaserFlash, "Вспышка попадания");
-	DoToggle(Card, g_Config.m_ClFxLaserBolt, "Электрический разряд по лучу", true);
-
-	Card = BeginCard(Right, "Хук", 2);
+	CUIRect Card = BeginCard(Left, "Хук", 2);
 	DoToggle(Card, g_Config.m_ClFxHookRgb, "RGB-хук (радужная спираль)");
 	DoToggle(Card, g_Config.m_ClFxHookPulse, "Импульсы и вспышка захвата", true);
-}
 
+	// one card for the hammer combo and one for the laser, both look the same: switch, power, color, style, preview
+	const auto DoEffectCard = [&](CUIRect &Column, const char *pTitle, int &Enabled, int &Power, unsigned int &Color, int &Style, const char *const *apStyles, bool IsLaser) {
+		Card = BeginCard(Column, pTitle, 10);
+		DoToggle(Card, Enabled, "Включить");
+		CUIRect Row = NextRow(Card);
+		Ui()->DoScrollbarOption(&Power, &Power, &Row, "Мощность", 30, 200, &CUi::ms_LinearScrollbarScale, 0u, "%");
+		DoColor(Card, Color, "Цвет");
+		for(int Line = 0; Line < 2; Line++)
+		{
+			CUIRect StyleRow = NextRow(Card), A, B;
+			StyleRow.VSplitMid(&A, &B, 4.0f);
+			static CButtonContainer s_aStyleButtons[2][2][2];
+			for(int k = 0; k < 2; k++)
+			{
+				const int Index = Line * 2 + k;
+				if(DoButton_Menu(&s_aStyleButtons[IsLaser ? 1 : 0][Line][k], apStyles[Index], Style == Index, k == 0 ? &A : &B))
+					Style = Index;
+			}
+		}
+		CUIRect Preview = NextRow(Card);
+		CUIRect Last = Preview;
+		for(int k = 0; k < 3; k++)
+			Last = NextRow(Card, k == 2);
+		Preview.h = Last.y + Last.h - Preview.y;
+		Preview.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f), IGraphics::CORNER_ALL, 8.0f);
+		const ColorRGBA Col = color_cast<ColorRGBA>(ColorHSLA(Color));
+		const float PowerF = Power / 100.0f;
+		if(IsLaser)
+		{
+			const vec2 From(Preview.x + 14.0f, Preview.y + Preview.h / 2.0f), To(Preview.x + Preview.w - 14.0f, Preview.y + Preview.h / 2.0f);
+			// the beam of the game itself, the effect lies over it
+			Graphics()->TextureClear();
+			Graphics()->QuadsBegin();
+			Graphics()->SetColor(0.15f, 0.25f, 0.9f, 1.0f);
+			const IGraphics::CFreeformItem Outer(From.x, From.y - 2.5f, To.x, To.y - 2.5f, From.x, From.y + 2.5f, To.x, To.y + 2.5f);
+			Graphics()->QuadsDrawFreeform(&Outer, 1);
+			Graphics()->SetColor(0.8f, 0.9f, 1.0f, 1.0f);
+			const IGraphics::CFreeformItem Inner(From.x, From.y - 1.0f, To.x, To.y - 1.0f, From.x, From.y + 1.0f, To.x, To.y + 1.0f);
+			Graphics()->QuadsDrawFreeform(&Inner, 1);
+			Graphics()->QuadsEnd();
+			GameClient()->m_Fx.DrawLaserFx(From, To, 0.65f + 0.35f * std::sin(Now * 3.0f), Now, Style, PowerF, Col, 7);
+		}
+		else
+		{
+			// a series of hits, then a pause, and the 100 combo animation at the end
+			const float Cycle = std::fmod(Now, 8.0f);
+			const float Step = 0.4f;
+			const int Count = std::min(12, (int)(Cycle / Step) + 1);
+			const float Since = Cycle - (Count - 1) * Step;
+			const float Remaining = std::clamp(1.0f - Since, 0.0f, 1.0f);
+			const float Milestone = (Cycle > 5.6f && Cycle < 6.9f) ? Cycle - 5.6f : -1.0f;
+			if(Cycle < 5.0f + 0.4f || Milestone >= 0.0f)
+				GameClient()->m_Fx.DrawCombo(vec2(Preview.x + Preview.w / 2.0f, Preview.y + Preview.h / 2.0f + 6.0f), Milestone >= 0.0f ? 100 : Count, Milestone >= 0.0f ? Milestone : Since, Milestone >= 0.0f ? 1.0f : Remaining, Milestone, Style, PowerF, Col);
+		}
+	};
+	static const char *s_apComboStyles[4] = {"Цифры", "Рамка", "Искры", "Неон"};
+	static const char *s_apLaserStyles[4] = {"Молния", "Пульс", "Плазма", "Кристалл"};
+	DoEffectCard(Middle, "Комбо хаммера", g_Config.m_ClFxHammer, g_Config.m_ClFxHammerPower, g_Config.m_ClFxHammerColor, g_Config.m_ClFxHammerStyle, s_apComboStyles, false);
+	DoEffectCard(Right, "Эффект лазера", g_Config.m_ClFxLaser, g_Config.m_ClFxLaserPower, g_Config.m_ClFxLaserColor, g_Config.m_ClFxLaserStyle, s_apLaserStyles, true);
+	Card = BeginCard(Left, "Как работает комбо", 4);
+	DoText(Card, "Бейте игрока хаммером: под ним");
+	DoText(Card, "появляется x1, x2, x3...");
+	DoText(Card, "Секунда без удара сбрасывает комбо,");
+	DoText(Card, "на 100 ударах будет анимация.", true);
+}
 
 // ---------------------------------------------------------------- Скачивание скинов
 

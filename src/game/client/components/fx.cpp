@@ -5,9 +5,9 @@
 #include <engine/client.h>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
+#include <engine/textrender.h>
 
 #include <game/client/gameclient.h>
-#include <game/collision.h>
 
 #include <algorithm>
 #include <cmath>
@@ -35,22 +35,35 @@ ColorRGBA Hue(float H, float Alpha = 1.0f)
 	return C;
 }
 
-vec2 Rot(vec2 V, float A)
+// small drawing helpers that work on an open quad batch
+void DrawDisc(IGraphics *pG, vec2 C, float R, ColorRGBA Col)
 {
-	const float C = std::cos(A), S = std::sin(A);
-	return vec2(V.x * C - V.y * S, V.x * S + V.y * C);
+	pG->SetColor(Col.r, Col.g, Col.b, Col.a);
+	pG->DrawCircle(C.x, C.y, std::max(0.5f, R), 14);
 }
 
-ColorRGBA WeaponColor(int Weapon)
+void DrawLine(IGraphics *pG, vec2 A, vec2 B, float Width, ColorRGBA Col)
 {
-	switch(Weapon)
+	const vec2 D = B - A;
+	const float Len = length(D);
+	if(Len < 0.001f)
+		return;
+	const vec2 N = vec2(-D.y, D.x) / Len * Width * 0.5f;
+	pG->SetColor(Col.r, Col.g, Col.b, Col.a);
+	const IGraphics::CFreeformItem Item(A.x - N.x, A.y - N.y, A.x + N.x, A.y + N.y, B.x - N.x, B.y - N.y, B.x + N.x, B.y + N.y);
+	pG->QuadsDrawFreeform(&Item, 1);
+}
+
+void DrawRing(IGraphics *pG, vec2 C, float R, float Thick, float A0, float A1, ColorRGBA Col)
+{
+	const int Segs = std::max(2, (int)(std::fabs(A1 - A0) / (2.0f * pi) * 48.0f));
+	pG->SetColor(Col.r, Col.g, Col.b, Col.a);
+	for(int i = 0; i < Segs; i++)
 	{
-	case WEAPON_HAMMER: return ColorRGBA(1.0f, 0.8f, 0.4f, 1.0f);
-	case WEAPON_GUN: return ColorRGBA(1.0f, 0.9f, 0.5f, 1.0f);
-	case WEAPON_SHOTGUN: return ColorRGBA(1.0f, 0.55f, 0.25f, 1.0f);
-	case WEAPON_GRENADE: return ColorRGBA(0.6f, 1.0f, 0.5f, 1.0f);
-	case WEAPON_LASER: return ColorRGBA(0.4f, 0.7f, 1.0f, 1.0f);
-	default: return ColorRGBA(0.8f, 0.5f, 1.0f, 1.0f);
+		const float a0 = A0 + (A1 - A0) * i / Segs, a1 = A0 + (A1 - A0) * (i + 1) / Segs;
+		const IGraphics::CFreeformItem Item(C.x + std::cos(a0) * (R - Thick), C.y + std::sin(a0) * (R - Thick), C.x + std::cos(a0) * (R + Thick), C.y + std::sin(a0) * (R + Thick),
+			C.x + std::cos(a1) * (R - Thick), C.y + std::sin(a1) * (R - Thick), C.x + std::cos(a1) * (R + Thick), C.y + std::sin(a1) * (R + Thick));
+		pG->QuadsDrawFreeform(&Item, 1);
 	}
 }
 
@@ -58,146 +71,280 @@ ColorRGBA WeaponColor(int Weapon)
 
 void CFx::OnReset()
 {
-	m_vEvents.clear();
-	m_AttackInitialized = false;
-}
-
-void CFx::Spawn(int Kind, vec2 Pos, vec2 Dir, vec2 End, float Life, ColorRGBA Color)
-{
-	if(m_vEvents.size() > 200)
-		return;
-	m_vEvents.push_back({Kind, Pos, Dir, End, 0.0f, Life, m_NextSeed++, Color});
-}
-
-void CFx::OnBoom(vec2 Pos)
-{
-	if(g_Config.m_ClFxBoomFire)
-		Spawn(K_BOOMFIRE, Pos, vec2(1.0f, 0.0f), Pos, 0.7f, ColorRGBA(1.0f, 0.6f, 0.2f, 1.0f));
-	if(g_Config.m_ClFxBoomShards)
-		Spawn(K_BOOMSHARDS, Pos, vec2(1.0f, 0.0f), Pos, 0.8f, ColorRGBA(1.0f, 0.85f, 0.5f, 1.0f));
+	m_vCombos.clear();
+	m_vHits.clear();
+	m_vLasers.clear();
+	m_FireInitialized = false;
 }
 
 void CFx::OnHammerHit(vec2 Pos)
 {
-	if(g_Config.m_ClFxHamWave)
-		Spawn(K_HAMWAVE, Pos, vec2(1.0f, 0.0f), Pos, 0.45f, ColorRGBA(1.0f, 0.75f, 0.35f, 1.0f));
+	if(!g_Config.m_ClFxHammer)
+		return;
+	if(m_vHits.size() < 32)
+		m_vHits.push_back({Pos, (float)std::fmod(Client()->LocalTime(), 10000.0)});
 }
+
+void CFx::OnLaser(vec2 From, vec2 To, float Fade)
+{
+	if(g_Config.m_ClFxLaser && m_vLasers.size() < 64)
+		m_vLasers.push_back({From, To, Fade, (int)(From.x * 3.0f + From.y * 7.0f)});
+}
+
+// ---------------------------------------------------------------- hammer combo
+
+void CFx::DrawCombo(vec2 Pos, int Count, float SinceHit, float Remaining, float SinceMilestone, int Style, float Power, ColorRGBA Col)
+{
+	const float P = std::clamp(Power, 0.2f, 2.0f);
+	const float Pop = 1.0f + 0.55f * std::exp(-SinceHit * 11.0f); // every hit makes the number jump
+	const float Alpha = std::clamp(Remaining * 4.0f, 0.0f, 1.0f);
+	const float Size = 22.0f * P * Pop;
+	char aText[16];
+	str_format(aText, sizeof(aText), "x%d", Count);
+	const bool Milestone = SinceMilestone >= 0.0f && SinceMilestone < 1.3f;
+
+	// shapes first, the text comes afterwards
+	Graphics()->TextureClear();
+	Graphics()->BlendAdditive();
+	Graphics()->QuadsBegin();
+	if(Style == 1)
+	{
+		// a badge with a ring that runs out in one second: that is the time left for the next hit
+		const float R = 17.0f * P * (0.9f + 0.1f * Pop);
+		Graphics()->BlendNormal();
+		DrawDisc(Graphics(), Pos, R, ColorRGBA(0.05f, 0.05f, 0.08f, 0.65f * Alpha));
+		DrawRing(Graphics(), Pos, R, 1.6f * P, -pi / 2.0f, -pi / 2.0f + 2.0f * pi * std::clamp(Remaining, 0.0f, 1.0f), ColorRGBA(Col.r, Col.g, Col.b, Alpha));
+	}
+	else if(Style == 2)
+	{
+		// sparks fly off with every hit
+		const float Out = 1.0f - std::exp(-SinceHit * 7.0f);
+		for(int i = 0; i < 12; i++)
+		{
+			const float A = 2.0f * pi * i / 12.0f + Count * 0.7f;
+			const vec2 D(std::cos(A), std::sin(A));
+			const float R0 = 14.0f * P + 28.0f * P * Out * (0.7f + 0.3f * Hash(i, Count));
+			DrawLine(Graphics(), Pos + D * R0, Pos + D * (R0 + 7.0f * P * (1.0f - Out)), 2.0f * P, ColorRGBA(Col.r, Col.g, Col.b, (1.0f - Out) * 0.9f * Alpha));
+		}
+	}
+	else if(Style == 3)
+	{
+		// neon: a soft glow and a bar below that shows the time left
+		for(int i = 3; i >= 1; i--)
+			DrawDisc(Graphics(), Pos, (9.0f + 8.0f * i) * P * Pop, ColorRGBA(Col.r, Col.g, Col.b, 0.07f * Alpha));
+		DrawLine(Graphics(), Pos + vec2(-24.0f * P, 19.0f * P), Pos + vec2(-24.0f * P + 48.0f * P * std::clamp(Remaining, 0.0f, 1.0f), 19.0f * P), 3.0f * P, ColorRGBA(Col.r, Col.g, Col.b, 0.9f * Alpha));
+	}
+	if(Milestone)
+	{
+		// 100 hits: three rings fly out
+		for(int i = 0; i < 3; i++)
+		{
+			const float T = std::clamp((SinceMilestone - i * 0.12f) / 0.9f, 0.0f, 1.0f);
+			if(T <= 0.0f || T >= 1.0f)
+				continue;
+			DrawRing(Graphics(), Pos, 14.0f + 70.0f * T, 3.0f * (1.0f - T) + 0.5f, 0.0f, 2.0f * pi, ColorRGBA(1.0f, 0.9f, 0.4f, 0.8f * (1.0f - T)));
+		}
+	}
+	Graphics()->QuadsEnd();
+	Graphics()->BlendNormal();
+
+	// the number
+	const float W = TextRender()->TextWidth(Size, aText);
+	const ColorRGBA Text = Style == 3 ? ColorRGBA(std::min(1.0f, Col.r + 0.4f), std::min(1.0f, Col.g + 0.4f), std::min(1.0f, Col.b + 0.4f), 1.0f) : Col;
+	TextRender()->TextColor(0.0f, 0.0f, 0.0f, 0.6f * Alpha);
+	TextRender()->Text(Pos.x - W / 2.0f + 1.5f, Pos.y - Size * 0.55f + 1.5f, Size, aText);
+	TextRender()->TextColor(Text.r, Text.g, Text.b, Alpha);
+	TextRender()->Text(Pos.x - W / 2.0f, Pos.y - Size * 0.55f, Size, aText);
+	if(Milestone)
+	{
+		const float S2 = 30.0f * P * (1.0f + 0.4f * std::exp(-SinceMilestone * 6.0f));
+		const float W2 = TextRender()->TextWidth(S2, "100!");
+		TextRender()->TextColor(1.0f, 0.9f, 0.4f, std::clamp(1.3f - SinceMilestone, 0.0f, 1.0f));
+		TextRender()->Text(Pos.x - W2 / 2.0f, Pos.y - 46.0f * P - S2 * 0.5f, S2, "100!");
+	}
+	TextRender()->TextColor(TextRender()->DefaultTextColor());
+}
+
+// ---------------------------------------------------------------- laser
+
+void CFx::DrawLaserFx(vec2 From, vec2 To, float Fade, float Time, int Style, float Power, ColorRGBA Col, int Seed)
+{
+	const float P = std::clamp(Power, 0.2f, 2.0f);
+	const vec2 Delta = To - From;
+	const float Len = length(Delta);
+	if(Len < 4.0f || Fade <= 0.0f)
+		return;
+	const vec2 D = Delta / Len, N(-D.y, D.x);
+	const ColorRGBA Glow(Col.r, Col.g, Col.b, 1.0f);
+
+	Graphics()->TextureClear();
+	Graphics()->BlendAdditive();
+	Graphics()->QuadsBegin();
+	if(Style == 0)
+	{
+		// lightning: a jagged bolt that jumps 30 times a second, with a short branch
+		const int Segs = std::clamp((int)(Len / 18.0f), 4, 60);
+		const int Step = (int)(Time * 30.0f);
+		vec2 Prev = From;
+		for(int i = 1; i <= Segs; i++)
+		{
+			const float Fr = (float)i / Segs;
+			const float Taper = std::sin(Fr * pi) * 0.8f + 0.2f;
+			const vec2 Pt = i == Segs ? To : From + D * (Len * Fr) + N * ((Hash(Step * 53 + i, Seed) - 0.5f) * 16.0f * P * Taper);
+			DrawLine(Graphics(), Prev, Pt, 7.0f * P, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.25f * Fade));
+			DrawLine(Graphics(), Prev, Pt, 1.7f * P, ColorRGBA(1.0f, 1.0f, 1.0f, 0.95f * Fade));
+			if(i % 7 == 3)
+				DrawLine(Graphics(), Pt, Pt + N * ((Hash(Step + i, Seed + 5) - 0.5f) * 40.0f * P) + D * 10.0f, 1.2f * P, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.7f * Fade));
+			Prev = Pt;
+		}
+	}
+	else if(Style == 1)
+	{
+		// pulses run along the beam
+		DrawLine(Graphics(), From, To, 5.0f * P, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.18f * Fade));
+		const int Count = std::clamp((int)(Len / 80.0f) + 1, 1, 12);
+		for(int i = 0; i < Count; i++)
+		{
+			const float S = Frac(Time * 2.2f + (float)i / Count);
+			const vec2 Pt = From + D * (Len * S);
+			DrawDisc(Graphics(), Pt, 7.0f * P, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.3f * Fade));
+			DrawDisc(Graphics(), Pt, 3.0f * P, ColorRGBA(1.0f, 1.0f, 1.0f, 0.95f * Fade));
+		}
+	}
+	else if(Style == 2)
+	{
+		// plasma: a wide soft halo and sparks that swim around the beam
+		DrawLine(Graphics(), From, To, 16.0f * P * (0.85f + 0.15f * std::sin(Time * 9.0f)), ColorRGBA(Glow.r, Glow.g, Glow.b, 0.12f * Fade));
+		DrawLine(Graphics(), From, To, 8.0f * P, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.2f * Fade));
+		const int Count = std::clamp((int)(Len / 14.0f), 6, 50);
+		for(int i = 0; i < Count; i++)
+		{
+			const float Along = Frac(Hash(i, Seed) + Time * (0.2f + 0.3f * Hash(i, Seed + 1)));
+			const vec2 Pt = From + D * (Len * Along) + N * (std::sin(Time * 7.0f + i * 1.9f) * 11.0f * P);
+			DrawDisc(Graphics(), Pt, (1.2f + 1.6f * Hash(i, Seed + 2)) * P, ColorRGBA(1.0f, 1.0f, 1.0f, 0.85f * Fade * (0.5f + 0.5f * std::sin(Time * 12.0f + i))));
+		}
+	}
+	else
+	{
+		// crystal: diamonds on the beam that breathe
+		DrawLine(Graphics(), From, To, 2.0f * P, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.35f * Fade));
+		const float Gap = 26.0f;
+		const int Count = std::clamp((int)(Len / Gap), 1, 60);
+		for(int i = 0; i < Count; i++)
+		{
+			const vec2 C = From + D * (Gap * (i + 0.5f) + std::fmod(Time * 40.0f, Gap));
+			if(distance(From, C) > Len)
+				continue;
+			const float Br = 0.75f + 0.25f * std::sin(Time * 5.0f + i * 0.9f);
+			const vec2 A = C + D * (8.0f * P * Br), B = C - D * (8.0f * P * Br), E = C + N * (4.0f * P * Br), F = C - N * (4.0f * P * Br);
+			Graphics()->SetColor(Glow.r, Glow.g, Glow.b, 0.8f * Fade);
+			const IGraphics::CFreeformItem Item(A.x, A.y, E.x, E.y, F.x, F.y, B.x, B.y);
+			Graphics()->QuadsDrawFreeform(&Item, 1);
+			DrawLine(Graphics(), A, B, 1.2f, ColorRGBA(1.0f, 1.0f, 1.0f, 0.8f * Fade));
+		}
+	}
+	// the hit at the end of the beam
+	const float Out = 1.0f - Fade;
+	DrawDisc(Graphics(), To, (9.0f + 8.0f * Out) * P, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.45f * Fade));
+	DrawDisc(Graphics(), To, 4.0f * P, ColorRGBA(1.0f, 1.0f, 1.0f, 0.9f * Fade));
+	for(int i = 0; i < 5; i++)
+	{
+		const float A = Time * 3.0f + i * 2.0f * pi / 5.0f;
+		DrawLine(Graphics(), To, To + vec2(std::cos(A), std::sin(A)) * (14.0f + 14.0f * Out) * P, 1.6f * P, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.8f * Fade));
+	}
+	DrawRing(Graphics(), To, (6.0f + 28.0f * Out) * P, 1.8f * P * Fade + 0.3f, 0.0f, 2.0f * pi, ColorRGBA(Glow.r, Glow.g, Glow.b, 0.7f * Fade));
+	Graphics()->QuadsEnd();
+	Graphics()->BlendNormal();
+}
+
+// ---------------------------------------------------------------- everything that is drawn between hooks and tees
 
 void CFx::RenderEffects()
 {
 	const int State = Client()->State();
 	if(State != IClient::STATE_ONLINE && State != IClient::STATE_DEMOPLAYBACK)
 	{
-		m_vEvents.clear();
-		m_AttackInitialized = false;
+		m_vCombos.clear();
+		m_vHits.clear();
+		m_vLasers.clear();
 		return;
 	}
-	const bool Any = g_Config.m_ClFxHearts || g_Config.m_ClFxEmbers || g_Config.m_ClFxLightning || g_Config.m_ClFxHamArc || g_Config.m_ClFxHamWave || g_Config.m_ClFxHamSparks ||
-			 g_Config.m_ClFxHamFire || g_Config.m_ClFxAimSpread || g_Config.m_ClFxAimAmmo || g_Config.m_ClFxAimLine || g_Config.m_ClFxAimPulse || g_Config.m_ClFxShotFlash ||
-			 g_Config.m_ClFxShotRing || g_Config.m_ClFxShotShell || g_Config.m_ClFxShotSmoke || g_Config.m_ClFxBoomFire || g_Config.m_ClFxBoomShards || g_Config.m_ClFxPelletFan ||
-			 g_Config.m_ClFxShotCone || g_Config.m_ClFxLaserFlash || g_Config.m_ClFxLaserBolt || g_Config.m_ClFxHookRgb || g_Config.m_ClFxHookPulse;
-	if(!Any && m_vEvents.empty())
+	const bool Any = g_Config.m_ClFxHearts || g_Config.m_ClFxEmbers || g_Config.m_ClFxLightning || g_Config.m_ClFxHookRgb || g_Config.m_ClFxHookPulse || g_Config.m_ClFxHammer || g_Config.m_ClFxLaser;
+	if(!Any)
+	{
+		m_vCombos.clear();
+		m_vHits.clear();
+		m_vLasers.clear();
 		return;
+	}
 
 	// the world is still mapped to the screen here, everything is drawn in world coordinates
 	const CScreenRect View = Graphics()->GetScreen();
 	const float L = View.m_TopLeft.x, T0 = View.m_TopLeft.y;
 	const float W = View.m_BottomRight.x - View.m_TopLeft.x;
 	const float H = View.m_BottomRight.y - View.m_TopLeft.y;
-	const float Dt = std::min(Client()->RenderFrameTime(), 0.1f);
 	const float Now = (float)std::fmod(Client()->LocalTime(), 10000.0);
 	const float Scale = std::clamp(H / 700.0f, 1.0f, 3.0f);
 
 	const auto &Snap = GameClient()->m_Snap;
 	const bool HaveTee = Snap.m_pLocalCharacter && !Snap.m_SpecInfo.m_Active && Snap.m_LocalClientId >= 0 && Snap.m_LocalClientId < MAX_CLIENTS;
 	const vec2 P = HaveTee ? GameClient()->m_aClients[Snap.m_LocalClientId].m_RenderPos : vec2(0.0f, 0.0f);
-	const vec2 Target = GameClient()->m_Controls.m_aTargetPos[g_Config.m_ClDummy];
-	vec2 Aim = HaveTee ? Target - P : vec2(1.0f, 0.0f);
-	if(length(Aim) < 1.0f)
-		Aim = vec2(1.0f, 0.0f);
-	const vec2 Dir = normalize(Aim);
-	const int Weapon = HaveTee ? Snap.m_pLocalCharacter->m_Weapon : WEAPON_GUN;
-	const ColorRGBA WCol = WeaponColor(Weapon);
 
-	// ---- shots of the own tee ----
-	if(HaveTee)
+	// ---- hammer combo: a hit of my hammer on another tee ----
+	if(g_Config.m_ClFxHammer && HaveTee)
 	{
-		const int Tick = Snap.m_pLocalCharacter->m_AttackTick;
-		if(m_AttackInitialized && Tick != m_LastAttackTick)
+		const int Fire = GameClient()->m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire;
+		if(Snap.m_pLocalCharacter->m_Weapon == WEAPON_HAMMER && (Fire & 1))
+			m_LastSwing = Now; // pressed or held
+		else if(m_FireInitialized && Fire != m_LastFire && Snap.m_pLocalCharacter->m_Weapon == WEAPON_HAMMER)
+			m_LastSwing = Now;
+		m_LastFire = Fire;
+		m_FireInitialized = true;
+		for(const CHit &Hit : m_vHits)
 		{
-			m_LastShotTime = Now;
-			const vec2 Muzzle = P + Dir * 30.0f;
-			if(Weapon == WEAPON_HAMMER)
+			if(Now - m_LastSwing > 0.6f)
+				continue; // someone else's hit
+			int Victim = -1;
+			float Best = 80.0f;
+			for(int i = 0; i < MAX_CLIENTS; i++)
 			{
-				if(g_Config.m_ClFxHamArc)
-					Spawn(K_HAMARC, P, Dir, P, 0.28f, WCol);
-				if(g_Config.m_ClFxHamSparks)
-					Spawn(K_HAMSPARKS, P + Dir * 40.0f, Dir, P, 0.55f, WCol);
-				if(g_Config.m_ClFxHamFire)
-					Spawn(K_HAMFIRE, P, Dir, P, 0.45f, ColorRGBA(1.0f, 0.5f, 0.1f, 1.0f));
-			}
-			else if(Weapon != WEAPON_NINJA)
-			{
-				const float Reach = Weapon == WEAPON_LASER ? GameClient()->m_aTuning[g_Config.m_ClDummy].m_LaserReach : 700.0f;
-				vec2 End = P + Dir * Reach;
-				vec2 Hit;
-				if(Collision()->IntersectLine(P, End, &Hit, nullptr))
-					End = Hit;
-				// the shot stops at the first player it hits
-				for(int i = 0; i < MAX_CLIENTS; i++)
+				if(i == Snap.m_LocalClientId || !Snap.m_aCharacters[i].m_Active)
+					continue;
+				const float Dist = distance(GameClient()->m_aClients[i].m_RenderPos, Hit.m_Pos);
+				if(Dist < Best)
 				{
-					if(i == Snap.m_LocalClientId || !Snap.m_aCharacters[i].m_Active)
-						continue;
-					const vec2 Other = GameClient()->m_aClients[i].m_RenderPos;
-					const vec2 Seg = End - P;
-					const float SegLen = length(Seg);
-					if(SegLen < 1.0f)
-						break;
-					const vec2 SegDir = Seg / SegLen;
-					const float Along = dot(Other - P, SegDir);
-					if(Along < 0.0f || Along > SegLen + 28.0f)
-						continue;
-					const float Off = length(P + SegDir * Along - Other);
-					if(Off > 28.0f)
-						continue;
-					const float Enter = std::max(0.0f, Along - std::sqrt(28.0f * 28.0f - Off * Off));
-					if(Enter < SegLen)
-						End = P + SegDir * Enter;
-				}
-				if(g_Config.m_ClFxShotFlash)
-					Spawn(K_FLASH, Muzzle, Dir, End, 0.14f, WCol);
-				if(g_Config.m_ClFxShotRing)
-					Spawn(K_RING, Muzzle, Dir, End, 0.32f, WCol);
-				if(g_Config.m_ClFxShotShell && (Weapon == WEAPON_GUN || Weapon == WEAPON_SHOTGUN))
-					Spawn(K_SHELL, P + vec2(0.0f, -4.0f), Dir, End, 0.9f, ColorRGBA(1.0f, 0.8f, 0.35f, 1.0f));
-				if(g_Config.m_ClFxShotSmoke)
-					Spawn(K_SMOKE, Muzzle, Dir, End, 0.9f, ColorRGBA(0.8f, 0.8f, 0.8f, 1.0f));
-				if(Weapon == WEAPON_SHOTGUN)
-				{
-					if(g_Config.m_ClFxPelletFan)
-						Spawn(K_PELLETS, Muzzle, Dir, End, 0.4f, WCol);
-					if(g_Config.m_ClFxShotCone)
-						Spawn(K_CONE, Muzzle, Dir, End, 0.16f, WCol);
-				}
-				if(Weapon == WEAPON_LASER)
-				{
-					if(g_Config.m_ClFxLaserFlash)
-						Spawn(K_LASERFLASH, End, Dir, End, 0.45f, WCol);
-					if(g_Config.m_ClFxLaserBolt)
-						Spawn(K_LASERBOLT, P, Dir, End, 0.28f, WCol);
+					Best = Dist;
+					Victim = i;
 				}
 			}
+			if(Victim < 0)
+				continue;
+			CCombo *pCombo = nullptr;
+			for(CCombo &C : m_vCombos)
+				if(C.m_ClientId == Victim)
+					pCombo = &C;
+			if(pCombo == nullptr)
+			{
+				m_vCombos.push_back({Victim, 0, -100.0f, -1.0f, -100.0f});
+				pCombo = &m_vCombos.back();
+			}
+			if(Hit.m_Time - pCombo->m_LastHitTime < 0.05f)
+				continue; // the same hit arrived twice (predicted and from the server)
+			pCombo->m_LastHitTime = Hit.m_Time;
+			pCombo->m_Last = Now;
+			pCombo->m_Count++;
+			if(pCombo->m_Count % 100 == 0)
+				pCombo->m_Milestone = Now;
 		}
-		m_LastAttackTick = Tick;
-		m_AttackInitialized = true;
 	}
-	else
-		m_AttackInitialized = false;
+	m_vHits.clear();
+	// the combo is lost after one second without a hit
+	m_vCombos.erase(std::remove_if(m_vCombos.begin(), m_vCombos.end(), [&](const CCombo &C) {
+		return Now - C.m_Last > 1.0f && (C.m_Milestone < 0.0f || Now - C.m_Milestone > 1.3f);
+	}),
+		m_vCombos.end());
 
-	for(CEvent &E : m_vEvents)
-		E.m_Age += Dt;
-	m_vEvents.erase(std::remove_if(m_vEvents.begin(), m_vEvents.end(), [](const CEvent &E) { return E.m_Age >= E.m_Life; }), m_vEvents.end());
-
+	// ---- helpers for the old effects (kept: hearts, embers, storm, hook) ----
 	// ---- drawing helpers ----
 	const auto Disc = [&](vec2 C, float R, ColorRGBA Col) {
 		Graphics()->SetColor(Col.r, Col.g, Col.b, Col.a);
@@ -218,7 +365,7 @@ void CFx::RenderEffects()
 		const IGraphics::CFreeformItem Item(X0, Y0, X1, Y0, X0, Y1, X1, Y1);
 		Graphics()->QuadsDrawFreeform(&Item, 1);
 	};
-	const auto Arc = [&](vec2 C, float R, float Thick, float A0, float A1, ColorRGBA Col) {
+	[[maybe_unused]] const auto Arc = [&](vec2 C, float R, float Thick, float A0, float A1, ColorRGBA Col) {
 		const int Segs = std::max(2, (int)(std::fabs(A1 - A0) / (2.0f * pi) * 48.0f));
 		Graphics()->SetColor(Col.r, Col.g, Col.b, Col.a);
 		for(int i = 0; i < Segs; i++)
@@ -229,7 +376,7 @@ void CFx::RenderEffects()
 			Graphics()->QuadsDrawFreeform(&Item, 1);
 		}
 	};
-	const auto Tri = [&](vec2 A, vec2 B, vec2 C, ColorRGBA CA, ColorRGBA CB, ColorRGBA CC) {
+	[[maybe_unused]] const auto Tri = [&](vec2 A, vec2 B, vec2 C, ColorRGBA CA, ColorRGBA CB, ColorRGBA CC) {
 		Graphics()->SetColor4(CA, CB, CC, CC);
 		const IGraphics::CFreeformItem Item(A.x, A.y, B.x, B.y, C.x, C.y, C.x, C.y);
 		Graphics()->QuadsDrawFreeform(&Item, 1);
@@ -249,13 +396,14 @@ void CFx::RenderEffects()
 			Graphics()->QuadsDrawFreeform(&Item, 1);
 		}
 	};
-	const auto Star = [&](vec2 C, float R, float Angle, int Rays, float Width, ColorRGBA Col) {
+	[[maybe_unused]] const auto Star = [&](vec2 C, float R, float Angle, int Rays, float Width, ColorRGBA Col) {
 		for(int i = 0; i < Rays; i++)
 		{
 			const float A = Angle + 2.0f * pi * i / Rays;
 			Line(C - vec2(std::cos(A), std::sin(A)) * R * 0.15f, C + vec2(std::cos(A), std::sin(A)) * R, Width, Col);
 		}
 	};
+
 
 	Graphics()->TextureClear();
 
@@ -269,27 +417,6 @@ void CFx::RenderEffects()
 			const float Ph = Frac(Now * 0.45f + i / 5.0f);
 			const vec2 C = P + vec2(std::sin(Ph * 6.0f + i * 1.7f) * 16.0f + (Hash(i, 1) - 0.5f) * 24.0f, -30.0f - 80.0f * Ph);
 			Heart(C, 6.0f + 4.0f * Hash(i, 2), ColorRGBA(1.0f, 0.3f + 0.2f * Hash(i, 3), 0.5f, std::sin(Ph * pi) * 0.9f));
-		}
-	}
-	for(const CEvent &E : m_vEvents)
-	{
-		const float T = E.m_Age / E.m_Life;
-		if(E.m_Kind == K_SMOKE)
-		{
-			for(int i = 0; i < 5; i++)
-			{
-				const vec2 C = E.m_Pos + E.m_Dir * (18.0f + 40.0f * T * (0.5f + Hash(E.m_Seed + i, 1))) + vec2((Hash(E.m_Seed + i, 2) - 0.5f) * 14.0f * T, -30.0f * T * T - 10.0f * T);
-				Disc(C, (4.0f + 16.0f * T) * (0.7f + 0.6f * Hash(E.m_Seed + i, 3)), ColorRGBA(0.75f, 0.75f, 0.78f, 0.28f * (1.0f - T)));
-			}
-		}
-		else if(E.m_Kind == K_SHELL)
-		{
-			const float Side = E.m_Dir.x >= 0.0f ? -1.0f : 1.0f;
-			const float A = E.m_Age;
-			const vec2 C = E.m_Pos + vec2(Side * 90.0f * A, -160.0f * A + 520.0f * A * A);
-			const float Ang = A * 18.0f * Side;
-			const vec2 D(std::cos(Ang), std::sin(Ang));
-			Line(C - D * 3.0f, C + D * 3.0f, 3.0f, ColorRGBA(E.m_Color.r, E.m_Color.g, E.m_Color.b, 1.0f - T * T));
 		}
 	}
 	Graphics()->QuadsEnd();
@@ -328,173 +455,6 @@ void CFx::RenderEffects()
 		}
 	}
 
-	// ---- shot events ----
-	for(const CEvent &E : m_vEvents)
-	{
-		const float T = E.m_Age / E.m_Life;
-		const float Fade = 1.0f - T;
-		const float Ease = 1.0f - Fade * Fade;
-		const ColorRGBA C = E.m_Color;
-		const float Ang = std::atan2(E.m_Dir.y, E.m_Dir.x);
-		switch(E.m_Kind)
-		{
-		case K_HAMARC:
-		{
-			// a crescent that is drawn quickly in the direction of the swing
-			const float Sweep = std::min(1.0f, T * 3.0f);
-			const float A0 = Ang - 1.2f, A1 = A0 + 2.4f * Sweep;
-			const float R = 58.0f + 18.0f * T;
-			Arc(E.m_Pos, R, 9.0f * Fade, A0, A1, ColorRGBA(C.r, C.g, C.b, 0.25f * Fade));
-			Arc(E.m_Pos, R, 3.5f * Fade, A0, A1, ColorRGBA(1.0f, 1.0f, 1.0f, 0.9f * Fade));
-			break;
-		}
-		case K_HAMWAVE:
-			Arc(E.m_Pos, 8.0f + 70.0f * Ease, 6.0f * Fade, 0.0f, 2.0f * pi, ColorRGBA(C.r, C.g, C.b, 0.7f * Fade));
-			Arc(E.m_Pos, 4.0f + 40.0f * Ease, 2.5f * Fade, 0.0f, 2.0f * pi, ColorRGBA(1.0f, 1.0f, 1.0f, 0.8f * Fade));
-			Disc(E.m_Pos, 14.0f * Fade, ColorRGBA(1.0f, 0.9f, 0.6f, 0.5f * Fade));
-			break;
-		case K_HAMSPARKS:
-			for(int i = 0; i < 16; i++)
-			{
-				const float Spread = (Hash(E.m_Seed + i, 1) - 0.5f) * 1.5f;
-				const float Speed = 160.0f + 260.0f * Hash(E.m_Seed + i, 2);
-				const vec2 V = Rot(E.m_Dir, Spread) * Speed;
-				const vec2 Pt = E.m_Pos + V * E.m_Age + vec2(0.0f, 340.0f * E.m_Age * E.m_Age);
-				const vec2 Back = Pt - normalize(V + vec2(0.0f, 680.0f * E.m_Age)) * (4.0f + 10.0f * Fade);
-				Line(Back, Pt, 2.0f, ColorRGBA(1.0f, 0.85f - 0.4f * T, 0.3f, Fade));
-			}
-			break;
-		case K_HAMFIRE:
-			for(int i = 0; i < 20; i++)
-			{
-				const float Fr = i / 19.0f;
-				const float A = Ang - 1.0f + 2.0f * Fr * std::min(1.0f, T * 3.0f + 0.2f);
-				const float R = 52.0f + 8.0f * Hash(E.m_Seed + i, 1);
-				const vec2 Pt = E.m_Pos + vec2(std::cos(A), std::sin(A)) * R + vec2(0.0f, -26.0f * T * (0.5f + Hash(E.m_Seed + i, 2)));
-				Disc(Pt, (7.0f - 5.0f * T) * (0.7f + 0.6f * Hash(E.m_Seed + i, 3)), ColorRGBA(1.0f, 0.55f - 0.35f * T, 0.1f, 0.75f * Fade));
-			}
-			break;
-		case K_FLASH:
-			Disc(E.m_Pos, 13.0f * Fade + 3.0f, ColorRGBA(C.r, C.g, C.b, 0.55f * Fade));
-			Star(E.m_Pos, 30.0f * Fade + 4.0f, Ang, 4, 3.0f, ColorRGBA(1.0f, 1.0f, 0.85f, 0.95f * Fade));
-			Star(E.m_Pos, 18.0f * Fade, Ang + pi / 4.0f, 4, 2.0f, ColorRGBA(C.r, C.g, C.b, 0.8f * Fade));
-			break;
-		case K_RING:
-			Arc(E.m_Pos, 4.0f + 36.0f * Ease, 2.2f * Fade + 0.4f, 0.0f, 2.0f * pi, ColorRGBA(C.r, C.g, C.b, 0.75f * Fade));
-			break;
-		case K_BOOMFIRE:
-			Disc(E.m_Pos, 70.0f * Ease + 6.0f, ColorRGBA(1.0f, 0.45f, 0.1f, 0.35f * Fade));
-			Disc(E.m_Pos, 52.0f * Ease + 4.0f, ColorRGBA(1.0f, 0.7f, 0.2f, 0.5f * Fade));
-			Disc(E.m_Pos, 30.0f * Ease + 2.0f, ColorRGBA(1.0f, 0.95f, 0.7f, 0.7f * Fade * Fade));
-			for(int i = 0; i < 10; i++)
-			{
-				const float A = 2.0f * pi * Hash(E.m_Seed + i, 1);
-				const float D = 60.0f * Ease * (0.4f + 0.6f * Hash(E.m_Seed + i, 2));
-				Disc(E.m_Pos + vec2(std::cos(A), std::sin(A)) * D + vec2(0.0f, -20.0f * T), 8.0f * Fade + 1.0f, ColorRGBA(1.0f, 0.5f, 0.1f, 0.6f * Fade));
-			}
-			break;
-		case K_BOOMSHARDS:
-			Arc(E.m_Pos, 12.0f + 120.0f * Ease, 4.0f * Fade + 0.5f, 0.0f, 2.0f * pi, ColorRGBA(C.r, C.g, C.b, 0.7f * Fade));
-			for(int i = 0; i < 18; i++)
-			{
-				const float A = 2.0f * pi * (i + 0.5f * Hash(E.m_Seed + i, 1)) / 18.0f;
-				const vec2 D(std::cos(A), std::sin(A));
-				const float R = 170.0f * Ease * (0.55f + 0.45f * Hash(E.m_Seed + i, 2));
-				Line(E.m_Pos + D * R, E.m_Pos + D * (R + 6.0f + 16.0f * Fade), 2.5f, ColorRGBA(1.0f, 0.9f, 0.6f, Fade));
-			}
-			break;
-		case K_PELLETS:
-		{
-			const float MaxD = distance(E.m_Pos, E.m_End);
-			for(int i = 0; i < 9; i++)
-			{
-				const vec2 D = Rot(E.m_Dir, (i - 4) * 0.075f + (Hash(E.m_Seed + i, 1) - 0.5f) * 0.03f);
-				const float Head = std::min(MaxD, 1900.0f * E.m_Age);
-				const float Tail = std::max(0.0f, Head - 70.0f);
-				Line(E.m_Pos + D * Tail, E.m_Pos + D * Head, 3.0f * Fade + 0.6f, ColorRGBA(1.0f, 0.75f, 0.3f, 0.85f * Fade));
-				Disc(E.m_Pos + D * Head, 2.6f, ColorRGBA(1.0f, 1.0f, 0.8f, Fade));
-			}
-			break;
-		}
-		case K_CONE:
-		{
-			const float Len = 110.0f * (0.4f + 0.6f * Ease);
-			Tri(E.m_Pos, E.m_Pos + Rot(E.m_Dir, 0.38f) * Len, E.m_Pos + Rot(E.m_Dir, -0.38f) * Len, ColorRGBA(1.0f, 0.95f, 0.7f, 0.7f * Fade), ColorRGBA(C.r, C.g, C.b, 0.0f), ColorRGBA(C.r, C.g, C.b, 0.0f));
-			break;
-		}
-		case K_LASERFLASH:
-			Disc(E.m_End, 22.0f * Fade + 3.0f, ColorRGBA(C.r, C.g, C.b, 0.5f * Fade));
-			Star(E.m_End, 38.0f * Ease + 4.0f, T * 3.0f, 6, 2.5f, ColorRGBA(0.85f, 0.95f, 1.0f, 0.9f * Fade));
-			Arc(E.m_End, 6.0f + 46.0f * Ease, 2.2f * Fade + 0.3f, 0.0f, 2.0f * pi, ColorRGBA(C.r, C.g, C.b, 0.8f * Fade));
-			break;
-		case K_LASERBOLT:
-		{
-			const int N = 14;
-			const vec2 D = E.m_End - E.m_Pos;
-			const float Len = length(D);
-			if(Len < 20.0f)
-				break;
-			const vec2 Nrm = vec2(-D.y, D.x) / Len;
-			const int Step = (int)(E.m_Age * 40.0f);
-			vec2 Prev = E.m_Pos + normalize(D) * 28.0f;
-			for(int i = 1; i <= N; i++)
-			{
-				const float Fr = (float)i / N;
-				const vec2 Pt = i == N ? E.m_End : E.m_Pos + D * Fr + Nrm * ((Hash(Step * 31 + i, E.m_Seed) - 0.5f) * 16.0f);
-				Line(Prev, Pt, 6.0f * Fade, ColorRGBA(C.r, C.g, C.b, 0.3f * Fade));
-				Line(Prev, Pt, 1.6f, ColorRGBA(0.95f, 0.98f, 1.0f, 0.9f * Fade));
-				Prev = Pt;
-			}
-			break;
-		}
-		default:
-			break;
-		}
-	}
-
-	// ---- crosshair ----
-	if(HaveTee)
-	{
-		const float Since = Now - m_LastShotTime;
-		if(g_Config.m_ClFxAimSpread)
-		{
-			const float S = std::max(0.0f, 1.0f - Since / 0.28f);
-			const float D = (9.0f + 26.0f * S * S) * Scale;
-			for(int i = 0; i < 4; i++)
-			{
-				const vec2 V(std::cos(i * pi / 2.0f + pi / 4.0f), std::sin(i * pi / 2.0f + pi / 4.0f));
-				Line(Target + V * D, Target + V * (D + 8.0f * Scale), 2.2f * Scale, ColorRGBA(1.0f, 0.85f - 0.4f * S, 0.4f, 0.9f));
-			}
-		}
-		if(g_Config.m_ClFxAimAmmo && Weapon != WEAPON_HAMMER && Weapon != WEAPON_NINJA && Snap.m_pLocalCharacter->m_AmmoCount >= 0)
-		{
-			const float Fr = std::clamp(Snap.m_pLocalCharacter->m_AmmoCount / 10.0f, 0.0f, 1.0f);
-			const float R = 28.0f * Scale;
-			Arc(Target, R, 1.2f * Scale, 0.0f, 2.0f * pi, ColorRGBA(1.0f, 1.0f, 1.0f, 0.15f));
-			if(Fr > 0.0f)
-				Arc(Target, R, 2.2f * Scale, -pi / 2.0f, -pi / 2.0f + 2.0f * pi * Fr, ColorRGBA(WCol.r, WCol.g, WCol.b, 0.9f));
-		}
-		if(g_Config.m_ClFxAimLine)
-		{
-			const float Dist = distance(P, Target);
-			const float Off = std::fmod(Now * 30.0f, 14.0f);
-			for(float D = 44.0f + Off; D < Dist - 14.0f; D += 14.0f)
-				Disc(P + Dir * D, 1.7f * Scale, ColorRGBA(WCol.r, WCol.g, WCol.b, 0.55f * (1.0f - D / std::max(1.0f, Dist) * 0.7f)));
-		}
-		if(g_Config.m_ClFxAimPulse)
-		{
-			const float Pulse = 0.5f + 0.5f * std::sin(Now * 5.0f);
-			Disc(Target, (2.0f + 1.2f * Pulse) * Scale, ColorRGBA(0.4f, 0.95f, 1.0f, 0.95f));
-			Disc(Target, (5.0f + 3.0f * Pulse) * Scale, ColorRGBA(0.4f, 0.95f, 1.0f, 0.2f));
-			for(int i = 0; i < 4; i++)
-			{
-				const float A = Now * 0.9f + i * pi / 2.0f;
-				const vec2 V(std::cos(A), std::sin(A)), Nrm(-V.y, V.x);
-				const float D = (22.0f + 3.0f * Pulse) * Scale;
-				Tri(Target + V * (D - 7.0f * Scale), Target + V * (D + 4.0f * Scale) + Nrm * 4.0f * Scale, Target + V * (D + 4.0f * Scale) - Nrm * 4.0f * Scale, ColorRGBA(0.4f, 0.95f, 1.0f, 0.95f), ColorRGBA(0.4f, 0.95f, 1.0f, 0.3f), ColorRGBA(0.4f, 0.95f, 1.0f, 0.3f));
-			}
-		}
-	}
 
 	// ---- hook ----
 	if(HaveTee && (g_Config.m_ClFxHookRgb || g_Config.m_ClFxHookPulse))
@@ -573,4 +533,26 @@ void CFx::RenderEffects()
 
 	Graphics()->QuadsEnd();
 	Graphics()->BlendNormal();
+
+	// ---- laser effects attached to the real beams ----
+	if(g_Config.m_ClFxLaser)
+	{
+		const ColorRGBA LaserCol = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClFxLaserColor));
+		for(const CLaserSeg &S : m_vLasers)
+			DrawLaserFx(S.m_From, S.m_To, S.m_Fade, Now, std::clamp(g_Config.m_ClFxLaserStyle, 0, 3), g_Config.m_ClFxLaserPower / 100.0f, LaserCol, S.m_Seed);
+	}
+	m_vLasers.clear();
+
+	// ---- combo numbers under the tee that was hit ----
+	if(g_Config.m_ClFxHammer)
+	{
+		const ColorRGBA ComboCol = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClFxHammerColor));
+		for(const CCombo &C : m_vCombos)
+		{
+			if(!Snap.m_aCharacters[C.m_ClientId].m_Active)
+				continue;
+			const vec2 Pos = GameClient()->m_aClients[C.m_ClientId].m_RenderPos + vec2(0.0f, 56.0f);
+			DrawCombo(Pos, C.m_Count, Now - C.m_Last, std::clamp(1.0f - (Now - C.m_Last), 0.0f, 1.0f), C.m_Milestone < 0.0f ? -1.0f : Now - C.m_Milestone, std::clamp(g_Config.m_ClFxHammerStyle, 0, 3), g_Config.m_ClFxHammerPower / 100.0f, ComboCol);
+		}
+	}
 }

@@ -333,6 +333,12 @@ void CItems::RenderLaser(const CLaserData *pCurrent, bool IsPredicted)
 		TicksHead *= (((pCurrent->m_Subtype >> 1) % 3) * 4.0f) + 1;
 		TicksHead *= (pCurrent->m_Subtype & 1) ? -1 : 1;
 	}
+	if(Type == LASERTYPE_RIFLE)
+	{
+		// the effect follows the real beam, it fades together with it
+		const float BeamFade = std::clamp(1.0f - Ticks * 1000.0f / Client()->GameTickSpeed() / CTuningParams::DEFAULT.m_LaserBounceDelay, 0.0f, 1.0f);
+		GameClient()->m_Fx.OnLaser(pCurrent->m_From, pCurrent->m_To, BeamFade);
+	}
 	RenderLaser(pCurrent->m_From, pCurrent->m_To, OuterColor, InnerColor, Ticks, TicksHead, Type);
 }
 

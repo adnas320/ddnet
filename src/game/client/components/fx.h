@@ -8,45 +8,35 @@
 
 #include <vector>
 
-// Weapon, crosshair and hook effects (tab "Effects") and three atmosphere effects (embers, hearts, storm).
-// Most things are a function of time; shots and explosions are short lived events.
+// Hook effects, hammer combo and laser effects (tab "Effects") and three atmosphere effects (embers, hearts, storm).
 class CFx : public CComponent
 {
-	enum
+	struct CCombo
 	{
-		K_HAMARC,
-		K_HAMWAVE,
-		K_HAMSPARKS,
-		K_HAMFIRE,
-		K_FLASH,
-		K_RING,
-		K_SHELL,
-		K_SMOKE,
-		K_BOOMFIRE,
-		K_BOOMSHARDS,
-		K_PELLETS,
-		K_CONE,
-		K_LASERFLASH,
-		K_LASERBOLT,
+		int m_ClientId;
+		int m_Count;
+		float m_Last; // time of the last hit
+		float m_Milestone; // time when a multiple of 100 was reached, or -1
+		float m_LastHitTime;
 	};
-	struct CEvent
+	struct CHit
 	{
-		int m_Kind;
 		vec2 m_Pos;
-		vec2 m_Dir;
-		vec2 m_End;
-		float m_Age;
-		float m_Life;
-		int m_Seed;
-		ColorRGBA m_Color;
+		float m_Time;
 	};
-	std::vector<CEvent> m_vEvents;
-	int m_LastAttackTick = -1;
-	bool m_AttackInitialized = false;
-	float m_LastShotTime = -100.0f;
-	int m_NextSeed = 1;
-
-	void Spawn(int Kind, vec2 Pos, vec2 Dir, vec2 End, float Life, ColorRGBA Color);
+	struct CLaserSeg
+	{
+		vec2 m_From;
+		vec2 m_To;
+		float m_Fade;
+		int m_Seed;
+	};
+	std::vector<CCombo> m_vCombos;
+	std::vector<CHit> m_vHits;
+	std::vector<CLaserSeg> m_vLasers;
+	int m_LastFire = 0;
+	bool m_FireInitialized = false;
+	float m_LastSwing = -100.0f;
 
 public:
 	int Sizeof() const override { return sizeof(*this); }
@@ -54,9 +44,14 @@ public:
 	// called by the players component: after the hooks were drawn and before the tees, so the effects cover the hook but not the tee
 	void RenderEffects();
 
-	// explosion of a grenade and the hit of a hammer, called when the events arrive
-	void OnBoom(vec2 Pos);
+	// a hit of a hammer, called when the event arrives
 	void OnHammerHit(vec2 Pos);
+	// a laser beam that is drawn right now (called by the items component every frame)
+	void OnLaser(vec2 From, vec2 To, float Fade);
+
+	// also used by the settings page for the previews
+	void DrawCombo(vec2 Pos, int Count, float SinceHit, float Remaining, float SinceMilestone, int Style, float Power, ColorRGBA Col);
+	void DrawLaserFx(vec2 From, vec2 To, float Fade, float Time, int Style, float Power, ColorRGBA Col, int Seed);
 };
 
 #endif
