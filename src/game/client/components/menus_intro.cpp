@@ -37,9 +37,9 @@ void CMenus::DrawSparkiGradientIn(const CUIRect &Frame, const CUIRect &Rect, int
 {
 	const float T = (float)(time_get() % (time_freq() * 3600)) / (float)time_freq();
 	const auto Corner = [&](float Base, float Phase) {
-		const float K = std::clamp(Base + 0.16f * std::sin(T * 0.2f + Phase), 0.0f, 1.0f);
-		const float Shift = 0.5f + 0.5f * std::sin(T * 0.11f + Phase * 1.7f);
-		return ColorRGBA(K * (0.15f - 0.04f * Shift), K * 0.045f, K * (0.30f + 0.06f * Shift), 0.72f);
+		const float K = std::clamp(Base + 0.24f * std::sin(T * 0.45f + Phase), 0.0f, 1.0f);
+		const float Shift = 0.5f + 0.5f * std::sin(T * 0.25f + Phase * 1.7f);
+		return ColorRGBA(K * (0.19f - 0.05f * Shift), K * 0.055f, K * (0.38f + 0.08f * Shift), 0.92f);
 	};
 	// TL, TR, BL, BR
 	const ColorRGBA aC[4] = {Corner(0.45f, 1.3f), Corner(0.06f, 3.1f), Corner(0.9f, 0.0f), Corner(0.45f, 4.4f)};

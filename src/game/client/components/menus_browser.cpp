@@ -1524,29 +1524,38 @@ void CMenus::RenderServerbrowserFriends(CUIRect View)
 		}
 
 		// плавное раскрытие/сворачивание группы
-		static float s_aExpand[NUM_FRIEND_TYPES] = {1.0f, 1.0f, 0.0f};
+		// высота анимируется в пикселях: у длинных списков (например «Не в сети») дробь от большой высоты
+		// выглядела как рывок, поэтому скорость ограничена и не зависит от длины списка
+		float EstimatedH = 0.0f;
+		for(const auto &Est : m_avFriends[FriendType])
+			EstimatedH += SpacingH + 11.0f + 10.0f + 2 * 2.0f + 1.0f + (Est.ServerInfo() == nullptr ? 0.0f : 10.0f);
+		if(m_avFriends[FriendType].empty())
+			EstimatedH += 44.0f;
+		static float s_aExpandPx[NUM_FRIEND_TYPES] = {-1.0f, -1.0f, 0.0f};
+		float &ExpandPx = s_aExpandPx[FriendType];
+		if(ExpandPx < 0.0f)
+			ExpandPx = EstimatedH; // первая отрисовка: группа сразу в своём состоянии
 		{
-			const float Target = s_aListExtended[FriendType] ? 1.0f : 0.0f;
-			s_aExpand[FriendType] += (Target - s_aExpand[FriendType]) * std::min(1.0f, Client()->RenderFrameTime() * 12.0f);
-			if(std::abs(Target - s_aExpand[FriendType]) < 0.003f)
-				s_aExpand[FriendType] = Target;
+			const float Target = s_aListExtended[FriendType] ? EstimatedH : 0.0f;
+			const float Remaining = Target - ExpandPx;
+			const float Speed = std::clamp(std::abs(Remaining) * 9.0f, 140.0f, 520.0f); // пикселей в секунду
+			const float Step = Speed * Client()->RenderFrameTime();
+			if(std::abs(Remaining) <= Step)
+				ExpandPx = Target;
+			else
+				ExpandPx += Remaining > 0.0f ? Step : -Step;
 		}
-		const float Expand = s_aExpand[FriendType];
+		const float Expand = EstimatedH > 0.0f ? std::clamp(ExpandPx / EstimatedH, 0.0f, 1.0f) : (s_aListExtended[FriendType] ? 1.0f : 0.0f);
 
 		// entries
 		if(Expand > 0.0f)
 		{
 			const CUIRect ListStart = List;
-			float EstimatedH = 0.0f;
-			for(const auto &Est : m_avFriends[FriendType])
-				EstimatedH += SpacingH + 11.0f + 10.0f + 2 * 2.0f + 1.0f + (Est.ServerInfo() == nullptr ? 0.0f : 10.0f);
-			if(m_avFriends[FriendType].empty())
-				EstimatedH += 44.0f;
 			const bool Clipping = Expand < 1.0f;
 			if(Clipping)
 			{
 				CUIRect ClipRect = ListStart;
-				ClipRect.h = EstimatedH * Expand;
+				ClipRect.h = ExpandPx;
 				Ui()->ClipEnable(&ClipRect);
 			}
 			for(size_t FriendIndex = 0; FriendIndex < m_avFriends[FriendType].size(); ++FriendIndex)
@@ -1704,7 +1713,7 @@ void CMenus::RenderServerbrowserFriends(CUIRect View)
 				// следующая группа подъезжает вместе с раскрытием
 				const float RealH = ListStart.h - List.h;
 				List = ListStart;
-				List.HSplitTop(RealH * Expand, nullptr, &List);
+				List.HSplitTop(std::min(RealH, ExpandPx), nullptr, &List);
 			}
 		}
 

@@ -175,10 +175,11 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 		const float Step = std::min(1.0f, Client()->RenderFrameTime() * 16.0f);
 		Grow += (Target - Grow) * Step;
 	}
-	Rect.x -= 3.0f * Grow;
-	Rect.w += 6.0f * Grow;
-	Rect.y -= 2.5f * Grow;
-	Rect.h += 5.0f * Grow;
+	// вкладка «приподнимается» вверх и чуть шире, но не наезжает на страницу и соседей
+	Rect.x -= 1.5f * Grow;
+	Rect.w += 3.0f * Grow;
+	Rect.y -= 4.0f * Grow;
+	Rect.h += 4.0f * Grow;
 
 	if(Checked)
 		Rect.Draw(pActiveColor ? *pActiveColor : ms_ColorTabbarActive, Corners, EdgeRounding);
@@ -206,7 +207,27 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 		if((unsigned char)pText[0] >= 0xEE || pText[0] == '\0')
 		{
 			// icons keep their normal look
-			Ui()->DoLabel(&Label, pText, FontSize, TEXTALIGN_MC);
+			if(str_comp(pText, FontIcon::HEART) == 0)
+			{
+				// сердечко друзей: красное и мягко светится
+				const float Pulse = 0.5f + 0.5f * std::sin((float)((double)time_get() / (double)time_freq()) * 2.2f);
+				const vec2 C(Label.x + Label.w / 2.0f, Label.y + Label.h / 2.0f);
+				Graphics()->TextureClear();
+				Graphics()->BlendAdditive();
+				Graphics()->QuadsBegin();
+				for(int i = 0; i < 5; i++)
+				{
+					Graphics()->SetColor(1.0f, 0.12f, 0.2f, (0.05f + 0.035f * Pulse) * (5 - i) / 5.0f);
+					Graphics()->DrawCircle(C.x, C.y, Label.h * (0.35f + 0.12f * i), 24);
+				}
+				Graphics()->QuadsEnd();
+				Graphics()->BlendNormal();
+				TextRender()->TextColor(1.0f, 0.22f + 0.08f * Pulse, 0.3f, 1.0f);
+				Ui()->DoLabel(&Label, pText, FontSize, TEXTALIGN_MC);
+				TextRender()->TextColor(TextRender()->DefaultTextColor());
+			}
+			else
+				Ui()->DoLabel(&Label, pText, FontSize, TEXTALIGN_MC);
 		}
 		else
 		{
@@ -425,6 +446,15 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 {
 	CUIRect Button;
 
+	// у верхних кнопок оффлайн-меню общая тёмно-фиолетовая палитра (цвета возвращаются в конце)
+	const ColorRGBA SavedInactive = ms_ColorTabbarInactive, SavedActive = ms_ColorTabbarActive, SavedHover = ms_ColorTabbarHover;
+	if(ClientState == IClient::STATE_OFFLINE)
+	{
+		ms_ColorTabbarInactive = ColorRGBA(0.34f, 0.16f, 0.66f, 0.42f);
+		ms_ColorTabbarActive = ColorRGBA(0.46f, 0.22f, 0.86f, 0.68f);
+		ms_ColorTabbarHover = ColorRGBA(0.52f, 0.30f, 0.92f, 0.58f);
+	}
+
 	int NewPage = -1;
 	int ActivePage = -1;
 	if(ClientState == IClient::STATE_OFFLINE)
@@ -507,8 +537,8 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		GotNewsOrUpdate |= (bool)g_Config.m_UiUnreadNews;
 
 		// почти белая кнопка с едва заметным фиолетовым оттенком
-		ColorRGBA HomeButtonColorAlert(0.92f, 0.86f, 1.0f, 0.26f);
-		ColorRGBA HomeButtonColorAlertHover(0.95f, 0.9f, 1.0f, 0.45f);
+		ColorRGBA HomeButtonColorAlert(0.34f, 0.16f, 0.66f, 0.42f);
+		ColorRGBA HomeButtonColorAlertHover(0.52f, 0.30f, 0.92f, 0.58f);
 		ColorRGBA *pHomeButtonColor = &HomeButtonColorAlert;
 		ColorRGBA *pHomeButtonColorHover = &HomeButtonColorAlertHover;
 
@@ -521,9 +551,9 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		}
 
 		// пурпурные вкладки браузера серверов
-		const ColorRGBA BrowserTabDefault(0.50f, 0.28f, 0.90f, 0.30f);
-		const ColorRGBA BrowserTabActive(0.58f, 0.32f, 1.0f, 0.55f);
-		const ColorRGBA BrowserTabHover(0.66f, 0.42f, 1.0f, 0.45f);
+		const ColorRGBA BrowserTabDefault(0.34f, 0.16f, 0.66f, 0.42f);
+		const ColorRGBA BrowserTabActive(0.46f, 0.22f, 0.86f, 0.68f);
+		const ColorRGBA BrowserTabHover(0.52f, 0.30f, 0.92f, 0.58f);
 
 		static CButtonContainer s_StartButton;
 		if(DoButton_MenuTab(&s_StartButton, pHomeScreenButtonLabel, false, &Button, IGraphics::CORNER_T, &m_aAnimatorsSmallPage[SMALL_TAB_HOME], pHomeButtonColor, pHomeButtonColor, pHomeButtonColorHover, 10.0f))
@@ -679,6 +709,10 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		else
 			m_GamePage = NewPage;
 	}
+
+	ms_ColorTabbarInactive = SavedInactive;
+	ms_ColorTabbarActive = SavedActive;
+	ms_ColorTabbarHover = SavedHover;
 }
 
 void CMenus::RenderLoadingDirect(const char *pCaption, const char *pContent, std::optional<float> Progress)
@@ -2487,7 +2521,7 @@ void CMenus::UpdateColors()
 	ms_GuiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
 
 	ms_ColorTabbarInactiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f);
-	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.12f);
+	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f);
 	ms_ColorTabbarHoverOutgame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f);
 
 	const float ColorIngameScaleI = 0.5f;
