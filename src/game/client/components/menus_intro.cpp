@@ -90,21 +90,20 @@ void DrawBoltIcon(IGraphics *pG, vec2 C, float S, ColorRGBA Color)
 
 } // namespace
 
-// Тёмный фиолетово-чёрный градиент, углы медленно «дышат»
-void CMenus::DrawSparkiGradient(const CUIRect &Rect)
+// Тёмный фиолетово-чёрный градиент, углы медленно и плавно «дышат»
+void CMenus::DrawSparkiGradient(const CUIRect &Rect, int Corners, float Rounding)
 {
 	const float T = (float)(time_get() % (time_freq() * 3600)) / (float)time_freq();
 	const auto Corner = [&](float Base, float Phase) {
-		const float K = std::clamp(Base + 0.28f * std::sin(T * 0.7f + Phase), 0.0f, 1.0f);
-		// лёгкий сдвиг оттенка между фиолетовым и сине-индиго
-		const float Shift = 0.5f + 0.5f * std::sin(T * 0.35f + Phase * 1.7f);
-		return ColorRGBA(K * (0.24f - 0.06f * Shift), K * 0.07f, K * (0.46f + 0.10f * Shift), 0.62f);
+		const float K = std::clamp(Base + 0.22f * std::sin(T * 0.32f + Phase), 0.0f, 1.0f);
+		const float Shift = 0.5f + 0.5f * std::sin(T * 0.17f + Phase * 1.7f);
+		return ColorRGBA(K * (0.24f - 0.06f * Shift), K * 0.07f, K * (0.46f + 0.10f * Shift), 0.66f);
 	};
 	// TL, TR, BL, BR: сильнее всего слева снизу, слабее всего справа сверху
-	Rect.Draw4(Corner(0.45f, 1.3f), Corner(0.08f, 3.1f), Corner(0.95f, 0.0f), Corner(0.45f, 4.4f), IGraphics::CORNER_ALL, 10.0f);
+	Rect.Draw4(Corner(0.45f, 1.3f), Corner(0.08f, 3.1f), Corner(0.95f, 0.0f), Corner(0.45f, 4.4f), Corners, Rounding);
 }
 
-// Возвращает true, пока играет заставка (меню под ней не рисуется)
+// Возвращает true, пока играет заставка (пропустить нельзя)
 bool CMenus::RenderIntro()
 {
 	if(m_IntroDone)
@@ -118,8 +117,8 @@ bool CMenus::RenderIntro()
 		m_IntroStart = time_get();
 
 	const float T = (float)(time_get() - m_IntroStart) / (float)time_freq();
-	const float Total = 6.0f;
-	if(T > Total || Ui()->MouseButtonClicked(0) || Input()->KeyPress(KEY_ESCAPE) || Input()->KeyPress(KEY_SPACE) || Input()->KeyPress(KEY_RETURN))
+	const float Total = 5.4f;
+	if(T > Total)
 	{
 		m_IntroDone = true;
 		return false;
@@ -129,161 +128,173 @@ bool CMenus::RenderIntro()
 	const CUIRect Screen = *Ui()->Screen();
 	const float W = Screen.w;
 	const float H = Screen.h;
-	IGraphics *pG = Graphics();
-
-	const float Fade = 1.0f - Clamp01((T - 5.4f) / 0.6f); // выход
-	const float Strike = 2.2f; // время удара
-	const float Flash = T >= Strike ? Clamp01(1.0f - (T - Strike) / 0.4f) : 0.0f;
-	const float Flash2 = T >= Strike + 0.3f ? Clamp01(1.0f - (T - Strike - 0.3f) / 0.25f) : 0.0f;
-	const float FlashAll = std::max(Flash, Flash2 * 0.7f);
-
-	// фон: тёмно-фиолетовое небо
-	CUIRect Full = Screen;
-	const float Lift = FlashAll * 0.25f;
-	Full.Draw4(ColorRGBA(0.03f + Lift, 0.02f + Lift * 0.8f, 0.08f + Lift, Fade), ColorRGBA(0.03f + Lift, 0.02f + Lift * 0.8f, 0.08f + Lift, Fade),
-		ColorRGBA(0.13f + Lift, 0.05f + Lift * 0.8f, 0.24f + Lift, Fade), ColorRGBA(0.13f + Lift, 0.05f + Lift * 0.8f, 0.24f + Lift, Fade), IGraphics::CORNER_NONE, 0.0f);
-
-	// облака пролетают справа налево
-	const float CloudAlpha = Fade * (1.0f - Clamp01((T - 3.4f) / 0.8f));
-	if(CloudAlpha > 0.01f)
-	{
-		pG->TextureClear();
-		pG->QuadsBegin();
-		const int NumClouds = 14;
-		for(int i = 0; i < NumClouds; i++)
-		{
-			const float Hy = Hash01(i * 3 + 1), Hs = Hash01(i * 3 + 2), Hx = Hash01(i * 3 + 3);
-			const float Size = 16.0f + Hs * 26.0f;
-			const float Speed = 22.0f + Hs * 50.0f;
-			const float Span = W + 260.0f;
-			float X = std::fmod(Hx * Span - T * Speed, Span);
-			if(X < 0.0f)
-				X += Span;
-			X -= 130.0f;
-			const float Y = H * (0.08f + 0.5f * Hy);
-			const float Bright = 0.16f + FlashAll * 0.55f + (1.0f - Hy) * 0.05f;
-			pG->SetColor(Bright * 0.9f, Bright * 0.8f, Bright * 1.4f, CloudAlpha * (0.55f + 0.4f * Hs));
-			static const vec2 s_aOff[6] = {vec2(0, 0), vec2(0.9f, 0.25f), vec2(-0.9f, 0.3f), vec2(0.4f, -0.45f), vec2(-0.4f, -0.3f), vec2(1.7f, 0.5f)};
-			static const float s_aRad[6] = {1.0f, 0.8f, 0.75f, 0.8f, 0.7f, 0.55f};
-			for(int k = 0; k < 6; k++)
-				pG->DrawCircle(X + s_aOff[k].x * Size, Y + s_aOff[k].y * Size * 0.7f, s_aRad[k] * Size, 20);
-		}
-		pG->QuadsEnd();
-	}
-
-	// молния: главный удар и повторная вспышка
 	const vec2 Center(W / 2.0f, H / 2.0f);
-	if(T >= Strike && T < Strike + 0.65f)
-	{
-		const float Since = T - Strike;
-		const bool Visible = Since < 0.3f || (Since > 0.3f && Since < 0.5f);
-		if(Visible)
-		{
-			const int Seed = Since < 0.3f ? 11 : 29;
-			const vec2 Start(Center.x + (Seed == 11 ? -30.0f : 18.0f), H * 0.12f);
-			const vec2 End(Center.x + (Seed == 11 ? 0.0f : -8.0f), Center.y + 6.0f);
-			const std::vector<vec2> Bolt = MakeBolt(Start, End, Seed, 26.0f);
-			pG->BlendAdditive();
-			DrawBolt(pG, Bolt, 7.0f, ColorRGBA(0.45f, 0.2f, 1.0f, 0.35f * Fade));
-			DrawBolt(pG, Bolt, 3.2f, ColorRGBA(0.75f, 0.55f, 1.0f, 0.7f * Fade));
-			pG->BlendNormal();
-			DrawBolt(pG, Bolt, 1.3f, ColorRGBA(1.0f, 1.0f, 1.0f, Fade));
-			// ответвление
-			const std::vector<vec2> Branch = MakeBolt(Bolt[4], Bolt[4] + vec2(Seed == 11 ? 50.0f : -50.0f, 70.0f), Seed + 5, 14.0f);
-			DrawBolt(pG, Branch, 0.9f, ColorRGBA(0.9f, 0.85f, 1.0f, 0.85f * Fade));
-		}
-	}
+	IGraphics *pG = Graphics();
+	const auto Ease = [](float x) {
+		x = Clamp01(x);
+		return x * x * (3.0f - 2.0f * x);
+	};
+	const float Fade = 1.0f - Ease((T - 4.8f) / 0.6f);
 
-	// белая вспышка на весь экран
-	if(FlashAll > 0.01f)
+	// фон: тёмное небо с мягким фиолетовым свечением в центре
 	{
+		CUIRect Full = Screen;
+		Full.Draw4(ColorRGBA(0.02f, 0.01f, 0.05f, Fade), ColorRGBA(0.02f, 0.01f, 0.05f, Fade), ColorRGBA(0.10f, 0.04f, 0.20f, Fade), ColorRGBA(0.10f, 0.04f, 0.20f, Fade), IGraphics::CORNER_NONE, 0.0f);
+		const float Glow = Ease((T - 0.6f) / 1.2f) * Fade;
 		pG->BlendAdditive();
 		pG->TextureClear();
 		pG->QuadsBegin();
-		pG->SetColor(0.8f, 0.7f, 1.0f, FlashAll * 0.5f * Fade);
-		const IGraphics::CQuadItem Q(0, 0, W, H);
-		pG->QuadsDrawTL(&Q, 1);
+		for(int i = 0; i < 6; i++)
+		{
+			pG->SetColor(0.30f, 0.12f, 0.70f, 0.035f * Glow);
+			pG->DrawCircle(Center.x, Center.y, H * (0.18f + 0.12f * i), 48);
+		}
 		pG->QuadsEnd();
 		pG->BlendNormal();
 	}
 
-	// надпись «Sparki ⚡ Client»: буквы появляются по очереди
-	const float TextStart = Strike + 0.55f;
+	// искры, вылетающие с линии при раскрытии
+	{
+		pG->BlendAdditive();
+		pG->TextureClear();
+		pG->QuadsBegin();
+		for(int i = 0; i < 48; i++)
+		{
+			const float T0 = 0.5f + Hash01(i * 5 + 1) * 1.6f;
+			const float Age = T - T0;
+			if(Age < 0.0f || Age > 1.6f)
+				continue;
+			const float Dir = (i % 2) ? 1.0f : -1.0f;
+			const float X = Center.x + (Hash01(i * 5 + 2) - 0.5f) * W * 0.9f;
+			const float Y = Center.y + Dir * Age * (25.0f + 70.0f * Hash01(i * 5 + 3));
+			pG->SetColor(0.8f, 0.6f, 1.0f, (1.0f - Age / 1.6f) * 0.8f * Fade);
+			pG->DrawCircle(X, Y, 0.8f + 1.2f * Hash01(i * 5 + 4), 8);
+		}
+		pG->QuadsEnd();
+		pG->BlendNormal();
+	}
+
+	// «занавес»: линия разгорается от центра, затем створки раздвигаются вверх и вниз
+	const float LineP = Ease(T / 0.9f);
+	const float OpenP = Ease((T - 0.9f) / 0.9f);
+	const float Gap = OpenP * H * 0.5f;
+	{
+		const float CurtainA = Fade;
+		// закрывающие половины: чёрные, сужаются к краям экрана
+		const float TopH = std::max(0.0f, Center.y - Gap);
+		if(TopH > 0.0f)
+		{
+			CUIRect Top(0, 0, W, TopH);
+			Top.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, CurtainA), IGraphics::CORNER_NONE, 0.0f);
+			CUIRect Bottom(0, Center.y + Gap, W, H - (Center.y + Gap));
+			Bottom.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, CurtainA), IGraphics::CORNER_NONE, 0.0f);
+		}
+		// светящиеся кромки створок
+		const float HalfLen = LineP * W * 0.5f;
+		pG->BlendAdditive();
+		for(int Side = -1; Side <= 1; Side += 2)
+		{
+			const float Y = Center.y + Side * Gap;
+			const float Len = (OpenP > 0.0f) ? W * 0.5f : HalfLen;
+			pG->TextureClear();
+			pG->QuadsBegin();
+			pG->SetColor(0.45f, 0.2f, 1.0f, 0.28f * Fade);
+			CUIRect Glow(Center.x - Len, Y - 4.0f, Len * 2.0f, 8.0f);
+			const IGraphics::CQuadItem Q1(Glow.x, Glow.y, Glow.w, Glow.h);
+			pG->QuadsDrawTL(&Q1, 1);
+			pG->SetColor(0.85f, 0.7f, 1.0f, 0.9f * Fade);
+			const IGraphics::CQuadItem Q2(Center.x - Len, Y - 0.8f, Len * 2.0f, 1.6f);
+			pG->QuadsDrawTL(&Q2, 1);
+			pG->QuadsEnd();
+			if(Gap <= 0.0f)
+				break;
+		}
+		pG->BlendNormal();
+	}
+
+	// надпись «SPARKI ⚡ CLIENT»: буквы разъезжаются из широкого интервала в плотный
+	const float TextStart = 1.7f;
 	if(T >= TextStart)
 	{
 		TextRender()->SetPreferredFont("fonts/RussoOne-Regular.ttf");
-		const float Size = 42.0f;
-		const char *pA = "Sparki";
-		const char *pB = "Client";
-		const float WA = TextRender()->TextWidth(Size, pA);
-		const float WB = TextRender()->TextWidth(Size, pB);
-		const float IconW = Size * 0.7f;
-		const float Gap = Size * 0.3f;
-		const float TotalW = WA + Gap + IconW + Gap + WB;
-		const float X0 = Center.x - TotalW / 2.0f;
-		const float Y0 = Center.y - Size * 0.55f;
-		const float Step = 0.08f;
+		const float Size = 44.0f;
+		const char *apWords[2] = {"SPARKI", "CLIENT"};
+		const float TrackP = Ease((T - TextStart) / 1.4f);
+		const float Track = Size * (0.12f + 0.9f * (1.0f - TrackP));
+		const float IconW = Size * 0.8f;
+		const float Gap2 = Size * 0.35f;
 
-		// мягкое свечение за надписью
-		const float Glow = Clamp01((T - TextStart) / 0.8f) * Fade;
-		pG->BlendAdditive();
-		pG->TextureClear();
-		pG->QuadsBegin();
-		for(int i = 0; i < 4; i++)
+		float aWordW[2];
+		for(int Wd = 0; Wd < 2; Wd++)
 		{
-			pG->SetColor(0.35f, 0.15f, 0.8f, 0.05f * Glow);
-			pG->DrawCircle(Center.x, Center.y, TotalW * (0.25f + 0.1f * i), 40);
-		}
-		pG->QuadsEnd();
-		pG->BlendNormal();
-
-		const auto DoWord = [&](const char *pWord, float X, int FirstIndex) {
-			const int Len = (int)str_length(pWord);
-			for(int i = 0; i < Len; i++)
+			float Wsum = 0.0f;
+			for(const char *p = apWords[Wd]; *p; p++)
 			{
-				const float Appear = Clamp01((T - TextStart - (FirstIndex + i) * Step) / 0.22f);
-				if(Appear <= 0.0f)
-					continue;
-				char aPrefix[16];
-				str_copy(aPrefix, pWord, i + 1);
-				char aCh[2] = {pWord[i], 0};
-				const float Px = X + TextRender()->TextWidth(Size, aPrefix);
-				const float Pop = 1.0f - Appear;
-				const float Hot = 1.0f - Appear; // в момент появления буква светится фиолетовым
-				TextRender()->TextColor(1.0f - Hot * 0.4f, 1.0f - Hot * 0.6f, 1.0f, Appear * Fade);
-				TextRender()->TextOutlineColor(0.4f, 0.15f, 0.9f, 0.5f * Appear * Fade);
-				TextRender()->Text(Px, Y0 + Pop * 10.0f, Size, aCh);
+				char aCh[2] = {*p, 0};
+				Wsum += TextRender()->TextWidth(Size, aCh) + Track;
 			}
-		};
-		DoWord(pA, X0, 0);
-		DoWord(pB, X0 + WA + Gap + IconW + Gap, 7);
+			aWordW[Wd] = Wsum - Track;
+		}
+		const float TotalW = aWordW[0] + Gap2 + IconW + Gap2 + aWordW[1];
+		const float Y0 = Center.y - Size * 0.55f;
+		const float Alpha = Ease((T - TextStart) / 0.8f) * Fade;
+
+		// переливы: SPARKI — жёлтый <-> белый, CLIENT — приятный пурпурный <-> белый
+		const ColorRGBA aBase[2] = {ColorRGBA(1.0f, 0.82f, 0.22f, 1.0f), ColorRGBA(0.66f, 0.42f, 1.0f, 1.0f)};
+		float X = Center.x - TotalW / 2.0f;
+		for(int Wd = 0; Wd < 2; Wd++)
+		{
+			int Index = 0;
+			for(const char *p = apWords[Wd]; *p; p++, Index++)
+			{
+				char aCh[2] = {*p, 0};
+				const float Mixv = 0.5f + 0.5f * std::sin(T * 1.6f - (Wd * 6 + Index) * 0.45f);
+				const float K = Mixv * 0.85f;
+				const ColorRGBA C(aBase[Wd].r + (1.0f - aBase[Wd].r) * K, aBase[Wd].g + (1.0f - aBase[Wd].g) * K, aBase[Wd].b + (1.0f - aBase[Wd].b) * K, 1.0f);
+				TextRender()->TextColor(C.r, C.g, C.b, Alpha);
+				TextRender()->TextOutlineColor(0.35f, 0.12f, 0.8f, 0.45f * Alpha);
+				TextRender()->Text(X, Y0, Size, aCh);
+				X += TextRender()->TextWidth(Size, aCh) + Track;
+			}
+			X += Gap2 + IconW + Gap2 - Track; // место под значок после первого слова
+		}
 		TextRender()->TextColor(TextRender()->DefaultTextColor());
 		TextRender()->TextOutlineColor(TextRender()->DefaultTextOutlineColor());
 
-		// тонкая полоса загрузки под надписью
+		// молния-значок бьёт между словами со вспышкой
+		const float Zap = 2.7f;
+		if(T >= Zap)
 		{
-			const float Prog = Clamp01((T - TextStart) / (5.4f - TextStart));
-			const float BarW = TotalW * 0.8f;
+			const float App = Ease((T - Zap) / 0.25f);
+			const vec2 IconC(Center.x - TotalW / 2.0f + aWordW[0] + Gap2 + IconW / 2.0f, Center.y);
+			const float S = Size * 0.55f * (0.6f + 0.4f * App);
+			const float Flash = Clamp01(1.0f - (T - Zap) / 0.35f);
+			if(Flash > 0.0f)
+			{
+				const std::vector<vec2> Bolt = MakeBolt(vec2(IconC.x + 6.0f, 0.0f), IconC, 17, 24.0f);
+				pG->BlendAdditive();
+				DrawBolt(pG, Bolt, 6.0f, ColorRGBA(0.45f, 0.2f, 1.0f, 0.4f * Flash * Fade));
+				DrawBolt(pG, Bolt, 2.0f, ColorRGBA(0.9f, 0.8f, 1.0f, 0.9f * Flash * Fade));
+				pG->BlendNormal();
+			}
+			pG->BlendAdditive();
+			DrawBoltIcon(pG, IconC, S * 1.4f, ColorRGBA(0.5f, 0.25f, 1.0f, 0.5f * App * Fade));
+			pG->BlendNormal();
+			DrawBoltIcon(pG, IconC, S, ColorRGBA(1.0f, 0.9f, 0.4f, App * Fade));
+		}
+
+		// полоса загрузки
+		{
+			const float Prog = Ease((T - TextStart) / (4.7f - TextStart));
+			const float BarW = TotalW * 0.85f;
 			const float BarX = Center.x - BarW / 2.0f;
-			const float BarY = Center.y + Size * 0.95f;
+			const float BarY = Center.y + Size * 1.0f;
 			CUIRect Bar(BarX, BarY, BarW, 3.0f);
 			Bar.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.12f * Fade), IGraphics::CORNER_ALL, 1.5f);
 			CUIRect Fill(BarX, BarY, BarW * Prog, 3.0f);
-			Fill.Draw4(ColorRGBA(0.4f, 0.2f, 0.9f, Fade), ColorRGBA(0.8f, 0.6f, 1.0f, Fade), ColorRGBA(0.4f, 0.2f, 0.9f, Fade), ColorRGBA(0.8f, 0.6f, 1.0f, Fade), IGraphics::CORNER_ALL, 1.5f);
+			Fill.Draw4(ColorRGBA(0.4f, 0.2f, 0.9f, Alpha), ColorRGBA(0.85f, 0.65f, 1.0f, Alpha), ColorRGBA(0.4f, 0.2f, 0.9f, Alpha), ColorRGBA(0.85f, 0.65f, 1.0f, Alpha), IGraphics::CORNER_ALL, 1.5f);
 		}
 		TextRender()->SetPreferredFont("");
-
-		// значок молнии между словами появляется после «Sparki»
-		const float IconAppear = Clamp01((T - TextStart - 6 * Step) / 0.25f);
-		if(IconAppear > 0.0f)
-		{
-			const vec2 IconC(X0 + WA + Gap + IconW / 2.0f, Center.y);
-			const float S = Size * 0.5f * (0.6f + 0.4f * IconAppear);
-			pG->BlendAdditive();
-			DrawBoltIcon(pG, IconC, S * 1.35f, ColorRGBA(0.5f, 0.25f, 1.0f, 0.5f * IconAppear * Fade));
-			pG->BlendNormal();
-			DrawBoltIcon(pG, IconC, S, ColorRGBA(1.0f, 0.95f, 0.35f, IconAppear * Fade));
-		}
 	}
 	return true;
 }

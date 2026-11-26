@@ -27,6 +27,13 @@ void CMenus::RenderSettings(CUIRect MainView)
 	// render background
 	CUIRect Button, TabBar, RestartBar;
 	MainView.VSplitRight(120.0f, &MainView, &TabBar);
+	// две отдельные градиентные панели: содержимое и правая колонка (Sparki/DDNet)
+	{
+		CUIRect Content = MainView;
+		Content.w -= 6.0f;
+		DrawSparkiGradient(Content);
+		DrawSparkiGradient(TabBar);
+	}
 	MainView.Margin(20.0f, &MainView);
 
 	const bool NeedRestart = m_NeedRestartGraphics || m_NeedRestartSound || m_NeedRestartUpdate;
@@ -37,7 +44,6 @@ void CMenus::RenderSettings(CUIRect MainView)
 	}
 
 	TabBar.HSplitTop(50.0f, &Button, &TabBar);
-	Button.Draw(ms_ColorTabbarActive, IGraphics::CORNER_BR, 10.0f);
 
 	const char *apTabs[SETTINGS_LENGTH] = {
 		Localize("Language"),

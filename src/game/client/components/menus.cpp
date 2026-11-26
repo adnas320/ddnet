@@ -430,6 +430,13 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 	if(ClientState == IClient::STATE_OFFLINE)
 	{
 		ActivePage = m_MenuPage;
+		// две отдельные градиентные панели: вкладки слева, кнопки справа (4 кнопки по 33 + 3 промежутка по 10)
+		const float RightW = 4 * 33.0f + 3 * 10.0f;
+		CUIRect Left = Box, Right;
+		Left.VSplitRight(RightW + 8.0f, &Left, &Right);
+		Left.VSplitRight(6.0f, &Left, nullptr);
+		DrawSparkiGradient(Left, IGraphics::CORNER_T, 8.0f);
+		DrawSparkiGradient(Right, IGraphics::CORNER_T, 8.0f);
 	}
 	else if(ClientState == IClient::STATE_ONLINE)
 	{
@@ -529,6 +536,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		const float BrowserButtonWidth = 75.0f;
 		Box.VSplitLeft(10.0f, nullptr, &Box);
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
+		Button.w -= 4.0f;
 		static CButtonContainer s_InternetButton;
 		if(DoButton_MenuTab(&s_InternetButton, FontIcon::EARTH_AMERICAS, ActivePage == PAGE_INTERNET, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_INTERNET]))
 		{
@@ -537,6 +545,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		Ui()->DoToolTip(&s_InternetButton, &Button, Localize("Internet"));
 
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
+		Button.w -= 4.0f;
 		static CButtonContainer s_LanButton;
 		if(DoButton_MenuTab(&s_LanButton, FontIcon::NETWORK_WIRED, ActivePage == PAGE_LAN, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_LAN]))
 		{
@@ -545,6 +554,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		Ui()->DoToolTip(&s_LanButton, &Button, Localize("LAN"));
 
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
+		Button.w -= 4.0f;
 		static CButtonContainer s_FavoritesButton;
 		if(DoButton_MenuTab(&s_FavoritesButton, FontIcon::STAR, ActivePage == PAGE_FAVORITES, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_FAVORITES]))
 		{
@@ -584,6 +594,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			if(Box.w < BrowserButtonWidth)
 				break;
 			Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
+		Button.w -= 4.0f;
 			const int Page = PAGE_FAVORITE_COMMUNITY_1 + FavoriteCommunityIndex;
 			if(DoButton_MenuTab(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], FontIcon::ELLIPSIS, ActivePage == Page, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIT_TAB_FAVORITE_COMMUNITY_1 + FavoriteCommunityIndex], nullptr, nullptr, nullptr, 10.0f, m_CommunityIcons.Find(pCommunity->Id())))
 			{
@@ -1028,9 +1039,6 @@ void CMenus::Render()
 	{
 		Screen.Margin(10.0f, &Screen);
 	}
-	// анимированный градиент под всеми страницами меню (браузер серверов, настройки, демо, новости)
-	if(ClientState == IClient::STATE_OFFLINE && m_Popup == POPUP_NONE && !m_ShowStart)
-		DrawSparkiGradient(Screen);
 
 	switch(ClientState)
 	{
@@ -1060,6 +1068,9 @@ void CMenus::Render()
 		{
 			CUIRect TabBar, MainView;
 			Screen.HSplitTop(24.0f, &TabBar, &MainView);
+			// градиентная панель под страницей; у настроек она рисуется внутри (там ещё правая колонка)
+			if(m_MenuPage != PAGE_SETTINGS)
+				DrawSparkiGradient(MainView);
 
 			if(m_MenuPage == PAGE_NEWS)
 			{
@@ -2477,7 +2488,7 @@ void CMenus::UpdateColors()
 	ms_GuiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
 
 	ms_ColorTabbarInactiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f);
-	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.2f);
+	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.12f);
 	ms_ColorTabbarHoverOutgame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f);
 
 	const float ColorIngameScaleI = 0.5f;
