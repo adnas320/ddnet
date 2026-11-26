@@ -655,7 +655,7 @@ void CMenus::RenderServerbrowserStatusBox(CUIRect StatusBox, bool WasListboxItem
 				{
 					CUIRect Glow = ButtonConnect;
 					Glow.Margin(-1.6f * i, &Glow);
-					Glow.Draw(ColorRGBA(0.62f, 0.3f, 1.0f, (0.05f + 0.04f * Pulse) * (5 - i) / 4.0f), IGraphics::CORNER_ALL, 5.0f + 1.6f * i);
+					Glow.Draw(ColorRGBA(0.62f, 0.3f, 1.0f, (0.09f + 0.07f * Pulse) * (5 - i) / 4.0f), IGraphics::CORNER_ALL, 5.0f + 1.6f * i);
 				}
 			}
 
@@ -1523,9 +1523,32 @@ void CMenus::RenderServerbrowserFriends(CUIRect View)
 			s_aListExtended[FriendType] = !s_aListExtended[FriendType];
 		}
 
-		// entries
-		if(s_aListExtended[FriendType])
+		// плавное раскрытие/сворачивание группы
+		static float s_aExpand[NUM_FRIEND_TYPES] = {1.0f, 1.0f, 0.0f};
 		{
+			const float Target = s_aListExtended[FriendType] ? 1.0f : 0.0f;
+			s_aExpand[FriendType] += (Target - s_aExpand[FriendType]) * std::min(1.0f, Client()->RenderFrameTime() * 12.0f);
+			if(std::abs(Target - s_aExpand[FriendType]) < 0.003f)
+				s_aExpand[FriendType] = Target;
+		}
+		const float Expand = s_aExpand[FriendType];
+
+		// entries
+		if(Expand > 0.0f)
+		{
+			const CUIRect ListStart = List;
+			float EstimatedH = 0.0f;
+			for(const auto &Est : m_avFriends[FriendType])
+				EstimatedH += SpacingH + 11.0f + 10.0f + 2 * 2.0f + 1.0f + (Est.ServerInfo() == nullptr ? 0.0f : 10.0f);
+			if(m_avFriends[FriendType].empty())
+				EstimatedH += 44.0f;
+			const bool Clipping = Expand < 1.0f;
+			if(Clipping)
+			{
+				CUIRect ClipRect = ListStart;
+				ClipRect.h = EstimatedH * Expand;
+				Ui()->ClipEnable(&ClipRect);
+			}
 			for(size_t FriendIndex = 0; FriendIndex < m_avFriends[FriendType].size(); ++FriendIndex)
 			{
 				// space
@@ -1673,6 +1696,15 @@ void CMenus::RenderServerbrowserFriends(CUIRect View)
 				SLabelProperties DescriptionProps;
 				DescriptionProps.m_MaxWidth = EmptyDescription.w;
 				Ui()->DoLabel(&EmptyDescription, pText, FontSize, TEXTALIGN_ML, DescriptionProps);
+			}
+
+			if(Clipping)
+			{
+				Ui()->ClipDisable();
+				// следующая группа подъезжает вместе с раскрытием
+				const float RealH = ListStart.h - List.h;
+				List = ListStart;
+				List.HSplitTop(RealH * Expand, nullptr, &List);
 			}
 		}
 

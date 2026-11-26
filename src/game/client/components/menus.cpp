@@ -506,10 +506,11 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 
 		GotNewsOrUpdate |= (bool)g_Config.m_UiUnreadNews;
 
-		ColorRGBA HomeButtonColorAlert(0, 1, 0, 0.25f);
-		ColorRGBA HomeButtonColorAlertHover(0, 1, 0, 0.5f);
-		ColorRGBA *pHomeButtonColor = nullptr;
-		ColorRGBA *pHomeButtonColorHover = nullptr;
+		// почти белая кнопка с едва заметным фиолетовым оттенком
+		ColorRGBA HomeButtonColorAlert(0.92f, 0.86f, 1.0f, 0.26f);
+		ColorRGBA HomeButtonColorAlertHover(0.95f, 0.9f, 1.0f, 0.45f);
+		ColorRGBA *pHomeButtonColor = &HomeButtonColorAlert;
+		ColorRGBA *pHomeButtonColorHover = &HomeButtonColorAlertHover;
 
 		const char *pHomeScreenButtonLabel = FontIcon::HOUSE;
 		if(GotNewsOrUpdate)
@@ -518,6 +519,11 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 			pHomeButtonColor = &HomeButtonColorAlert;
 			pHomeButtonColorHover = &HomeButtonColorAlertHover;
 		}
+
+		// пурпурные вкладки браузера серверов
+		const ColorRGBA BrowserTabDefault(0.50f, 0.28f, 0.90f, 0.30f);
+		const ColorRGBA BrowserTabActive(0.58f, 0.32f, 1.0f, 0.55f);
+		const ColorRGBA BrowserTabHover(0.66f, 0.42f, 1.0f, 0.45f);
 
 		static CButtonContainer s_StartButton;
 		if(DoButton_MenuTab(&s_StartButton, pHomeScreenButtonLabel, false, &Button, IGraphics::CORNER_T, &m_aAnimatorsSmallPage[SMALL_TAB_HOME], pHomeButtonColor, pHomeButtonColor, pHomeButtonColorHover, 10.0f))
@@ -531,7 +537,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 		Button.w -= 4.0f;
 		static CButtonContainer s_InternetButton;
-		if(DoButton_MenuTab(&s_InternetButton, FontIcon::EARTH_AMERICAS, ActivePage == PAGE_INTERNET, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_INTERNET]))
+		if(DoButton_MenuTab(&s_InternetButton, FontIcon::EARTH_AMERICAS, ActivePage == PAGE_INTERNET, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_INTERNET], &BrowserTabDefault, &BrowserTabActive, &BrowserTabHover))
 		{
 			NewPage = PAGE_INTERNET;
 		}
@@ -540,7 +546,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 		Button.w -= 4.0f;
 		static CButtonContainer s_LanButton;
-		if(DoButton_MenuTab(&s_LanButton, FontIcon::NETWORK_WIRED, ActivePage == PAGE_LAN, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_LAN]))
+		if(DoButton_MenuTab(&s_LanButton, FontIcon::NETWORK_WIRED, ActivePage == PAGE_LAN, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_LAN], &BrowserTabDefault, &BrowserTabActive, &BrowserTabHover))
 		{
 			NewPage = PAGE_LAN;
 		}
@@ -549,7 +555,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
 		Button.w -= 4.0f;
 		static CButtonContainer s_FavoritesButton;
-		if(DoButton_MenuTab(&s_FavoritesButton, FontIcon::STAR, ActivePage == PAGE_FAVORITES, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_FAVORITES]))
+		if(DoButton_MenuTab(&s_FavoritesButton, FontIcon::STAR, ActivePage == PAGE_FAVORITES, &Button, IGraphics::CORNER_T, &m_aAnimatorsBigPage[BIG_TAB_FAVORITES], &BrowserTabDefault, &BrowserTabActive, &BrowserTabHover))
 		{
 			NewPage = PAGE_FAVORITES;
 		}

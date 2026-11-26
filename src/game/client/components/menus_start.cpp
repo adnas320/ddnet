@@ -286,6 +286,7 @@ void CMenusStart::RenderStartMenu(CUIRect MainView)
 
 	const char *pLocalServerImage = g_Config.m_ClShowStartMenuImages ? "local_server" : nullptr;
 	const bool LocalServerRunning = GameClient()->m_LocalServer.IsServerRunning();
+	GrowStartButton(Button, &s_LocalServerButton);
 	if(LocalServerRunning)
 	{
 		// Split in the middle of the label area, the image is rendered on the right
