@@ -1531,12 +1531,14 @@ void CMenus::RenderServerbrowserFriends(CUIRect View)
 			EstimatedH += SpacingH + 11.0f + 10.0f + 2 * 2.0f + 1.0f + (Est.ServerInfo() == nullptr ? 0.0f : 10.0f);
 		if(m_avFriends[FriendType].empty())
 			EstimatedH += 44.0f;
-		static float s_aExpandPx[NUM_FRIEND_TYPES] = {-1.0f, -1.0f, 0.0f};
+		// анимируем не всю высоту, а не больше видимой части (иначе у длинного списка закрытие «зависает»)
+		const float EffH = std::min(EstimatedH, 320.0f);
+		static float s_aExpandPx[NUM_FRIEND_TYPES] = {-1.0f, -1.0f, -1.0f};
 		float &ExpandPx = s_aExpandPx[FriendType];
 		if(ExpandPx < 0.0f)
-			ExpandPx = EstimatedH; // первая отрисовка: группа сразу в своём состоянии
+			ExpandPx = s_aListExtended[FriendType] ? EffH : 0.0f; // первая отрисовка: группа сразу в своём состоянии
 		{
-			const float Target = s_aListExtended[FriendType] ? EstimatedH : 0.0f;
+			const float Target = s_aListExtended[FriendType] ? EffH : 0.0f;
 			const float Remaining = Target - ExpandPx;
 			const float Speed = std::clamp(std::abs(Remaining) * 9.0f, 140.0f, 520.0f); // пикселей в секунду
 			const float Step = Speed * Client()->RenderFrameTime();
@@ -1545,7 +1547,7 @@ void CMenus::RenderServerbrowserFriends(CUIRect View)
 			else
 				ExpandPx += Remaining > 0.0f ? Step : -Step;
 		}
-		const float Expand = EstimatedH > 0.0f ? std::clamp(ExpandPx / EstimatedH, 0.0f, 1.0f) : (s_aListExtended[FriendType] ? 1.0f : 0.0f);
+		const float Expand = EffH > 0.0f ? std::clamp(ExpandPx / EffH, 0.0f, 1.0f) : (s_aListExtended[FriendType] ? 1.0f : 0.0f);
 
 		// entries
 		if(Expand > 0.0f)

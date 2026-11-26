@@ -217,8 +217,8 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 				Graphics()->QuadsBegin();
 				for(int i = 0; i < 5; i++)
 				{
-					Graphics()->SetColor(1.0f, 0.12f, 0.2f, (0.05f + 0.035f * Pulse) * (5 - i) / 5.0f);
-					Graphics()->DrawCircle(C.x, C.y, Label.h * (0.35f + 0.12f * i), 24);
+					Graphics()->SetColor(1.0f, 0.12f, 0.2f, (0.10f + 0.07f * Pulse) * (5 - i) / 5.0f);
+					Graphics()->DrawCircle(C.x, C.y, Label.h * (0.35f + 0.15f * i), 24);
 				}
 				Graphics()->QuadsEnd();
 				Graphics()->BlendNormal();
@@ -521,6 +521,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		Ui()->DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
 		Box.VSplitRight(10.0f, &Box, nullptr);
 
+		Box.VSplitLeft(5.0f, nullptr, &Box); // кнопка «Домой» чуть правее, чтобы не вылезала за край при наведении
 		Box.VSplitLeft(33.0f, &Button, &Box);
 
 		bool GotNewsOrUpdate = false;
