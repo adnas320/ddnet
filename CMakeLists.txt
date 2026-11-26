@@ -2743,6 +2743,7 @@ if(CLIENT)
     components/menus_settings_tee7.cpp
     components/menus_settings_visuals.cpp
     components/menus_start.cpp
+    components/menus_intro.cpp
     components/menus_start.h
     components/motd.cpp
     components/motd.h

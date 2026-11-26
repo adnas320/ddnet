@@ -1020,6 +1020,9 @@ void CMenus::Render()
 		ms_ColorTabbarHover = ms_ColorTabbarHoverOutgame;
 	}
 
+	if(ClientState == IClient::STATE_OFFLINE && RenderIntro())
+		return;
+
 	CUIRect Screen = *Ui()->Screen();
 	if(Client()->State() != IClient::STATE_DEMOPLAYBACK || m_Popup != POPUP_NONE)
 	{

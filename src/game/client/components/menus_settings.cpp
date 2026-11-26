@@ -27,13 +27,16 @@ void CMenus::RenderSettings(CUIRect MainView)
 	// render background
 	CUIRect Button, TabBar, RestartBar;
 	MainView.VSplitRight(120.0f, &MainView, &TabBar);
-	// тёмный полупрозрачный градиент на весь экран: фиолетовый в левом нижнем углу -> чёрный в правом верхнем
+	// тёмный полупрозрачный градиент на панель: фиолетовый в левом нижнем углу -> чёрный в правом верхнем
 	{
 		const ColorRGBA Violet(0.20f, 0.06f, 0.40f, 0.62f);
 		const ColorRGBA Mid(0.10f, 0.03f, 0.20f, 0.62f);
 		const ColorRGBA Black(0.0f, 0.0f, 0.0f, 0.62f);
-		CUIRect Full = *Ui()->Screen();
-		Full.Draw4(Mid, Black, Violet, Mid, IGraphics::CORNER_NONE, 0.0f);
+		// вся панель настроек: верхняя полоса вкладок + основная область, без колонки Sparki/DDNet справа
+		CUIRect Panel = MainView;
+		Panel.y -= 24.0f;
+		Panel.h += 24.0f;
+		Panel.Draw4(Mid, Black, Violet, Mid, IGraphics::CORNER_ALL, 10.0f);
 	}
 	MainView.Margin(20.0f, &MainView);
 
