@@ -5,6 +5,7 @@
 #include <base/dbg.h>
 #include <base/log.h>
 #include <base/time.h>
+#include <cmath>
 
 #include <engine/engine.h>
 #include <engine/favorites.h>
@@ -645,7 +646,18 @@ void CMenus::RenderServerbrowserStatusBox(CUIRect StatusBox, bool WasListboxItem
 
 			SMenuButtonProperties Props;
 			Props.m_UseIconFont = true;
-			Props.m_Color = ColorRGBA(0.5f, 1.0f, 0.5f, 0.5f);
+			Props.m_Color = ColorRGBA(0.62f, 0.34f, 1.0f, 0.62f);
+
+			// мягкое пурпурное свечение вокруг кнопки, слегка пульсирует
+			{
+				const float Pulse = 0.5f + 0.5f * std::sin((float)((double)time_get() / (double)time_freq()) * 2.0f);
+				for(int i = 4; i >= 1; i--)
+				{
+					CUIRect Glow = ButtonConnect;
+					Glow.Margin(-1.6f * i, &Glow);
+					Glow.Draw(ColorRGBA(0.62f, 0.3f, 1.0f, (0.05f + 0.04f * Pulse) * (5 - i) / 4.0f), IGraphics::CORNER_ALL, 5.0f + 1.6f * i);
+				}
+			}
 
 			static CButtonContainer s_ConnectButton;
 			if(Ui()->DoButton_Menu(m_ConnectButton, &s_ConnectButton, ConnectLabelFunc, &ButtonConnect, Props) || WasListboxItemActivated || (!Ui()->IsPopupOpen() && Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER)))

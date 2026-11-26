@@ -210,7 +210,7 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 		}
 		else
 		{
-			// the text is a yellow to white gradient that flows through the letters
+			// the text is a purple to white gradient that flows through the letters
 			const float Width = TextRender()->TextWidth(FontSize, pText, -1, -1.0f);
 			CTextCursor Cursor;
 			Cursor.m_FontSize = FontSize;
@@ -224,7 +224,7 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 					break;
 				const float Wave = 0.5f + 0.5f * std::sin((float)(Index * 0.55 - Now * 2.6));
 				const float Smooth = Wave * Wave * (3.0f - 2.0f * Wave);
-				TextRender()->TextColor(1.0f, 0.85f + 0.15f * Smooth, 0.35f + 0.65f * Smooth, 1.0f);
+				TextRender()->TextColor(0.66f + 0.34f * Smooth, 0.42f + 0.58f * Smooth, 1.0f, 1.0f);
 				TextRender()->TextEx(&Cursor, pText + Byte, Next - Byte);
 				Byte = Next;
 				Index++;
