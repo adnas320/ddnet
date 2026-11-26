@@ -27,12 +27,14 @@ void CMenus::RenderSettings(CUIRect MainView)
 	// render background
 	CUIRect Button, TabBar, RestartBar;
 	MainView.VSplitRight(120.0f, &MainView, &TabBar);
-	// две отдельные градиентные панели: содержимое и правая колонка (Sparki/DDNet)
+	// одна цельная панель: содержимое + верхний блок правой колонки; сами вкладки справа без подложки
 	{
-		CUIRect Content = MainView;
-		Content.w -= 6.0f;
-		DrawSparkiGradient(Content);
-		DrawSparkiGradient(TabBar);
+		CUIRect Top, Rest = TabBar;
+		Rest.HSplitTop(50.0f, &Top, &Rest);
+		CUIRect Frame = MainView;
+		Frame.w += TabBar.w;
+		DrawSparkiGradientIn(Frame, MainView, IGraphics::CORNER_B, 10.0f);
+		DrawSparkiGradientIn(Frame, Top, IGraphics::CORNER_BR, 10.0f);
 	}
 	MainView.Margin(20.0f, &MainView);
 
@@ -77,7 +79,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		static CButtonContainer s_aGroupButtons[2];
 		static SUIAnimator s_aGroupAnimators[2];
-		const char *apGroups[2] = {"Sparki", "DDNet"};
+		const char *apGroups[2] = {"Galaxy", "DDNet"};
 		for(int Group = 0; Group < 2; Group++)
 		{
 			const bool Selected = (Group == 0) == InSparki;

@@ -567,6 +567,7 @@ protected:
 	void RenderSettings(CUIRect MainView);
 	bool RenderIntro();
 	void DrawSparkiGradient(const CUIRect &Rect, int Corners = IGraphics::CORNER_ALL, float Rounding = 10.0f);
+	void DrawSparkiGradientIn(const CUIRect &Frame, const CUIRect &Rect, int Corners, float Rounding);
 	int64_t m_IntroStart = 0;
 	bool m_IntroDone = false;
 	bool RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alpha, float DarkestLight);

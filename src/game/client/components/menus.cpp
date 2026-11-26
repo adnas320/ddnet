@@ -430,13 +430,6 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 	if(ClientState == IClient::STATE_OFFLINE)
 	{
 		ActivePage = m_MenuPage;
-		// две отдельные градиентные панели: вкладки слева, кнопки справа (4 кнопки по 33 + 3 промежутка по 10)
-		const float RightW = 4 * 33.0f + 3 * 10.0f;
-		CUIRect Left = Box, Right;
-		Left.VSplitRight(RightW + 8.0f, &Left, &Right);
-		Left.VSplitRight(6.0f, &Left, nullptr);
-		DrawSparkiGradient(Left, IGraphics::CORNER_T, 8.0f);
-		DrawSparkiGradient(Right, IGraphics::CORNER_T, 8.0f);
 	}
 	else if(ClientState == IClient::STATE_ONLINE)
 	{

@@ -29,78 +29,36 @@ float Clamp01(float v)
 	return std::clamp(v, 0.0f, 1.0f);
 }
 
-// толстая линия из одного четырёхугольника
-void Segment(IGraphics *pG, vec2 A, vec2 B, float Thickness)
-{
-	vec2 D = B - A;
-	const float L = length(D);
-	if(L < 0.001f)
-		return;
-	const vec2 N = vec2(-D.y, D.x) / L * Thickness;
-	const IGraphics::CFreeformItem Item(A + N, B + N, A - N, B - N);
-	pG->QuadsDrawFreeform(&Item, 1);
-}
-
-// зигзаг молнии сверху вниз
-std::vector<vec2> MakeBolt(vec2 Start, vec2 End, int Seed, float Jitter)
-{
-	std::vector<vec2> v;
-	const int N = 10;
-	for(int i = 0; i <= N; i++)
-	{
-		const float T = (float)i / N;
-		vec2 P = mix(Start, End, T);
-		if(i != 0 && i != N)
-			P.x += (Hash01(Seed + i * 7) - 0.5f) * 2.0f * Jitter;
-		v.push_back(P);
-	}
-	return v;
-}
-
-void DrawBolt(IGraphics *pG, const std::vector<vec2> &v, float Thick, ColorRGBA Color)
-{
-	pG->TextureClear();
-	pG->QuadsBegin();
-	pG->SetColor(Color);
-	for(size_t i = 0; i + 1 < v.size(); i++)
-		Segment(pG, v[i], v[i + 1], Thick);
-	pG->QuadsEnd();
-}
-
-// значок-молния (как в заголовке): рисуется квадами, шрифт не нужен
-void DrawBoltIcon(IGraphics *pG, vec2 C, float S, ColorRGBA Color)
-{
-	pG->TextureClear();
-	pG->QuadsBegin();
-	pG->SetColor(Color);
-	const vec2 P0 = C + vec2(0.25f, -1.0f) * S;
-	const vec2 P1 = C + vec2(-0.45f, 0.1f) * S;
-	const vec2 P2 = C + vec2(0.05f, 0.1f) * S;
-	const vec2 P3 = C + vec2(-0.25f, 1.0f) * S;
-	const vec2 P4 = C + vec2(0.5f, -0.2f) * S;
-	const vec2 P5 = C + vec2(0.0f, -0.2f) * S;
-	const IGraphics::CFreeformItem aItems[3] = {
-		IGraphics::CFreeformItem(P0, P0 + vec2(0.35f, 0.0f) * S, P5, P5 + vec2(0.3f, 0.0f) * S),
-		IGraphics::CFreeformItem(P1, P2, P5, P4),
-		IGraphics::CFreeformItem(P2, P3, P4, P4 + vec2(-0.05f, 0.0f) * S),
-	};
-	pG->QuadsDrawFreeform(aItems, 3);
-	pG->QuadsEnd();
-}
-
 } // namespace
 
-// Тёмный фиолетово-чёрный градиент, углы медленно и плавно «дышат»
-void CMenus::DrawSparkiGradient(const CUIRect &Rect, int Corners, float Rounding)
+// Тёмный фиолетово-чёрный градиент, углы очень медленно и плавно «дышат».
+// Frame — общий прямоугольник, по которому считается градиент, чтобы составные панели не имели шва.
+void CMenus::DrawSparkiGradientIn(const CUIRect &Frame, const CUIRect &Rect, int Corners, float Rounding)
 {
 	const float T = (float)(time_get() % (time_freq() * 3600)) / (float)time_freq();
 	const auto Corner = [&](float Base, float Phase) {
-		const float K = std::clamp(Base + 0.22f * std::sin(T * 0.32f + Phase), 0.0f, 1.0f);
-		const float Shift = 0.5f + 0.5f * std::sin(T * 0.17f + Phase * 1.7f);
-		return ColorRGBA(K * (0.24f - 0.06f * Shift), K * 0.07f, K * (0.46f + 0.10f * Shift), 0.66f);
+		const float K = std::clamp(Base + 0.16f * std::sin(T * 0.2f + Phase), 0.0f, 1.0f);
+		const float Shift = 0.5f + 0.5f * std::sin(T * 0.11f + Phase * 1.7f);
+		return ColorRGBA(K * (0.15f - 0.04f * Shift), K * 0.045f, K * (0.30f + 0.06f * Shift), 0.72f);
 	};
-	// TL, TR, BL, BR: сильнее всего слева снизу, слабее всего справа сверху
-	Rect.Draw4(Corner(0.45f, 1.3f), Corner(0.08f, 3.1f), Corner(0.95f, 0.0f), Corner(0.45f, 4.4f), Corners, Rounding);
+	// TL, TR, BL, BR
+	const ColorRGBA aC[4] = {Corner(0.45f, 1.3f), Corner(0.06f, 3.1f), Corner(0.9f, 0.0f), Corner(0.45f, 4.4f)};
+	const auto At = [&](float X, float Y) {
+		const float U = Frame.w > 0.0f ? std::clamp((X - Frame.x) / Frame.w, 0.0f, 1.0f) : 0.0f;
+		const float V = Frame.h > 0.0f ? std::clamp((Y - Frame.y) / Frame.h, 0.0f, 1.0f) : 0.0f;
+		ColorRGBA R;
+		R.r = (aC[0].r * (1 - U) + aC[1].r * U) * (1 - V) + (aC[2].r * (1 - U) + aC[3].r * U) * V;
+		R.g = (aC[0].g * (1 - U) + aC[1].g * U) * (1 - V) + (aC[2].g * (1 - U) + aC[3].g * U) * V;
+		R.b = (aC[0].b * (1 - U) + aC[1].b * U) * (1 - V) + (aC[2].b * (1 - U) + aC[3].b * U) * V;
+		R.a = aC[0].a;
+		return R;
+	};
+	Rect.Draw4(At(Rect.x, Rect.y), At(Rect.x + Rect.w, Rect.y), At(Rect.x, Rect.y + Rect.h), At(Rect.x + Rect.w, Rect.y + Rect.h), Corners, Rounding);
+}
+
+void CMenus::DrawSparkiGradient(const CUIRect &Rect, int Corners, float Rounding)
+{
+	DrawSparkiGradientIn(Rect, Rect, Corners, Rounding);
 }
 
 // Возвращает true, пока играет заставка (пропустить нельзя)
@@ -151,6 +109,52 @@ bool CMenus::RenderIntro()
 		}
 		pG->QuadsEnd();
 		pG->BlendNormal();
+	}
+
+	// светящаяся галактика на фоне (появляется вместе с раскрытием, медленно вращается)
+	{
+		const float Gal = Ease((T - 0.9f) / 1.6f) * Fade;
+		if(Gal > 0.01f)
+		{
+			const float R = H * 0.95f;
+			const float Rot = T * 0.12f;
+			const float Tilt = 0.38f;
+			pG->BlendAdditive();
+			pG->TextureClear();
+			pG->QuadsBegin();
+			// ядро и пылевое гало
+			for(int i = 0; i < 7; i++)
+			{
+				pG->SetColor(0.65f, 0.35f, 1.0f, 0.03f * Gal);
+				pG->DrawCircle(Center.x, Center.y, R * (0.08f + 0.075f * i), 40);
+			}
+			pG->SetColor(1.0f, 0.85f, 0.95f, 0.06f * Gal);
+			pG->DrawCircle(Center.x, Center.y, R * 0.07f, 32);
+			// звёзды спиральных рукавов
+			const int NumStars = 900;
+			for(int i = 0; i < NumStars; i++)
+			{
+				const float Tt = std::pow(Hash01(i * 7 + 1), 0.8f);
+				const int Arm = i % 3;
+				const float Ang = Arm * 2.0944f + Tt * 4.6f + Rot + (Hash01(i * 7 + 2) - 0.5f) * (0.55f - 0.3f * Tt);
+				const float Rad = Tt * R * 0.62f + (Hash01(i * 7 + 3) - 0.5f) * R * 0.03f;
+				const float Xr = std::cos(Ang) * Rad;
+				const float Yr = std::sin(Ang) * Rad * Tilt;
+				// наклон всей галактики
+				const float Ca = std::cos(-0.35f), Sa = std::sin(-0.35f);
+				const float X = Center.x + Xr * Ca - Yr * Sa;
+				const float Y = Center.y + Xr * Sa + Yr * Ca;
+				const float Tw = 0.6f + 0.4f * std::sin(T * (1.0f + Hash01(i * 7 + 4) * 2.0f) + i);
+				const float Size = 0.7f + 1.6f * Hash01(i * 7 + 5) * (1.0f - 0.5f * Tt);
+				// цвет: тёплое ядро -> сине-фиолетовые края
+				const float Rr = 1.0f - 0.55f * Tt, Gg = 0.7f - 0.35f * Tt, Bb = 0.95f;
+				pG->SetColor(Rr, Gg, Bb, (0.35f + 0.5f * (1.0f - Tt)) * Tw * Gal);
+				const IGraphics::CQuadItem Q(X - Size / 2, Y - Size / 2, Size, Size);
+				pG->QuadsDrawTL(&Q, 1);
+			}
+			pG->QuadsEnd();
+			pG->BlendNormal();
+		}
 	}
 
 	// искры, вылетающие с линии при раскрытии
@@ -212,17 +216,16 @@ bool CMenus::RenderIntro()
 		pG->BlendNormal();
 	}
 
-	// надпись «SPARKI ⚡ CLIENT»: буквы разъезжаются из широкого интервала в плотный
+	// надпись «GALAXY CLIENT»: буквы разъезжаются из широкого интервала в плотный
 	const float TextStart = 1.7f;
 	if(T >= TextStart)
 	{
 		TextRender()->SetPreferredFont("fonts/RussoOne-Regular.ttf");
 		const float Size = 44.0f;
-		const char *apWords[2] = {"SPARKI", "CLIENT"};
+		const char *apWords[2] = {"GALAXY", "CLIENT"};
 		const float TrackP = Ease((T - TextStart) / 1.4f);
 		const float Track = Size * (0.12f + 0.9f * (1.0f - TrackP));
-		const float IconW = Size * 0.8f;
-		const float Gap2 = Size * 0.35f;
+		const float Gap2 = Size * 0.55f;
 
 		float aWordW[2];
 		for(int Wd = 0; Wd < 2; Wd++)
@@ -235,12 +238,12 @@ bool CMenus::RenderIntro()
 			}
 			aWordW[Wd] = Wsum - Track;
 		}
-		const float TotalW = aWordW[0] + Gap2 + IconW + Gap2 + aWordW[1];
+		const float TotalW = aWordW[0] + Gap2 + aWordW[1];
 		const float Y0 = Center.y - Size * 0.55f;
 		const float Alpha = Ease((T - TextStart) / 0.8f) * Fade;
 
-		// переливы: SPARKI — жёлтый <-> белый, CLIENT — приятный пурпурный <-> белый
-		const ColorRGBA aBase[2] = {ColorRGBA(1.0f, 0.82f, 0.22f, 1.0f), ColorRGBA(0.66f, 0.42f, 1.0f, 1.0f)};
+		// переливы: приятный пурпурный <-> белый, волной по буквам
+		const ColorRGBA aBase[2] = {ColorRGBA(0.66f, 0.42f, 1.0f, 1.0f), ColorRGBA(0.66f, 0.42f, 1.0f, 1.0f)};
 		float X = Center.x - TotalW / 2.0f;
 		for(int Wd = 0; Wd < 2; Wd++)
 		{
@@ -256,32 +259,10 @@ bool CMenus::RenderIntro()
 				TextRender()->Text(X, Y0, Size, aCh);
 				X += TextRender()->TextWidth(Size, aCh) + Track;
 			}
-			X += Gap2 + IconW + Gap2 - Track; // место под значок после первого слова
+			X += Gap2 - Track;
 		}
 		TextRender()->TextColor(TextRender()->DefaultTextColor());
 		TextRender()->TextOutlineColor(TextRender()->DefaultTextOutlineColor());
-
-		// молния-значок бьёт между словами со вспышкой
-		const float Zap = 2.7f;
-		if(T >= Zap)
-		{
-			const float App = Ease((T - Zap) / 0.25f);
-			const vec2 IconC(Center.x - TotalW / 2.0f + aWordW[0] + Gap2 + IconW / 2.0f, Center.y);
-			const float S = Size * 0.55f * (0.6f + 0.4f * App);
-			const float Flash = Clamp01(1.0f - (T - Zap) / 0.35f);
-			if(Flash > 0.0f)
-			{
-				const std::vector<vec2> Bolt = MakeBolt(vec2(IconC.x + 6.0f, 0.0f), IconC, 17, 24.0f);
-				pG->BlendAdditive();
-				DrawBolt(pG, Bolt, 6.0f, ColorRGBA(0.45f, 0.2f, 1.0f, 0.4f * Flash * Fade));
-				DrawBolt(pG, Bolt, 2.0f, ColorRGBA(0.9f, 0.8f, 1.0f, 0.9f * Flash * Fade));
-				pG->BlendNormal();
-			}
-			pG->BlendAdditive();
-			DrawBoltIcon(pG, IconC, S * 1.4f, ColorRGBA(0.5f, 0.25f, 1.0f, 0.5f * App * Fade));
-			pG->BlendNormal();
-			DrawBoltIcon(pG, IconC, S, ColorRGBA(1.0f, 0.9f, 0.4f, App * Fade));
-		}
 
 		// полоса загрузки
 		{
