@@ -1,6 +1,7 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 
+#include <algorithm>
 #include "maplayers.h"
 #include "menus.h"
 
@@ -332,7 +333,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		Corners |= IGraphics::CORNER_BL;
 	if(DemoControls.x < MainView.w - DemoControls.w && DemoControls.y < MainView.h - DemoControls.h)
 		Corners |= IGraphics::CORNER_BR;
-	DemoControls.Draw(ms_ColorTabbarActive, Corners, 10.0f);
+	DemoControls.Draw(ColorRGBA(0.17f, 0.07f, 0.34f, 0.92f), Corners, 10.0f);
 	const CUIRect DemoControlsDragRect = DemoControls;
 
 	CUIRect SeekBar, ButtonBar, NameBar, SpeedBar;
@@ -413,13 +414,13 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 	{
 		// draw seek bar
 		const float Rounding = 5.0f;
-		SeekBar.Draw(ColorRGBA(0, 0, 0, 0.5f), IGraphics::CORNER_ALL, Rounding);
+		SeekBar.Draw(ColorRGBA(0.06f, 0.02f, 0.14f, 0.7f), IGraphics::CORNER_ALL, Rounding);
 
 		// draw filled bar
 		float Amount = CurrentTick / (float)TotalTicks;
 		CUIRect FilledBar = SeekBar;
 		FilledBar.w = 2 * Rounding + (FilledBar.w - 2 * Rounding) * Amount;
-		FilledBar.Draw(ColorRGBA(1, 1, 1, 0.5f), IGraphics::CORNER_ALL, Rounding);
+		FilledBar.Draw(ColorRGBA(0.72f, 0.5f, 1.0f, 0.55f), IGraphics::CORNER_ALL, Rounding);
 
 		// draw highlighting
 		if(g_Config.m_ClDemoSliceBegin != -1 && g_Config.m_ClDemoSliceEnd != -1)
@@ -429,7 +430,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			float Span = ((SeekBar.w - 2 * Rounding) * RatioEnd) - ((SeekBar.w - 2 * Rounding) * RatioBegin);
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(1.0f, 0.0f, 0.0f, 0.25f);
+			Graphics()->SetColor(0.7f, 0.3f, 1.0f, 0.3f);
 			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * RatioBegin, SeekBar.y, Span, SeekBar.h);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
@@ -454,10 +455,12 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			float Ratio = (g_Config.m_ClDemoSliceBegin - pInfo->m_FirstTick) / (float)TotalTicks;
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(1.0f, 0.0f, 0.0f, 1.0f);
-			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * Ratio, SeekBar.y, Ui()->PixelSize(), SeekBar.h);
+			Graphics()->SetColor(0.8f, 0.45f, 1.0f, 1.0f);
+			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * Ratio, SeekBar.y, Ui()->PixelSize() * 2.0f, SeekBar.h);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
+			CUIRect Tag(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * Ratio + 3.0f, SeekBar.y, 10.0f, SeekBar.h);
+			Ui()->DoLabel(&Tag, "1", SeekBar.h * 0.6f, TEXTALIGN_MC);
 		}
 
 		// end
@@ -466,10 +469,31 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			float Ratio = (g_Config.m_ClDemoSliceEnd - pInfo->m_FirstTick) / (float)TotalTicks;
 			Graphics()->TextureClear();
 			Graphics()->QuadsBegin();
-			Graphics()->SetColor(1.0f, 0.0f, 0.0f, 1.0f);
-			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * Ratio, SeekBar.y, Ui()->PixelSize(), SeekBar.h);
+			Graphics()->SetColor(0.8f, 0.45f, 1.0f, 1.0f);
+			IGraphics::CQuadItem QuadItem(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * Ratio, SeekBar.y, Ui()->PixelSize() * 2.0f, SeekBar.h);
 			Graphics()->QuadsDrawTL(&QuadItem, 1);
 			Graphics()->QuadsEnd();
+			CUIRect Tag(2 * Rounding + SeekBar.x + (SeekBar.w - 2 * Rounding) * Ratio + 3.0f, SeekBar.y, 10.0f, SeekBar.h);
+			Ui()->DoLabel(&Tag, "2", SeekBar.h * 0.6f, TEXTALIGN_MC);
+		}
+
+		// правая кнопка мыши по полосе перемотки: 1-я метка = начало, 2-я = конец, 3-я начинает заново
+		if(Ui()->MouseInside(&SeekBar) && Ui()->MouseButtonClicked(1))
+		{
+			const float Inner = SeekBar.w - 2 * Rounding;
+			const float Ratio = std::clamp((Ui()->MouseX() - SeekBar.x - 2 * Rounding) / Inner, 0.0f, 1.0f);
+			const int ClickTick = pInfo->m_FirstTick + (int)(Ratio * TotalTicks);
+			if(g_Config.m_ClDemoSliceBegin == -1 || (g_Config.m_ClDemoSliceBegin != -1 && g_Config.m_ClDemoSliceEnd != -1))
+			{
+				g_Config.m_ClDemoSliceBegin = ClickTick;
+				g_Config.m_ClDemoSliceEnd = -1;
+			}
+			else
+			{
+				g_Config.m_ClDemoSliceEnd = ClickTick;
+				if(g_Config.m_ClDemoSliceEnd < g_Config.m_ClDemoSliceBegin)
+					std::swap(g_Config.m_ClDemoSliceBegin, g_Config.m_ClDemoSliceEnd);
+			}
 		}
 
 		// draw time
@@ -727,6 +751,23 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		m_DemoPlayerState = DEMOPLAYER_SLICE_SAVE;
 	}
 	Ui()->DoToolTip(&s_SliceSaveButton, &Button, Localize("Export cut as a separate demo"));
+
+	// кнопка «Обрезать»: сохраняет участок между метками 1 и 2 (метки ставятся ПКМ по полосе перемотки)
+	ButtonBar.VSplitLeft(Margins * 4.0f, nullptr, &ButtonBar);
+	ButtonBar.VSplitLeft(ButtonbarHeight * 3.0f, &Button, &ButtonBar);
+	static CButtonContainer s_CutButton;
+	const bool CutReady = g_Config.m_ClDemoSliceBegin != -1 && g_Config.m_ClDemoSliceEnd != -1;
+	Button.Draw(ColorRGBA(0.55f, 0.28f, 0.95f, CutReady ? 0.75f : 0.3f), IGraphics::CORNER_ALL, 5.0f);
+	if(Ui()->DoButtonLogic(&s_CutButton, 0, &Button, BUTTONFLAG_LEFT) && SliceEnabled && CutReady)
+	{
+		char aCutName[IO_MAX_PATH_LENGTH];
+		DemoPlayer()->GetDemoName(aCutName, sizeof(aCutName));
+		m_DemoSliceInput.Set(aCutName);
+		Ui()->SetActiveItem(&m_DemoSliceInput);
+		m_DemoPlayerState = DEMOPLAYER_SLICE_SAVE;
+	}
+	Ui()->DoLabel(&Button, Localize("Обрезать"), Button.h * 0.5f, TEXTALIGN_MC);
+	Ui()->DoToolTip(&s_CutButton, &Button, CutReady ? "Сохранить участок между метками 1 и 2 как отдельное демо" : "Поставьте метки 1 и 2: правая кнопка мыши по полосе перемотки");
 
 	// close button
 	ButtonBar.VSplitRight(ButtonbarHeight, &ButtonBar, &Button);

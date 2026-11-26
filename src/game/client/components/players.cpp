@@ -539,7 +539,7 @@ void CPlayers::RenderHook(
 	// render head
 	int QuadOffset = NUM_WEAPONS * 2 + 2;
 	// rainbow mode: the own hook shimmers
-	const bool RainbowHook = g_Config.m_ClRainbowHook && ClientId == GameClient()->m_Snap.m_LocalClientId;
+	const bool RainbowHook = g_Config.m_ClRainbowHook && ClientId >= 0 && ClientId == GameClient()->m_Snap.m_LocalClientId && !GameClient()->m_Snap.m_SpecInfo.m_Active;
 	const ColorRGBA HookColor = RainbowHook ? GameClient()->m_Visuals.MeColor(0.2f).WithAlpha(Alpha) : ColorRGBA(1.0f, 1.0f, 1.0f, Alpha);
 	Graphics()->SetColor(HookColor);
 	Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, HookPos.x, HookPos.y);

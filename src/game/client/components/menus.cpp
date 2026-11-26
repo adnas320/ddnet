@@ -1104,7 +1104,7 @@ void CMenus::Render()
 			Screen.HSplitTop(24.0f, &TabBar, &MainView);
 			// градиентная панель под страницей; у настроек она рисуется внутри (там ещё правая колонка)
 			if(m_MenuPage != PAGE_SETTINGS)
-				DrawSparkiGradient(MainView);
+				DrawSparkiGradient(MainView, IGraphics::CORNER_B);
 
 			if(m_MenuPage == PAGE_NEWS)
 			{
