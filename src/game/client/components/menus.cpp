@@ -210,7 +210,7 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 			if(str_comp(pText, FontIcon::HEART) == 0)
 			{
 				// сердечко друзей: красное и мягко светится
-				const float Pulse = 0.5f + 0.5f * std::sin((float)((double)time_get() / (double)time_freq()) * 2.2f);
+				const float Pulse = 0.5f; // без анимации: ровное красное свечение
 				const vec2 C(Label.x + Label.w / 2.0f, Label.y + Label.h / 2.0f);
 				Graphics()->TextureClear();
 				Graphics()->BlendAdditive();
@@ -521,7 +521,6 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
 		Ui()->DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
 		Box.VSplitRight(10.0f, &Box, nullptr);
 
-		Box.VSplitLeft(5.0f, nullptr, &Box); // кнопка «Домой» чуть правее, чтобы не вылезала за край при наведении
 		Box.VSplitLeft(33.0f, &Button, &Box);
 
 		bool GotNewsOrUpdate = false;

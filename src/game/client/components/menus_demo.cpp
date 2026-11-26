@@ -477,22 +477,41 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			Ui()->DoLabel(&Tag, "2", SeekBar.h * 0.6f, TEXTALIGN_MC);
 		}
 
-		// правая кнопка мыши по полосе перемотки: 1-я метка = начало, 2-я = конец, 3-я начинает заново
-		if(Ui()->MouseInside(&SeekBar) && Ui()->MouseButtonClicked(1))
+		// метки обрезки ставит и двигает сам пользователь (правая кнопка мыши):
+		// клик ставит 1-ю метку, затем 2-ю; потом клик двигает ближайшую метку; зажатая кнопка тянет метку
 		{
+			static int s_DragMarker = 0; // 0 нет, 1 начало, 2 конец
 			const float Inner = SeekBar.w - 2 * Rounding;
-			const float Ratio = std::clamp((Ui()->MouseX() - SeekBar.x - 2 * Rounding) / Inner, 0.0f, 1.0f);
-			const int ClickTick = pInfo->m_FirstTick + (int)(Ratio * TotalTicks);
-			if(g_Config.m_ClDemoSliceBegin == -1 || (g_Config.m_ClDemoSliceBegin != -1 && g_Config.m_ClDemoSliceEnd != -1))
+			const auto TickAt = [&]() {
+				const float Ratio = std::clamp((Ui()->MouseX() - SeekBar.x - 2 * Rounding) / Inner, 0.0f, 1.0f);
+				return pInfo->m_FirstTick + (int)(Ratio * TotalTicks);
+			};
+			if(Ui()->MouseInside(&SeekBar) && Ui()->MouseButtonClicked(1))
 			{
-				g_Config.m_ClDemoSliceBegin = ClickTick;
-				g_Config.m_ClDemoSliceEnd = -1;
+				const int ClickTick = TickAt();
+				if(g_Config.m_ClDemoSliceBegin == -1)
+					s_DragMarker = 1;
+				else if(g_Config.m_ClDemoSliceEnd == -1)
+					s_DragMarker = 2;
+				else
+					s_DragMarker = absolute(ClickTick - g_Config.m_ClDemoSliceBegin) <= absolute(ClickTick - g_Config.m_ClDemoSliceEnd) ? 1 : 2;
+				if(s_DragMarker == 1)
+					g_Config.m_ClDemoSliceBegin = ClickTick;
+				else
+					g_Config.m_ClDemoSliceEnd = ClickTick;
 			}
-			else
+			if(s_DragMarker != 0)
 			{
-				g_Config.m_ClDemoSliceEnd = ClickTick;
-				if(g_Config.m_ClDemoSliceEnd < g_Config.m_ClDemoSliceBegin)
-					std::swap(g_Config.m_ClDemoSliceBegin, g_Config.m_ClDemoSliceEnd);
+				if(!Ui()->MouseButton(1))
+					s_DragMarker = 0;
+				else
+				{
+					const int Tick = TickAt();
+					if(s_DragMarker == 1)
+						g_Config.m_ClDemoSliceBegin = g_Config.m_ClDemoSliceEnd != -1 ? std::min(Tick, g_Config.m_ClDemoSliceEnd) : Tick;
+					else
+						g_Config.m_ClDemoSliceEnd = g_Config.m_ClDemoSliceBegin != -1 ? std::max(Tick, g_Config.m_ClDemoSliceBegin) : Tick;
+				}
 			}
 		}
 
@@ -767,7 +786,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		m_DemoPlayerState = DEMOPLAYER_SLICE_SAVE;
 	}
 	Ui()->DoLabel(&Button, Localize("Обрезать"), Button.h * 0.5f, TEXTALIGN_MC);
-	Ui()->DoToolTip(&s_CutButton, &Button, CutReady ? "Сохранить участок между метками 1 и 2 как отдельное демо" : "Поставьте метки 1 и 2: правая кнопка мыши по полосе перемотки");
+	Ui()->DoToolTip(&s_CutButton, &Button, CutReady ? "Сохранить участок между метками 1 и 2 как отдельное демо" : "Поставьте метки 1 и 2 сами: правая кнопка мыши по полосе перемотки (можно тянуть и двигать)");
 
 	// close button
 	ButtonBar.VSplitRight(ButtonbarHeight, &ButtonBar, &Button);
