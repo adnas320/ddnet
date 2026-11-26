@@ -566,6 +566,7 @@ protected:
 	// found in menus_settings.cpp
 	void RenderSettings(CUIRect MainView);
 	bool RenderIntro();
+	void DrawSparkiGradient(const CUIRect &Rect);
 	int64_t m_IntroStart = 0;
 	bool m_IntroDone = false;
 	bool RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alpha, float DarkestLight);

@@ -90,6 +90,20 @@ void DrawBoltIcon(IGraphics *pG, vec2 C, float S, ColorRGBA Color)
 
 } // namespace
 
+// Тёмный фиолетово-чёрный градиент, углы медленно «дышат»
+void CMenus::DrawSparkiGradient(const CUIRect &Rect)
+{
+	const float T = (float)(time_get() % (time_freq() * 3600)) / (float)time_freq();
+	const auto Corner = [&](float Base, float Phase) {
+		const float K = std::clamp(Base + 0.28f * std::sin(T * 0.7f + Phase), 0.0f, 1.0f);
+		// лёгкий сдвиг оттенка между фиолетовым и сине-индиго
+		const float Shift = 0.5f + 0.5f * std::sin(T * 0.35f + Phase * 1.7f);
+		return ColorRGBA(K * (0.24f - 0.06f * Shift), K * 0.07f, K * (0.46f + 0.10f * Shift), 0.62f);
+	};
+	// TL, TR, BL, BR: сильнее всего слева снизу, слабее всего справа сверху
+	Rect.Draw4(Corner(0.45f, 1.3f), Corner(0.08f, 3.1f), Corner(0.95f, 0.0f), Corner(0.45f, 4.4f), IGraphics::CORNER_ALL, 10.0f);
+}
+
 // Возвращает true, пока играет заставка (меню под ней не рисуется)
 bool CMenus::RenderIntro()
 {
@@ -197,7 +211,8 @@ bool CMenus::RenderIntro()
 	const float TextStart = Strike + 0.55f;
 	if(T >= TextStart)
 	{
-		const float Size = 34.0f;
+		TextRender()->SetPreferredFont("fonts/RussoOne-Regular.ttf");
+		const float Size = 42.0f;
 		const char *pA = "Sparki";
 		const char *pB = "Client";
 		const float WA = TextRender()->TextWidth(Size, pA);
@@ -244,6 +259,19 @@ bool CMenus::RenderIntro()
 		DoWord(pB, X0 + WA + Gap + IconW + Gap, 7);
 		TextRender()->TextColor(TextRender()->DefaultTextColor());
 		TextRender()->TextOutlineColor(TextRender()->DefaultTextOutlineColor());
+
+		// тонкая полоса загрузки под надписью
+		{
+			const float Prog = Clamp01((T - TextStart) / (5.4f - TextStart));
+			const float BarW = TotalW * 0.8f;
+			const float BarX = Center.x - BarW / 2.0f;
+			const float BarY = Center.y + Size * 0.95f;
+			CUIRect Bar(BarX, BarY, BarW, 3.0f);
+			Bar.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.12f * Fade), IGraphics::CORNER_ALL, 1.5f);
+			CUIRect Fill(BarX, BarY, BarW * Prog, 3.0f);
+			Fill.Draw4(ColorRGBA(0.4f, 0.2f, 0.9f, Fade), ColorRGBA(0.8f, 0.6f, 1.0f, Fade), ColorRGBA(0.4f, 0.2f, 0.9f, Fade), ColorRGBA(0.8f, 0.6f, 1.0f, Fade), IGraphics::CORNER_ALL, 1.5f);
+		}
+		TextRender()->SetPreferredFont("");
 
 		// значок молнии между словами появляется после «Sparki»
 		const float IconAppear = Clamp01((T - TextStart - 6 * Step) / 0.25f);

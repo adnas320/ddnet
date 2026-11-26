@@ -331,6 +331,7 @@ private:
 	FT_Face m_IconFace = nullptr;
 	FT_Face m_VariantFace = nullptr;
 	FT_Face m_CustomFace = nullptr;
+	FT_Face m_PreferFace = nullptr;
 	FT_Face m_SelectedFace = nullptr;
 	std::vector<FT_Face> m_vFallbackFaces;
 	std::vector<FT_Face> m_vFtFaces;
@@ -408,7 +409,7 @@ private:
 
 	FT_UInt GetCharGlyph(int Chr, FT_Face *pFace, bool AllowReplacementCharacter)
 	{
-		for(FT_Face Face : {m_SelectedFace, m_CustomFace, m_DefaultFace, m_VariantFace})
+		for(FT_Face Face : {m_PreferFace, m_SelectedFace, m_CustomFace, m_DefaultFace, m_VariantFace})
 		{
 			if(Face && Face->charmap)
 			{
@@ -629,6 +630,8 @@ public:
 	{
 		return m_vFtFaces[Index];
 	}
+
+	void SetPreferFace(FT_Face Face) { m_PreferFace = Face; }
 
 	void SetCustomFace(FT_Face Face)
 	{
@@ -1357,6 +1360,36 @@ public:
 	void SetFontPreset(EFontPreset FontPreset) override
 	{
 		m_pGlyphMap->SetFontPreset(FontPreset);
+	}
+
+	bool SetPreferredFont(const char *pPath) override
+	{
+		if(pPath == nullptr || pPath[0] == '\0')
+		{
+			m_pGlyphMap->SetPreferFace(nullptr);
+			return true;
+		}
+		const auto Cached = m_CustomFaces.find(pPath);
+		if(Cached != m_CustomFaces.end())
+		{
+			m_pGlyphMap->SetPreferFace(Cached->second);
+			return true;
+		}
+		void *pFontData;
+		unsigned FontDataSize;
+		if(!Storage()->ReadFile(pPath, IStorage::TYPE_ALL, &pFontData, &FontDataSize))
+			return false;
+		const size_t FacesBefore = m_pGlyphMap->NumFaces();
+		if(!LoadFontCollection(pPath, static_cast<FT_Byte *>(pFontData), (FT_Long)FontDataSize))
+		{
+			free(pFontData);
+			return false;
+		}
+		m_vpFontData.push_back(pFontData);
+		FT_Face Face = m_pGlyphMap->FaceAt(FacesBefore);
+		m_CustomFaces[pPath] = Face;
+		m_pGlyphMap->SetPreferFace(Face);
+		return true;
 	}
 
 	bool SetCustomFont(const char *pPath, bool Reload) override

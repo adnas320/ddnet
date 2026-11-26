@@ -1028,6 +1028,9 @@ void CMenus::Render()
 	{
 		Screen.Margin(10.0f, &Screen);
 	}
+	// анимированный градиент под всеми страницами меню (браузер серверов, настройки, демо, новости)
+	if(ClientState == IClient::STATE_OFFLINE && m_Popup == POPUP_NONE && !m_ShowStart)
+		DrawSparkiGradient(Screen);
 
 	switch(ClientState)
 	{
@@ -2474,7 +2477,7 @@ void CMenus::UpdateColors()
 	ms_GuiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
 
 	ms_ColorTabbarInactiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.25f);
-	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.5f);
+	ms_ColorTabbarActiveOutgame = ColorRGBA(0.0f, 0.0f, 0.0f, 0.2f);
 	ms_ColorTabbarHoverOutgame = ColorRGBA(1.0f, 1.0f, 1.0f, 0.25f);
 
 	const float ColorIngameScaleI = 0.5f;

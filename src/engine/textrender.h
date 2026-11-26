@@ -199,6 +199,8 @@ public:
 	virtual void SetFontLanguageVariant(const char *pLanguageFile) = 0;
 	// Path relative to the data/save dirs, empty string restores the default font
 	virtual bool SetCustomFont(const char *pPath, bool Reload = false) = 0;
+	// шрифт, который временно имеет приоритет над основным (пустая строка = снять)
+	virtual bool SetPreferredFont(const char *pPath) = 0;
 
 	virtual void SetRenderFlags(unsigned Flags) = 0;
 	virtual unsigned GetRenderFlags() const = 0;
