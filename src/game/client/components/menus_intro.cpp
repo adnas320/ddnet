@@ -77,7 +77,9 @@ void CMenus::DrawSparkiGradient(const CUIRect &Rect, int Corners, float Rounding
 	DrawSparkiGradientIn(Rect, Rect, Corners, Rounding);
 }
 
-// Возвращает true, пока играет заставка (пропустить нельзя). Спокойный «космос»: влёт сквозь звёзды, туманности, планета.
+// Возвращает true, пока играет заставка (пропустить нельзя).
+// 1) вращающаяся фиолетовая спиральная галактика, 2) схлопывание и фиолетовый взрыв частиц со вспышкой и искрами,
+// 3) название «G A L A X Y  C L I E N T» в плитках.
 bool CMenus::RenderIntro()
 {
 	if(m_IntroDone)
@@ -91,7 +93,7 @@ bool CMenus::RenderIntro()
 		m_IntroStart = time_get();
 
 	const float T = (float)(time_get() - m_IntroStart) / (float)time_freq();
-	const float Total = 5.6f;
+	const float Total = 9.4f;
 	if(T > Total)
 	{
 		m_IntroDone = true;
@@ -112,146 +114,229 @@ bool CMenus::RenderIntro()
 		x = Clamp01(x);
 		return 1.0f - (1.0f - x) * (1.0f - x) * (1.0f - x);
 	};
-	const float In = Ease(T / 1.0f); // плавное появление из темноты
-	const float Fade = (1.0f - Ease((T - 4.9f) / 0.7f)) * In;
+	const float Tx = 3.4f; // момент взрыва
+	const float Out = 1.0f - Ease((T - 8.5f) / 0.9f);
+	const float Age = T - Tx;
 
-	// почти чёрный космос с лёгким градиентом
+	// фон: чёрный космос
 	{
 		CUIRect Full = Screen;
-		Full.Draw4(ColorRGBA(0.005f, 0.005f, 0.02f, Fade), ColorRGBA(0.01f, 0.005f, 0.03f, Fade), ColorRGBA(0.02f, 0.01f, 0.05f, Fade), ColorRGBA(0.01f, 0.01f, 0.04f, Fade), IGraphics::CORNER_NONE, 0.0f);
+		Full.Draw(ColorRGBA(0.0f, 0.0f, 0.012f, Out), IGraphics::CORNER_NONE, 0.0f);
 	}
 
-	// туманности: мягкие цветные облака, медленно дрейфуют
+	pG->BlendAdditive();
+	pG->TextureClear();
+
+	// ---------- 1) галактика ----------
+	if(T < Tx + 0.3f)
 	{
-		struct SNeb
-		{
-			float m_X, m_Y, m_R, m_Cr, m_Cg, m_Cb, m_Drift;
-		};
-		const SNeb aNeb[5] = {
-			{0.30f, 0.40f, 0.55f, 0.35f, 0.12f, 0.65f, 3.0f},
-			{0.72f, 0.30f, 0.45f, 0.10f, 0.20f, 0.55f, -2.0f},
-			{0.55f, 0.72f, 0.50f, 0.55f, 0.10f, 0.40f, 2.0f},
-			{0.15f, 0.80f, 0.35f, 0.05f, 0.30f, 0.45f, -3.0f},
-			{0.85f, 0.75f, 0.40f, 0.30f, 0.12f, 0.55f, 1.5f},
-		};
-		const float NebA = Ease((T - 0.3f) / 2.0f) * Fade;
-		pG->BlendAdditive();
-		pG->TextureClear();
+		const float Appear = Ease(T / 1.8f);
+		const float Contract = Ease((T - 2.55f) / 0.85f);
+		const float Alpha = Appear * (1.0f - Ease((T - Tx) / 0.3f)) * Out;
+		const float Scale = (0.6f + 0.4f * Appear) * (1.0f - 0.8f * Contract);
+		const float Rmax = H * 0.46f;
+		const float Tilt = 0.52f;
+		const float Ca = std::cos(-0.28f), Sa = std::sin(-0.28f);
 		pG->QuadsBegin();
-		for(const SNeb &N : aNeb)
+		// гало и яркое ядро
+		for(int i = 0; i < 9; i++)
 		{
-			const float X = W * N.m_X + N.m_Drift * T;
-			const float Y = H * N.m_Y + std::sin(T * 0.3f + N.m_X * 6.0f) * 4.0f;
-			for(int i = 0; i < 7; i++)
-			{
-				const float K = (float)(i + 1) / 7.0f;
-				pG->SetColor(N.m_Cr, N.m_Cg, N.m_Cb, 0.018f * NebA);
-				pG->DrawCircle(X, Y, H * N.m_R * K, 40);
-			}
+			pG->SetColor(0.62f, 0.4f, 1.0f, 0.016f * Alpha * (1.0f + 2.5f * Contract));
+			pG->DrawCircle(Center.x, Center.y, Rmax * Scale * (0.12f + 0.11f * i), 48);
 		}
-		pG->QuadsEnd();
-		pG->BlendNormal();
-	}
-
-	// звёзды: влёт (полосы от центра), затем замедление до неподвижных мерцающих точек
-	{
-		const float P = Clamp01((T - 0.5f) / 2.3f);
-		const float PPrev = Clamp01((T - 0.5f - 0.04f) / 2.3f);
-		pG->BlendAdditive();
-		pG->TextureClear();
-		pG->QuadsBegin();
-		const int NumStars = 420;
+		for(int i = 0; i < 6; i++)
+		{
+			pG->SetColor(0.95f, 0.88f, 1.0f, 0.07f * Alpha * (1.0f + 1.5f * Contract));
+			pG->DrawCircle(Center.x, Center.y, Rmax * Scale * (0.03f + 0.03f * i) * (1.0f + 0.6f * Contract), 32);
+		}
+		// частицы рукавов
+		const int NumStars = 2600;
 		for(int i = 0; i < NumStars; i++)
 		{
-			const float Depth = 0.25f + 0.75f * Hash01(i * 11 + 1);
-			const float Ang = Hash01(i * 11 + 2) * 6.2831853f;
-			const float Rf = std::sqrt(Hash01(i * 11 + 3)) * std::sqrt(W * W + H * H) * 0.5f; // конечное расстояние от центра
-			const vec2 Dir(std::cos(Ang), std::sin(Ang));
-			const float R1 = Rf * (0.15f + 0.85f * EaseOut(P));
-			const float R0 = Rf * (0.15f + 0.85f * EaseOut(PPrev));
-			const float Streak = (R1 - R0) * (4.0f + 8.0f * Depth); // длина полосы зависит от скорости
-			const vec2 Pos = Center + Dir * R1;
-			if(Pos.x < -5 || Pos.x > W + 5 || Pos.y < -5 || Pos.y > H + 5)
-				continue;
-			const float Tw = P >= 1.0f ? 0.65f + 0.35f * std::sin(T * (0.8f + Hash01(i * 11 + 4) * 2.2f) + (float)i) : 1.0f;
-			const float Tint = Hash01(i * 11 + 5);
-			pG->SetColor(0.75f + 0.25f * Tint, 0.8f + 0.1f * Tint, 1.0f - 0.3f * Tint, (0.3f + 0.6f * Depth) * Tw * Fade * Clamp01(P * 3.0f));
-			Segment(pG, Pos - Dir * Streak, Pos, 0.25f + 0.55f * Depth);
+			const float Rn = std::pow(Hash01(i * 7 + 1), 0.75f);
+			const int Arm = i % 2;
+			const float Spread = (Hash01(i * 7 + 2) - 0.5f) * (1.05f - 0.6f * Rn);
+			const float Ang = Arm * 3.14159265f + Rn * 4.4f + Spread + T * (1.15f - 0.75f * Rn) * 0.55f;
+			const float R = Rn * Rmax * Scale;
+			const float Xr = std::cos(Ang) * R;
+			const float Yr = std::sin(Ang) * R * Tilt;
+			const float X = Center.x + Xr * Ca - Yr * Sa;
+			const float Y = Center.y + Xr * Sa + Yr * Ca;
+			const float Core = std::pow(1.0f - Rn, 1.6f);
+			const float Size = (0.5f + 1.5f * Hash01(i * 7 + 3)) * (0.6f + 0.4f * Scale);
+			const float A = (0.10f + 0.55f * Core + 0.12f * Hash01(i * 7 + 4)) * Alpha;
+			pG->SetColor(0.55f + 0.4f * Core, 0.32f + 0.55f * Core, 0.95f + 0.05f * Core, A);
+			const IGraphics::CQuadItem Q(X - Size / 2, Y - Size / 2, Size, Size);
+			pG->QuadsDrawTL(&Q, 1);
 		}
 		pG->QuadsEnd();
-		pG->BlendNormal();
 	}
 
-	// планета в нижнем левом углу: тёмный диск с тонкой атмосферой
+	// ---------- 2) взрыв ----------
+	if(Age > 0.0f)
 	{
-		const float PlanetA = Ease((T - 1.6f) / 1.8f) * Fade;
-		const float R = H * 0.62f;
-		const vec2 C(W * 0.16f, H * 1.12f - 10.0f * Ease((T - 1.6f) / 3.5f));
-		pG->TextureClear();
-		pG->BlendAdditive();
+		// вспышка на весь экран
+		const float F1 = std::exp(-Age * 13.0f), F2 = std::exp(-Age * 3.2f);
 		pG->QuadsBegin();
+		pG->SetColor(1.0f, 0.95f, 1.0f, 0.55f * F1 * Out);
+		const IGraphics::CQuadItem Full(0, 0, W, H);
+		pG->QuadsDrawTL(&Full, 1);
+		pG->SetColor(0.65f, 0.4f, 1.0f, 0.28f * F2 * Out);
+		pG->QuadsDrawTL(&Full, 1);
+		// фиолетовое зарево вокруг центра
+		for(int i = 0; i < 7; i++)
+		{
+			pG->SetColor(0.55f, 0.28f, 1.0f, 0.03f * std::exp(-Age * 0.45f) * Out);
+			pG->DrawCircle(Center.x, Center.y, H * (0.15f + 0.1f * i) * (0.6f + 0.5f * EaseOut(Age / 1.5f)), 48);
+		}
+		// белое горячее ядро
 		for(int i = 0; i < 5; i++)
 		{
-			pG->SetColor(0.35f, 0.3f, 0.9f, 0.03f * PlanetA);
-			pG->DrawCircle(C.x, C.y, R * (1.02f + 0.014f * i), 64);
+			pG->SetColor(1.0f, 0.9f, 1.0f, 0.13f * std::exp(-Age * 5.0f) * Out);
+			pG->DrawCircle(Center.x, Center.y, 10.0f + 22.0f * i * EaseOut(Age / 0.5f), 32);
 		}
-		pG->SetColor(0.55f, 0.5f, 1.0f, 0.11f * PlanetA);
-		pG->DrawCircle(C.x, C.y, R * 1.006f, 64);
 		pG->QuadsEnd();
-		pG->BlendNormal();
+
+		// ударная волна
+		if(Age < 1.5f)
+		{
+			const float K = Age / 1.5f;
+			const float R = 14.0f + 430.0f * EaseOut(K);
+			pG->QuadsBegin();
+			pG->SetColor(0.75f, 0.55f, 1.0f, (1.0f - K) * 0.55f * Out);
+			const int Seg = 80;
+			for(int i = 0; i < Seg; i++)
+			{
+				const float A0 = i * 6.2831853f / Seg, A1 = (i + 1) * 6.2831853f / Seg;
+				Segment(pG, Center + vec2(std::cos(A0), std::sin(A0)) * R, Center + vec2(std::cos(A1), std::sin(A1)) * R, 0.5f + 1.8f * (1.0f - K));
+			}
+			pG->QuadsEnd();
+		}
+
+		// частицы-лучи
 		pG->QuadsBegin();
-		pG->SetColor(0.01f, 0.008f, 0.03f, PlanetA);
-		pG->DrawCircle(C.x, C.y, R, 64);
+		const int NumP = 1900;
+		for(int i = 0; i < NumP; i++)
+		{
+			const float Life = 1.7f + 2.6f * Hash01(i * 9 + 1);
+			if(Age > Life)
+				continue;
+			const float Ang = Hash01(i * 9 + 2) * 6.2831853f;
+			const float Speed = 35.0f + 340.0f * std::pow(Hash01(i * 9 + 3), 1.5f);
+			const vec2 Dir(std::cos(Ang), std::sin(Ang));
+			const auto PosAt = [&](float At) {
+				const float D = (1.0f - std::exp(-1.5f * At)) / 1.5f;
+				return Center + Dir * Speed * D + vec2(0.0f, 16.0f * At * At);
+			};
+			const vec2 P1 = PosAt(Age), P0 = PosAt(std::max(0.0f, Age - 0.055f));
+			if(P1.x < -10 || P1.x > W + 10 || P1.y < -10 || P1.y > H + 10)
+				continue;
+			const float K = Age / Life;
+			float Cr, Cg, Cb;
+			if(K < 0.35f)
+			{
+				const float M = K / 0.35f; // белый -> фиолетовый
+				Cr = 1.0f + (0.66f - 1.0f) * M;
+				Cg = 0.93f + (0.34f - 0.93f) * M;
+				Cb = 1.0f;
+			}
+			else
+			{
+				const float M = (K - 0.35f) / 0.65f; // фиолетовый -> тёмно-фиолетовый
+				Cr = 0.66f + (0.32f - 0.66f) * M;
+				Cg = 0.34f + (0.1f - 0.34f) * M;
+				Cb = 1.0f + (0.65f - 1.0f) * M;
+			}
+			pG->SetColor(Cr, Cg, Cb, std::pow(1.0f - K, 1.3f) * Out);
+			Segment(pG, P0, P1, 0.3f + 0.45f * Hash01(i * 9 + 4));
+		}
+		pG->QuadsEnd();
+
+		// блёстки: четырёхконечные звёздочки, которые мерцают и гаснут
+		pG->QuadsBegin();
+		for(int i = 0; i < 150; i++)
+		{
+			const float T0 = 0.6f + Hash01(i * 13 + 1) * 3.4f;
+			const float Life = 1.3f + 1.8f * Hash01(i * 13 + 2);
+			const float SAge = Age - T0;
+			if(SAge < 0.0f || SAge > Life)
+				continue;
+			const float X = Center.x + (Hash01(i * 13 + 3) - 0.5f) * W * 0.95f + (Hash01(i * 13 + 6) - 0.5f) * 4.0f * SAge;
+			const float Y = Center.y + (Hash01(i * 13 + 4) - 0.5f) * H * 0.95f + 3.0f * SAge;
+			const float Size = 2.2f + 5.0f * Hash01(i * 13 + 5);
+			const float Env = std::pow(std::sin(3.14159265f * SAge / Life), 1.2f);
+			const float Tw = 0.6f + 0.4f * std::sin(T * (6.0f + 6.0f * Hash01(i * 13 + 7)) + (float)i);
+			const float A = Env * Tw * Out;
+			const float Mix = Hash01(i * 13 + 8);
+			pG->SetColor(0.75f + 0.25f * Mix, 0.55f + 0.4f * Mix, 1.0f, A);
+			const IGraphics::CQuadItem Qh(X - Size, Y - 0.3f, Size * 2.0f, 0.6f);
+			const IGraphics::CQuadItem Qv(X - 0.3f, Y - Size * 1.3f, 0.6f, Size * 2.6f);
+			pG->QuadsDrawTL(&Qh, 1);
+			pG->QuadsDrawTL(&Qv, 1);
+			pG->SetColor(0.8f, 0.6f, 1.0f, A * 0.25f);
+			pG->DrawCircle(X, Y, Size * 0.55f, 14);
+		}
 		pG->QuadsEnd();
 	}
+	pG->BlendNormal();
 
-	// название: спокойно проявляется, широкий интервал, пурпурный <-> белый
-	const float TextStart = 2.6f;
-	if(T >= TextStart)
+	// ---------- 3) название в плитках ----------
+	const float TitleStart = Tx + 0.55f;
+	if(T >= TitleStart)
 	{
-		TextRender()->SetPreferredFont("fonts/RussoOne-Regular.ttf");
-		const float Size = 30.0f;
 		const char *apWords[2] = {"GALAXY", "CLIENT"};
-		const float Track = Size * 0.32f;
-		const float Gap2 = Size * 0.9f;
-		float aWordW[2];
-		for(int Wd = 0; Wd < 2; Wd++)
-		{
-			float Wsum = 0.0f;
-			for(const char *p = apWords[Wd]; *p; p++)
-			{
-				char aCh[2] = {*p, 0};
-				Wsum += TextRender()->TextWidth(Size, aCh) + Track;
-			}
-			aWordW[Wd] = Wsum - Track;
-		}
-		const float TotalW = aWordW[0] + Gap2 + aWordW[1];
-		const float Y0 = Center.y - Size * 0.55f;
-		const ColorRGBA Base(0.66f, 0.42f, 1.0f, 1.0f);
-		float X = Center.x - TotalW / 2.0f;
+		const float TW = std::min(26.0f, W * 0.88f / 13.9f);
+		const float TH = TW * 1.18f;
+		const float G = TW * 0.12f;
+		const float WG = TW * 0.7f;
+		const float TotalW = 12 * TW + 10 * G + WG + G; // 5 промежутков в каждом слове и промежуток между словами
+		const float Total2 = 12 * TW + 10 * G + WG;
+		(void)TotalW;
+		float X = Center.x - Total2 / 2.0f;
+		const float Y = Center.y - TH / 2.0f;
+		TextRender()->SetPreferredFont("fonts/RussoOne-Regular.ttf");
 		int Global = 0;
 		for(int Wd = 0; Wd < 2; Wd++)
 		{
 			for(const char *p = apWords[Wd]; *p; p++, Global++)
 			{
-				char aCh[2] = {*p, 0};
-				const float Appear = Ease((T - TextStart - Global * 0.09f) / 0.9f) * Fade;
-				const float K = (0.5f + 0.5f * std::sin(T * 1.3f - Global * 0.4f)) * 0.8f;
-				TextRender()->TextColor(Base.r + (1.0f - Base.r) * K, Base.g + (1.0f - Base.g) * K, 1.0f, Appear);
-				TextRender()->TextOutlineColor(0.25f, 0.1f, 0.6f, 0.35f * Appear);
-				TextRender()->Text(X, Y0, Size, aCh);
-				X += TextRender()->TextWidth(Size, aCh) + Track;
+				const float Appear = Ease((T - TitleStart - Global * 0.11f) / 0.8f) * Out;
+				if(Appear > 0.0f)
+				{
+					const float Rise = (1.0f - Appear) * 8.0f;
+					const float Pulse = 0.5f + 0.5f * std::sin(T * 1.3f - Global * 0.4f);
+					// мягкое свечение
+					pG->BlendAdditive();
+					pG->TextureClear();
+					pG->QuadsBegin();
+					for(int i = 0; i < 3; i++)
+					{
+						pG->SetColor(0.5f, 0.25f, 1.0f, 0.05f * Appear);
+						pG->DrawCircle(X + TW / 2, Y + TH / 2 + Rise, TW * (0.7f + 0.25f * i), 24);
+					}
+					pG->QuadsEnd();
+					pG->BlendNormal();
+					// плитка: светлая рамка + тёмно-фиолетовая заливка
+					CUIRect Tile(X, Y + Rise, TW, TH);
+					Tile.Draw(ColorRGBA(0.72f + 0.2f * Pulse, 0.5f + 0.3f * Pulse, 1.0f, 0.85f * Appear), IGraphics::CORNER_ALL, TW * 0.18f);
+					CUIRect Inner = Tile;
+					Inner.Margin(TW * 0.05f, &Inner);
+					Inner.Draw(ColorRGBA(0.16f, 0.07f, 0.34f, 0.92f * Appear), IGraphics::CORNER_ALL, TW * 0.14f);
+					char aCh[2] = {*p, 0};
+					const float FontSize = TW * 0.78f;
+					const float Wch = TextRender()->TextWidth(FontSize, aCh);
+					const float K = (0.35f + 0.65f * Pulse) * 0.8f;
+					TextRender()->TextColor(0.78f + 0.22f * K, 0.6f + 0.4f * K, 1.0f, Appear);
+					TextRender()->TextOutlineColor(0.2f, 0.08f, 0.5f, 0.0f);
+					TextRender()->Text(X + (TW - Wch) / 2, Y + Rise + (TH - FontSize * 1.18f) / 2, FontSize, aCh);
+				}
+				X += TW + G;
 			}
-			X += Gap2 - Track;
+			X += WG - G;
 		}
 		TextRender()->TextColor(TextRender()->DefaultTextColor());
 		TextRender()->TextOutlineColor(TextRender()->DefaultTextOutlineColor());
 		TextRender()->SetPreferredFont("");
-
-		// тонкая линия-«горизонт» под названием
-		const float LineA = Ease((T - TextStart - 0.8f) / 1.2f) * Fade;
-		CUIRect Line(Center.x - TotalW * 0.4f * LineA, Center.y + Size * 0.95f, TotalW * 0.8f * LineA, 1.0f);
-		Line.Draw4(ColorRGBA(0.6f, 0.45f, 1.0f, 0.0f), ColorRGBA(0.85f, 0.75f, 1.0f, 0.6f * Fade), ColorRGBA(0.6f, 0.45f, 1.0f, 0.0f), ColorRGBA(0.85f, 0.75f, 1.0f, 0.6f * Fade), IGraphics::CORNER_NONE, 0.0f);
 	}
 	return true;
 }
