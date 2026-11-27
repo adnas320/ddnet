@@ -35,6 +35,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Frame.w += TabBar.w;
 		DrawSparkiGradientIn(Frame, MainView, IGraphics::CORNER_B, 10.0f);
 		DrawSparkiGradientIn(Frame, Top, IGraphics::CORNER_BR, 10.0f);
+		DrawSparkiBorder(MainView, 10.0f);
 	}
 	MainView.Margin(20.0f, &MainView);
 

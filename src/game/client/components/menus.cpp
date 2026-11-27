@@ -211,7 +211,7 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 			{
 				// сердечко друзей: красное, ровное свечение как у кнопки (без анимации и полос)
 				const float Pulse = 0.5f;
-				for(int i = 4; i >= 1; i--)
+				for(int i = 4; i >= 1 && !Ui()->MouseHovered(pRect); i--)
 				{
 					CUIRect Glow = *pRect;
 					Glow.Margin(-1.6f * i, &Glow);
@@ -729,6 +729,17 @@ void CMenus::RenderLoadingDirect(const char *pCaption, const char *pContent, std
 	// need up date this here to get correct
 	ms_GuiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
 
+	// заставка играет прямо во время загрузки клиента: окно «Загрузка» скрыто
+	if(g_Config.m_ClSparkiIntro && !m_IntroDone)
+	{
+		m_LoadingState.m_LastRender = Now;
+		if(RenderIntro())
+		{
+			Client()->UpdateAndSwap();
+			return;
+		}
+	}
+
 	Ui()->MapScreen();
 
 	if(GameClient()->m_MenuBackground.IsLoading())
@@ -1098,7 +1109,10 @@ void CMenus::Render()
 			Screen.HSplitTop(24.0f, &TabBar, &MainView);
 			// градиентная панель под страницей; у настроек она рисуется внутри (там ещё правая колонка)
 			if(m_MenuPage != PAGE_SETTINGS)
+			{
 				DrawSparkiGradient(MainView, IGraphics::CORNER_B);
+				DrawSparkiBorder(MainView, 10.0f);
+			}
 
 			if(m_MenuPage == PAGE_NEWS)
 			{

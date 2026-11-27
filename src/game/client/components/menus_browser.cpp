@@ -1826,7 +1826,9 @@ void CMenus::RenderServerbrowserTabBar(CUIRect TabBar)
 	Ui()->DoToolTip(&s_InfoTabButton, &InfoTabButton, Localize("Server info"));
 
 	static CButtonContainer s_FriendsTabButton;
-	if(DoButton_MenuTab(&s_FriendsTabButton, FontIcon::HEART, g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_FRIENDS, &FriendsTabButton, IGraphics::CORNER_T, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_FRIENDS], &ColorInactive, &ColorActive))
+	// вкладка друзей целиком красная: спокойная, активная и при наведении (ярче)
+	static const ColorRGBA s_HeartDefault(0.34f, 0.05f, 0.10f, 0.5f), s_HeartActive(0.78f, 0.10f, 0.20f, 0.7f), s_HeartHover(0.96f, 0.18f, 0.28f, 0.8f);
+	if(DoButton_MenuTab(&s_FriendsTabButton, FontIcon::HEART, g_Config.m_UiToolboxPage == UI_TOOLBOX_PAGE_FRIENDS, &FriendsTabButton, IGraphics::CORNER_T, &m_aAnimatorsSmallPage[SMALL_TAB_BROWSER_FRIENDS], &s_HeartDefault, &s_HeartActive, &s_HeartHover))
 	{
 		g_Config.m_UiToolboxPage = UI_TOOLBOX_PAGE_FRIENDS;
 	}

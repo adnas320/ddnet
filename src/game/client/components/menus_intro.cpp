@@ -47,29 +47,139 @@ void Segment(IGraphics *pG, vec2 A, vec2 B, float Thickness)
 
 } // namespace
 
-// Тёмный фиолетово-чёрный градиент, углы очень медленно и плавно «дышат».
+// Тёмный фиолетово-чёрный полупрозрачный градиент с медленным переливом (диагональные волны).
 // Frame — общий прямоугольник, по которому считается градиент, чтобы составные панели не имели шва.
 void CMenus::DrawSparkiGradientIn(const CUIRect &Frame, const CUIRect &Rect, int Corners, float Rounding)
 {
 	const float T = (float)(time_get() % (time_freq() * 3600)) / (float)time_freq();
-	const auto Corner = [&](float Base, float Phase) {
-		const float K = std::clamp(Base + 0.24f * std::sin(T * 0.45f + Phase), 0.0f, 1.0f);
-		const float Shift = 0.5f + 0.5f * std::sin(T * 0.25f + Phase * 1.7f);
-		return ColorRGBA(K * (0.40f - 0.08f * Shift), K * 0.13f, K * (0.78f + 0.12f * Shift), 0.66f);
-	};
-	// TL, TR, BL, BR
-	const ColorRGBA aC[4] = {Corner(0.5f, 1.3f), Corner(0.0f, 3.1f), Corner(1.0f, 0.0f), Corner(0.5f, 4.4f)};
-	const auto At = [&](float X, float Y) {
+	// основа: тёмный фиолетовый слева снизу -> чёрный справа сверху
+	const auto Base = [&](float X, float Y) {
 		const float U = Frame.w > 0.0f ? std::clamp((X - Frame.x) / Frame.w, 0.0f, 1.0f) : 0.0f;
 		const float V = Frame.h > 0.0f ? std::clamp((Y - Frame.y) / Frame.h, 0.0f, 1.0f) : 0.0f;
-		ColorRGBA R;
-		R.r = (aC[0].r * (1 - U) + aC[1].r * U) * (1 - V) + (aC[2].r * (1 - U) + aC[3].r * U) * V;
-		R.g = (aC[0].g * (1 - U) + aC[1].g * U) * (1 - V) + (aC[2].g * (1 - U) + aC[3].g * U) * V;
-		R.b = (aC[0].b * (1 - U) + aC[1].b * U) * (1 - V) + (aC[2].b * (1 - U) + aC[3].b * U) * V;
-		R.a = aC[0].a;
-		return R;
+		const float K = std::clamp(0.55f * (1.0f - U) * 0.6f + 0.55f * V * 0.7f + 0.1f, 0.0f, 1.0f);
+		return ColorRGBA(0.20f * K, 0.05f * K, 0.40f * K, 0.62f);
 	};
-	Rect.Draw4(At(Rect.x, Rect.y), At(Rect.x + Rect.w, Rect.y), At(Rect.x, Rect.y + Rect.h), At(Rect.x + Rect.w, Rect.y + Rect.h), Corners, Rounding);
+	Rect.Draw4(Base(Rect.x, Rect.y), Base(Rect.x + Rect.w, Rect.y), Base(Rect.x, Rect.y + Rect.h), Base(Rect.x + Rect.w, Rect.y + Rect.h), Corners, Rounding);
+
+	// перелив: две медленные волны, бегущие по диагонали; рисуются полосами внутри панели
+	const auto Sheen = [&](float X, float Y) {
+		const float U = Frame.w > 0.0f ? (X - Frame.x) / Frame.w : 0.0f;
+		const float V = Frame.h > 0.0f ? (Y - Frame.y) / Frame.h : 0.0f;
+		const float W1 = 0.5f + 0.5f * std::sin((U * 1.0f - V * 0.9f) * 5.5f - T * 0.55f);
+		const float W2 = 0.5f + 0.5f * std::sin((U * 0.7f + V * 0.8f) * 8.0f + T * 0.4f);
+		const float K = std::pow(0.6f * W1 + 0.4f * W2, 1.6f);
+		return ColorRGBA(0.34f, 0.10f, 0.70f, 0.38f * K);
+	};
+	CUIRect Inner = Rect;
+	const float Inset = Rounding * 0.35f;
+	Inner.Margin(Inset, &Inner);
+	if(Inner.w > 4.0f && Inner.h > 4.0f)
+	{
+		const int Strips = 40;
+		const float Sw = Inner.w / Strips;
+		for(int i = 0; i < Strips; i++)
+		{
+			const float X0 = Inner.x + Sw * i, X1 = X0 + Sw + 0.4f;
+			CUIRect Strip(X0, Inner.y, X1 - X0, Inner.h);
+			Strip.Draw4(Sheen(X0, Inner.y), Sheen(X1, Inner.y), Sheen(X0, Inner.y + Inner.h), Sheen(X1, Inner.y + Inner.h), IGraphics::CORNER_NONE, 0.0f);
+		}
+	}
+}
+
+// Неоновая фиолетовая обводка панели: тонкая линия и две яркие «кометы», медленно бегущие по периметру
+void CMenus::DrawSparkiBorder(const CUIRect &Rect, float Rounding)
+{
+	const float T = (float)(time_get() % (time_freq() * 3600)) / (float)time_freq();
+	const float R = std::min(Rounding, std::min(Rect.w, Rect.h) / 2.0f);
+	const float Sx = Rect.w - 2 * R, Sy = Rect.h - 2 * R;
+	const float Arc = 1.5707963f * R;
+	const float P = 2 * Sx + 2 * Sy + 4 * Arc;
+	if(P <= 1.0f)
+		return;
+	const auto PointAt = [&](float S) {
+		S = std::fmod(S, P);
+		if(S < 0.0f)
+			S += P;
+		// верх (слева направо), дуга ПВ, право (сверху вниз), дуга ПН, низ (справа налево), дуга ЛН, лево (снизу вверх), дуга ЛВ
+		if(S < Sx)
+			return vec2(Rect.x + R + S, Rect.y);
+		S -= Sx;
+		if(S < Arc)
+		{
+			const float A = S / R - 1.5707963f;
+			return vec2(Rect.x + Rect.w - R + std::cos(A) * R, Rect.y + R + std::sin(A) * R);
+		}
+		S -= Arc;
+		if(S < Sy)
+			return vec2(Rect.x + Rect.w, Rect.y + R + S);
+		S -= Sy;
+		if(S < Arc)
+		{
+			const float A = S / R;
+			return vec2(Rect.x + Rect.w - R + std::cos(A) * R, Rect.y + Rect.h - R + std::sin(A) * R);
+		}
+		S -= Arc;
+		if(S < Sx)
+			return vec2(Rect.x + Rect.w - R - S, Rect.y + Rect.h);
+		S -= Sx;
+		if(S < Arc)
+		{
+			const float A = S / R + 1.5707963f;
+			return vec2(Rect.x + R + std::cos(A) * R, Rect.y + Rect.h - R + std::sin(A) * R);
+		}
+		S -= Arc;
+		if(S < Sy)
+			return vec2(Rect.x, Rect.y + Rect.h - R - S);
+		S -= Sy;
+		const float A = S / R + 3.1415927f;
+		return vec2(Rect.x + R + std::cos(A) * R, Rect.y + R + std::sin(A) * R);
+	};
+
+	const int N = 220;
+	const float Lap = 12.0f; // секунд на полный круг — медленно
+	const float Head = std::fmod(T / Lap, 1.0f) * P;
+	const float TailLen = P * 0.22f;
+	IGraphics *pG = Graphics();
+	pG->TextureClear();
+	pG->BlendAdditive();
+	pG->QuadsBegin();
+	for(int i = 0; i < N; i++)
+	{
+		const float S0 = P * i / N, S1 = P * (i + 1) / N;
+		const vec2 A = PointAt(S0), B = PointAt(S1);
+		// расстояние от головы одной из двух комет (позади неё)
+		float Best = 1e9f;
+		for(int c = 0; c < 2; c++)
+		{
+			float D = std::fmod(Head + c * P * 0.5f - S0, P);
+			if(D < 0.0f)
+				D += P;
+			Best = std::min(Best, D);
+		}
+		const float Comet = Best < TailLen ? std::pow(1.0f - Best / TailLen, 1.6f) : 0.0f;
+		// тонкая постоянная линия
+		vec2 Dv = B - A;
+		const float L = length(Dv);
+		if(L < 0.0001f)
+			continue;
+		const vec2 Nv = vec2(-Dv.y, Dv.x) / L;
+		const auto Line = [&](float Th, float Alpha) {
+			pG->SetColor(0.62f, 0.38f, 1.0f, Alpha);
+			const IGraphics::CFreeformItem It(A + Nv * Th, B + Nv * Th, A - Nv * Th, B - Nv * Th);
+			pG->QuadsDrawFreeform(&It, 1);
+		};
+		Line(0.35f, 0.25f);
+		if(Comet > 0.0f)
+		{
+			Line(2.2f, 0.07f * Comet); // свечение
+			Line(1.2f, 0.18f * Comet);
+			pG->SetColor(0.9f, 0.8f, 1.0f, 0.95f * Comet);
+			const IGraphics::CFreeformItem It(A + Nv * 0.55f, B + Nv * 0.55f, A - Nv * 0.55f, B - Nv * 0.55f);
+			pG->QuadsDrawFreeform(&It, 1);
+		}
+	}
+	pG->QuadsEnd();
+	pG->BlendNormal();
 }
 
 void CMenus::DrawSparkiGradient(const CUIRect &Rect, int Corners, float Rounding)
