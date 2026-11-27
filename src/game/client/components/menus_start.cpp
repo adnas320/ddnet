@@ -14,6 +14,7 @@
 
 #include <generated/client_data.h>
 
+#include <game/client/animstate.h>
 #include <game/client/gameclient.h>
 #include <game/client/ui.h>
 #include <game/localization.h>
