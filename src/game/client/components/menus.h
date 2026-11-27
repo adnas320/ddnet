@@ -567,7 +567,9 @@ protected:
 	void RenderSettings(CUIRect MainView);
 	bool RenderIntro();
 	void DrawSparkiGradient(const CUIRect &Rect, int Corners = IGraphics::CORNER_ALL, float Rounding = 10.0f);
-	void DrawSparkiBorder(const CUIRect &Rect, float Rounding = 10.0f);
+	void DrawSparkiBorder(const CUIRect &Rect, int Corners = IGraphics::CORNER_ALL, float Rounding = 10.0f);
+	void DrawSparkiBorderPath(const std::vector<vec3> &vCorners);
+	void DrawSparkiBorderSettings(const CUIRect &Main, const CUIRect &Top, float Rounding = 10.0f);
 	void DrawSparkiGradientIn(const CUIRect &Frame, const CUIRect &Rect, int Corners, float Rounding);
 	int64_t m_IntroStart = 0;
 	bool m_IntroDone = false;
@@ -684,6 +686,7 @@ protected:
 
 public:
 	void RenderBackground();
+	void RenderPurpleBackground();
 
 	CMenus();
 	int Sizeof() const override { return sizeof(*this); }

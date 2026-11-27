@@ -749,7 +749,9 @@ void CMenus::RenderLoadingDirect(const char *pCaption, const char *pContent, std
 		// the menu background is not loaded yet.
 		return;
 	}
-	if(!GameClient()->m_MenuBackground.Render())
+	if(g_Config.m_ClMenuPurple)
+		RenderPurpleBackground();
+	else if(!GameClient()->m_MenuBackground.Render())
 	{
 		RenderBackground();
 	}
@@ -1061,7 +1063,9 @@ void CMenus::Render()
 	}
 	else
 	{
-		if(!GameClient()->m_MenuBackground.Render())
+		if(g_Config.m_ClMenuPurple)
+			RenderPurpleBackground();
+		else if(!GameClient()->m_MenuBackground.Render())
 		{
 			RenderBackground();
 		}
@@ -1111,7 +1115,7 @@ void CMenus::Render()
 			if(m_MenuPage != PAGE_SETTINGS)
 			{
 				DrawSparkiGradient(MainView, IGraphics::CORNER_B);
-				DrawSparkiBorder(MainView, 10.0f);
+				DrawSparkiBorder(MainView, IGraphics::CORNER_B, 10.0f);
 			}
 
 			if(m_MenuPage == PAGE_NEWS)
@@ -2475,6 +2479,29 @@ void CMenus::OnWindowResize()
 
 void CMenus::OnRender()
 {
+	// статистика для профиля: время на серверах и число заходов
+	{
+		static int64_t s_LastTick = 0;
+		static double s_Acc = 0.0;
+		static bool s_WasOnline = false;
+		const int64_t NowTick = time_get();
+		const bool Online = Client()->State() == IClient::STATE_ONLINE;
+		if(Online && !s_WasOnline)
+			g_Config.m_ClStatSessions++;
+		if(Online && s_LastTick != 0)
+		{
+			s_Acc += std::min(1.0, (double)(NowTick - s_LastTick) / (double)time_freq());
+			if(s_Acc >= 1.0)
+			{
+				const int Whole = (int)s_Acc;
+				s_Acc -= Whole;
+				g_Config.m_ClStatPlaySeconds = std::min(2000000000, g_Config.m_ClStatPlaySeconds + Whole);
+			}
+		}
+		s_WasOnline = Online;
+		s_LastTick = NowTick;
+	}
+
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		SetActive(true);
 

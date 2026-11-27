@@ -2775,6 +2775,8 @@ if(CLIENT)
     components/touch_controls.h
     components/translator.cpp
     components/translator.h
+    components/friend_chat.cpp
+    components/friend_chat.h
     components/fx.cpp
     components/fx.h
     components/visuals.cpp

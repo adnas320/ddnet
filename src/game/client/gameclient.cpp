@@ -158,6 +158,7 @@ void CGameClient::OnConsoleInit()
 					      &m_BindWheel,
 					      &m_MusicPlayer,
 					      &m_Translator,
+					      &m_FriendChat,
 					      &m_InfoMessages,
 					      &m_Chat,
 					      &m_Broadcast,

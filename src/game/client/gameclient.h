@@ -70,6 +70,7 @@
 #include "components/bindwheel.h"
 #include "components/musicplayer.h"
 #include "components/translator.h"
+#include "components/friend_chat.h"
 #include "components/paint.h"
 #include "components/fx.h"
 #include "components/visuals.h"
@@ -186,6 +187,7 @@ public:
 	CBindWheel m_BindWheel;
 	CMusicPlayer m_MusicPlayer;
 	CTranslator m_Translator;
+	CFriendChat m_FriendChat;
 	CPaint m_Paint;
 	CTouchControls m_TouchControls;
 	CVoting m_Voting;

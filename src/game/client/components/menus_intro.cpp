@@ -86,59 +86,58 @@ void CMenus::DrawSparkiGradientIn(const CUIRect &Frame, const CUIRect &Rect, int
 	}
 }
 
-// Неоновая фиолетовая обводка панели: тонкая линия и две яркие «кометы», медленно бегущие по периметру
-void CMenus::DrawSparkiBorder(const CUIRect &Rect, float Rounding)
+// Неоновая обводка: тонкая линия и две «кометы» по замкнутому контуру. Контур задан вершинами (x, y, радиус скругления)
+void CMenus::DrawSparkiBorderPath(const std::vector<vec3> &vCorners)
 {
+	if(vCorners.size() < 3)
+		return;
 	const float T = (float)(time_get() % (time_freq() * 3600)) / (float)time_freq();
-	const float R = std::min(Rounding, std::min(Rect.w, Rect.h) / 2.0f);
-	const float Sx = Rect.w - 2 * R, Sy = Rect.h - 2 * R;
-	const float Arc = 1.5707963f * R;
-	const float P = 2 * Sx + 2 * Sy + 4 * Arc;
+
+	// собираем ломаную: у каждой вершины с радиусом > 0 точки дуги (квадратичная кривая между точками касания)
+	std::vector<vec2> vPts;
+	const int Count = (int)vCorners.size();
+	for(int i = 0; i < Count; i++)
+	{
+		const vec3 &Cur = vCorners[i];
+		const vec2 V(Cur.x, Cur.y);
+		if(Cur.z <= 0.01f)
+		{
+			vPts.push_back(V);
+			continue;
+		}
+		const vec3 &Pv = vCorners[(i + Count - 1) % Count];
+		const vec3 &Nx = vCorners[(i + 1) % Count];
+		const vec2 ToPrev = vec2(Pv.x, Pv.y) - V, ToNext = vec2(Nx.x, Nx.y) - V;
+		const float R = std::min(Cur.z, std::min(length(ToPrev), length(ToNext)) * 0.5f);
+		const vec2 A = V + normalize(ToPrev) * R, B = V + normalize(ToNext) * R;
+		const int Seg = 10;
+		for(int s = 0; s <= Seg; s++)
+		{
+			const float U = (float)s / Seg;
+			vPts.push_back(A * ((1 - U) * (1 - U)) + V * (2 * (1 - U) * U) + B * (U * U));
+		}
+	}
+
+	std::vector<float> vCum(vPts.size() + 1, 0.0f);
+	for(size_t i = 0; i < vPts.size(); i++)
+		vCum[i + 1] = vCum[i] + length(vPts[(i + 1) % vPts.size()] - vPts[i]);
+	const float P = vCum.back();
 	if(P <= 1.0f)
 		return;
 	const auto PointAt = [&](float S) {
 		S = std::fmod(S, P);
 		if(S < 0.0f)
 			S += P;
-		// верх (слева направо), дуга ПВ, право (сверху вниз), дуга ПН, низ (справа налево), дуга ЛН, лево (снизу вверх), дуга ЛВ
-		if(S < Sx)
-			return vec2(Rect.x + R + S, Rect.y);
-		S -= Sx;
-		if(S < Arc)
-		{
-			const float A = S / R - 1.5707963f;
-			return vec2(Rect.x + Rect.w - R + std::cos(A) * R, Rect.y + R + std::sin(A) * R);
-		}
-		S -= Arc;
-		if(S < Sy)
-			return vec2(Rect.x + Rect.w, Rect.y + R + S);
-		S -= Sy;
-		if(S < Arc)
-		{
-			const float A = S / R;
-			return vec2(Rect.x + Rect.w - R + std::cos(A) * R, Rect.y + Rect.h - R + std::sin(A) * R);
-		}
-		S -= Arc;
-		if(S < Sx)
-			return vec2(Rect.x + Rect.w - R - S, Rect.y + Rect.h);
-		S -= Sx;
-		if(S < Arc)
-		{
-			const float A = S / R + 1.5707963f;
-			return vec2(Rect.x + R + std::cos(A) * R, Rect.y + Rect.h - R + std::sin(A) * R);
-		}
-		S -= Arc;
-		if(S < Sy)
-			return vec2(Rect.x, Rect.y + Rect.h - R - S);
-		S -= Sy;
-		const float A = S / R + 3.1415927f;
-		return vec2(Rect.x + R + std::cos(A) * R, Rect.y + R + std::sin(A) * R);
+		const size_t Idx = std::min<size_t>(std::upper_bound(vCum.begin(), vCum.end(), S) - vCum.begin() - 1, vPts.size() - 1);
+		const float Len = vCum[Idx + 1] - vCum[Idx];
+		const float U = Len > 0.0001f ? (S - vCum[Idx]) / Len : 0.0f;
+		return vPts[Idx] + (vPts[(Idx + 1) % vPts.size()] - vPts[Idx]) * U;
 	};
 
-	const int N = 220;
+	const int N = std::max(120, (int)(P / 5.0f));
 	const float Lap = 12.0f; // секунд на полный круг — медленно
 	const float Head = std::fmod(T / Lap, 1.0f) * P;
-	const float TailLen = P * 0.22f;
+	const float TailLen = P * 0.18f;
 	IGraphics *pG = Graphics();
 	pG->TextureClear();
 	pG->BlendAdditive();
@@ -147,7 +146,6 @@ void CMenus::DrawSparkiBorder(const CUIRect &Rect, float Rounding)
 	{
 		const float S0 = P * i / N, S1 = P * (i + 1) / N;
 		const vec2 A = PointAt(S0), B = PointAt(S1);
-		// расстояние от головы одной из двух комет (позади неё)
 		float Best = 1e9f;
 		for(int c = 0; c < 2; c++)
 		{
@@ -157,7 +155,6 @@ void CMenus::DrawSparkiBorder(const CUIRect &Rect, float Rounding)
 			Best = std::min(Best, D);
 		}
 		const float Comet = Best < TailLen ? std::pow(1.0f - Best / TailLen, 1.6f) : 0.0f;
-		// тонкая постоянная линия
 		vec2 Dv = B - A;
 		const float L = length(Dv);
 		if(L < 0.0001f)
@@ -176,6 +173,68 @@ void CMenus::DrawSparkiBorder(const CUIRect &Rect, float Rounding)
 			pG->SetColor(0.9f, 0.8f, 1.0f, 0.95f * Comet);
 			const IGraphics::CFreeformItem It(A + Nv * 0.55f, B + Nv * 0.55f, A - Nv * 0.55f, B - Nv * 0.55f);
 			pG->QuadsDrawFreeform(&It, 1);
+		}
+	}
+	pG->QuadsEnd();
+	pG->BlendNormal();
+}
+
+// Прямоугольник: скругления только там, где они есть у панели (Corners — как у CUIRect::Draw)
+void CMenus::DrawSparkiBorder(const CUIRect &Rect, int Corners, float Rounding)
+{
+	const float X0 = Rect.x, Y0 = Rect.y, X1 = Rect.x + Rect.w, Y1 = Rect.y + Rect.h;
+	const auto Rad = [&](int Flag) { return (Corners & Flag) ? Rounding : 0.0f; };
+	DrawSparkiBorderPath({vec3(X0, Y0, Rad(IGraphics::CORNER_TL)), vec3(X1, Y0, Rad(IGraphics::CORNER_TR)), vec3(X1, Y1, Rad(IGraphics::CORNER_BR)), vec3(X0, Y1, Rad(IGraphics::CORNER_BL))});
+}
+
+// Настройки: панель + верхний блок правой колонки, контур идёт по общей форме
+void CMenus::DrawSparkiBorderSettings(const CUIRect &Main, const CUIRect &Top, float Rounding)
+{
+	const float X0 = Main.x, Y0 = Main.y, X1 = Main.x + Main.w, Y1 = Main.y + Main.h;
+	const float XR = Top.x + Top.w, YT = Top.y + Top.h;
+	DrawSparkiBorderPath({vec3(X0, Y0, 0.0f), vec3(XR, Y0, 0.0f), vec3(XR, YT, Rounding), vec3(X1, YT, 0.0f), vec3(X1, Y1, Rounding), vec3(X0, Y1, Rounding)});
+}
+
+// Фиолетовый «галактический» фон меню: тёмный градиент, медленные туманности и мерцающие звёзды
+void CMenus::RenderPurpleBackground()
+{
+	Ui()->MapScreen();
+	const CUIRect Screen = *Ui()->Screen();
+	const float T = (float)(time_get() % (time_freq() * 3600)) / (float)time_freq();
+	IGraphics *pG = Graphics();
+	pG->TextureClear();
+
+	Screen.Draw4(ColorRGBA(0.16f, 0.05f, 0.30f, 1.0f), ColorRGBA(0.03f, 0.01f, 0.08f, 1.0f), ColorRGBA(0.07f, 0.02f, 0.16f, 1.0f), ColorRGBA(0.02f, 0.0f, 0.05f, 1.0f), IGraphics::CORNER_NONE, 0.0f);
+
+	pG->BlendAdditive();
+	pG->QuadsBegin();
+	// туманности: большие мягкие пятна из колец, плавно дрейфуют
+	for(int i = 0; i < 6; i++)
+	{
+		const float Px = Screen.w * (0.12f + 0.76f * Hash01(i * 7 + 1)) + std::sin(T * 0.05f + i * 1.7f) * 40.0f;
+		const float Py = Screen.h * (0.12f + 0.76f * Hash01(i * 7 + 2)) + std::cos(T * 0.04f + i * 2.3f) * 30.0f;
+		const float Base = Screen.h * (0.22f + 0.18f * Hash01(i * 7 + 3));
+		const bool Pink = Hash01(i * 7 + 4) > 0.6f;
+		for(int Ring = 0; Ring < 10; Ring++)
+		{
+			const float K = (float)Ring / 10.0f;
+			pG->SetColor(Pink ? 0.55f : 0.30f, Pink ? 0.12f : 0.10f, Pink ? 0.60f : 0.75f, 0.012f);
+			pG->DrawCircle(Px, Py, Base * (1.0f - K * 0.8f), 40);
+		}
+	}
+	// звёзды
+	for(int i = 0; i < 160; i++)
+	{
+		const float Px = Screen.w * Hash01(i * 5 + 11), Py = Screen.h * Hash01(i * 5 + 12);
+		const float Size = 0.6f + 1.6f * Hash01(i * 5 + 13) * Hash01(i * 5 + 13);
+		const float Tw = 0.5f + 0.5f * std::sin(T * (0.6f + 1.6f * Hash01(i * 5 + 14)) + Hash01(i * 5 + 15) * 6.28f);
+		const float A = 0.15f + 0.75f * Tw * (0.4f + 0.6f * Hash01(i * 5 + 16));
+		pG->SetColor(0.85f, 0.78f, 1.0f, A);
+		pG->DrawCircle(Px, Py, Size, 8);
+		if(Size > 1.7f)
+		{
+			pG->SetColor(0.7f, 0.5f, 1.0f, A * 0.18f);
+			pG->DrawCircle(Px, Py, Size * 3.2f, 12);
 		}
 	}
 	pG->QuadsEnd();
