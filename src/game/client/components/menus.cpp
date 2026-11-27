@@ -209,19 +209,14 @@ int CMenus::DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pTe
 			// icons keep their normal look
 			if(str_comp(pText, FontIcon::HEART) == 0)
 			{
-				// сердечко друзей: красное и мягко светится
-				const float Pulse = 0.5f; // без анимации: ровное красное свечение
-				const vec2 C(Label.x + Label.w / 2.0f, Label.y + Label.h / 2.0f);
-				Graphics()->TextureClear();
-				Graphics()->BlendAdditive();
-				Graphics()->QuadsBegin();
-				for(int i = 0; i < 5; i++)
+				// сердечко друзей: красное, ровное свечение как у кнопки (без анимации и полос)
+				const float Pulse = 0.5f;
+				for(int i = 4; i >= 1; i--)
 				{
-					Graphics()->SetColor(1.0f, 0.12f, 0.2f, (0.10f + 0.07f * Pulse) * (5 - i) / 5.0f);
-					Graphics()->DrawCircle(C.x, C.y, Label.h * (0.35f + 0.15f * i), 24);
+					CUIRect Glow = *pRect;
+					Glow.Margin(-1.6f * i, &Glow);
+					Glow.Draw(ColorRGBA(1.0f, 0.12f, 0.2f, 0.09f * (5 - i) / 4.0f), IGraphics::CORNER_ALL, 6.0f + 1.6f * i);
 				}
-				Graphics()->QuadsEnd();
-				Graphics()->BlendNormal();
 				TextRender()->TextColor(1.0f, 0.22f + 0.08f * Pulse, 0.3f, 1.0f);
 				Ui()->DoLabel(&Label, pText, FontSize, TEXTALIGN_MC);
 				TextRender()->TextColor(TextRender()->DefaultTextColor());

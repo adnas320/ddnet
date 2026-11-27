@@ -85,7 +85,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 			const bool Selected = (Group == 0) == InSparki;
 			TabBar.HSplitTop(4.0f, nullptr, &TabBar);
 			TabBar.HSplitTop(30.0f, &Button, &TabBar);
-			if(DoButton_MenuTab(&s_aGroupButtons[Group], apGroups[Group], Selected, &Button, IGraphics::CORNER_R, &s_aGroupAnimators[Group]) && !Selected)
+			static const ColorRGBA s_GroupDefault(0.34f, 0.16f, 0.66f, 0.42f), s_GroupActive(0.46f, 0.22f, 0.86f, 0.68f), s_GroupHover(0.52f, 0.30f, 0.92f, 0.58f);
+			if(DoButton_MenuTab(&s_aGroupButtons[Group], apGroups[Group], Selected, &Button, IGraphics::CORNER_R, &s_aGroupAnimators[Group], &s_GroupDefault, &s_GroupActive, &s_GroupHover) && !Selected)
 				g_Config.m_UiSettingsPage = Group == 0 ? s_LastSparkiPage : s_LastDDNetPage;
 		}
 	}

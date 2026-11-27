@@ -336,24 +336,26 @@ void CMenusStart::RenderStartMenu(CUIRect MainView)
 		NewPage = g_Config.m_UiPage >= CMenus::PAGE_INTERNET && g_Config.m_UiPage <= CMenus::PAGE_FAVORITE_COMMUNITY_5 ? g_Config.m_UiPage : CMenus::PAGE_INTERNET;
 	}
 
-	// render version
-	CUIRect CurVersion, ConsoleButton;
-	MainView.HSplitBottom(45.0f, nullptr, &CurVersion);
-	CurVersion.VSplitRight(40.0f, &CurVersion, nullptr);
-	CurVersion.HSplitTop(20.0f, &ConsoleButton, &CurVersion);
-	CurVersion.HSplitTop(5.0f, nullptr, &CurVersion);
-	ConsoleButton.VSplitRight(40.0f, nullptr, &ConsoleButton);
-	Ui()->DoLabel(&CurVersion, GAME_RELEASE_VERSION, 14.0f, TEXTALIGN_MR);
-
-	static CButtonContainer s_ConsoleButton;
-	TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
-	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
-	if(GameClient()->m_Menus.DoButton_Menu(&s_ConsoleButton, FontIcon::TERMINAL, 0, &ConsoleButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 5.0f, 0.0f, ColorRGBA(0.0f, 0.0f, 0.0f, 0.1f)))
+	// скин игрока справа внизу: смотрит за курсором и иногда моргает
 	{
-		GameClient()->m_GameConsole.Toggle(CGameConsole::CONSOLETYPE_LOCAL);
+		const CSkins::CSkinContainer *pSkinContainer = GameClient()->m_Skins.FindContainerOrNullptr(g_Config.m_ClPlayerSkin[0] == '\0' ? "default" : g_Config.m_ClPlayerSkin);
+		if(pSkinContainer != nullptr && pSkinContainer->IsSpecial())
+			pSkinContainer = nullptr;
+		const CSkin *pSkin = pSkinContainer == nullptr || pSkinContainer->Skin() == nullptr ? GameClient()->m_Skins.Find("default") : pSkinContainer->Skin().get();
+		CTeeRenderInfo TeeInfo;
+		TeeInfo.Apply(pSkin);
+		TeeInfo.ApplyColors(g_Config.m_ClPlayerUseCustomColor, g_Config.m_ClPlayerColorBody, g_Config.m_ClPlayerColorFeet);
+		TeeInfo.m_Size = 56.0f;
+		vec2 OffsetToMid;
+		CRenderTools::GetRenderTeeOffsetToRenderedTee(CAnimState::GetIdle(), &TeeInfo, OffsetToMid);
+		const vec2 TeePos = vec2(MainView.x + MainView.w - 40.0f, MainView.y + MainView.h - 38.0f + OffsetToMid.y);
+		const vec2 Delta = Ui()->MousePos() - TeePos;
+		const vec2 Dir = length(Delta) < 0.001f ? vec2(0.0f, 1.0f) : normalize(Delta);
+		// моргание: раз в ~3,6 секунды на 0,16 с
+		const double Seconds = (double)time_get() / (double)time_freq();
+		const bool Blink = std::fmod(Seconds, 3.6) < 0.16;
+		RenderTools()->RenderTee(CAnimState::GetIdle(), &TeeInfo, Blink ? EMOTE_BLINK : EMOTE_NORMAL, Dir, TeePos);
 	}
-	TextRender()->SetRenderFlags(0);
-	TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
 
 	CUIRect VersionUpdate;
 	MainView.HSplitBottom(20.0f, nullptr, &VersionUpdate);
